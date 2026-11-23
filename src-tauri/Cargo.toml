@@ -13,6 +13,9 @@ crate-type = ["rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[target.'cfg(target_os = "macos")'.build-dependencies]
+cc = "1"
+
 [dependencies]
 chrono = "0.4"
 notify = "6"
@@ -23,5 +26,6 @@ serde_yaml = "0.9"
 specta = { version = "=2.0.0-rc.28", features = ["derive", "serde_json"] }
 specta-serde = "0.0.15"
 specta-typescript = "0.0.15"
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
 thiserror = "2"

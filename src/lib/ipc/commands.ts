@@ -3,11 +3,17 @@ import type {
   AppError,
   AppInfo,
   ErrorCode,
+  HideQuickBarArgs,
+  HotkeyStatus,
+  HotkeyUpdateArgs,
   LibraryInfo,
+  MainWindowArgs,
+  QuickBarArgs,
   SetRootArgs,
   SettingsSnapshot,
   UiState,
   UiStateArgs,
+  WindowState,
 } from '@/bindings/types';
 
 const ERROR_CODES = new Set<ErrorCode>([
@@ -71,4 +77,28 @@ export function uiStateGet(): Promise<UiState> {
 
 export function uiStateSet(args: UiStateArgs): Promise<UiState> {
   return invoke<UiState>('ui_state_set', { args });
+}
+
+export function windowShowMain(args?: MainWindowArgs): Promise<WindowState> {
+  return invoke<WindowState>('window_show_main', { args: args ?? null });
+}
+
+export function windowHideMain(): Promise<WindowState> {
+  return invoke<WindowState>('window_hide_main');
+}
+
+export function windowShowQuickBar(args?: QuickBarArgs): Promise<WindowState> {
+  return invoke<WindowState>('window_show_quick_bar', { args: args ?? null });
+}
+
+export function windowHideQuickBar(args: HideQuickBarArgs): Promise<WindowState> {
+  return invoke<WindowState>('window_hide_quick_bar', { args });
+}
+
+export function windowOpenSettings(): Promise<WindowState> {
+  return invoke<WindowState>('window_open_settings');
+}
+
+export function hotkeyUpdate(args: HotkeyUpdateArgs): Promise<HotkeyStatus> {
+  return invoke<HotkeyStatus>('hotkey_update', { args });
 }

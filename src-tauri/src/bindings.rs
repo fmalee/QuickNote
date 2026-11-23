@@ -5,6 +5,7 @@ use specta_typescript::Typescript;
 
 use crate::domain::app::{ActivationPolicy, AppInfo};
 use crate::domain::error::{AppError, ErrorCode};
+use crate::domain::hotkey::HotkeyUpdateArgs;
 use crate::domain::settings::{
     EditorSettings, EditorTheme, EditorsSettings, ExternalAppConfig, HotkeySettings, InboxSettings,
     LibraryInfo, MainWindowSettings, PanelId, PanelsSettings, QuickBarSettings, SetRootArgs,
@@ -15,6 +16,9 @@ use crate::domain::ui_state::{
     CaptureMode, FiltersUiState, HotkeySelfCheck, HotkeyStatus, LastActiveDocState,
     MainWindowState, NavTab, PanelGroupUiState, TabItemState, TabsUiState, UiState, UiStateArgs,
     WindowsUiState,
+};
+use crate::domain::window::{
+    HideQuickBarArgs, HideReason, MainWindowArgs, QuickBarArgs, QuickBarMode, WindowState,
 };
 
 /// Exact header line required at line 1 of `src/bindings/types.ts` (`C1.4`).
@@ -58,6 +62,13 @@ pub fn collect_types() -> Types {
         .register::<LastActiveDocState>()
         .register::<UiState>()
         .register::<UiStateArgs>()
+        .register::<QuickBarMode>()
+        .register::<HideReason>()
+        .register::<WindowState>()
+        .register::<MainWindowArgs>()
+        .register::<QuickBarArgs>()
+        .register::<HideQuickBarArgs>()
+        .register::<HotkeyUpdateArgs>()
 }
 
 /// Renders the full TypeScript bindings content deterministically.

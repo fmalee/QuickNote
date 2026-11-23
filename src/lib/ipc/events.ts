@@ -1,5 +1,5 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { SettingsLoadStatus } from '@/bindings/types';
+import type { SettingsLoadStatus, WindowState } from '@/bindings/types';
 
 export type { UnlistenFn };
 
@@ -16,4 +16,8 @@ export function onSettingsStatus(
   handler: (status: SettingsLoadStatus) => void,
 ): Promise<UnlistenFn> {
   return listenEvent<SettingsLoadStatus>('settings:status', handler);
+}
+
+export function onWindowState(handler: (state: WindowState) => void): Promise<UnlistenFn> {
+  return listenEvent<WindowState>('window:state', handler);
 }

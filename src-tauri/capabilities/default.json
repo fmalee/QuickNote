@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default minimal capabilities for QuickNote main window",
-  "windows": ["main"],
+  "description": "Default minimal capabilities for QuickNote windows",
+  "windows": ["main", "quickbar", "toast", "settings"],
   "permissions": ["core:default"]
 }

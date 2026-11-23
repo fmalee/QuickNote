@@ -60,6 +60,14 @@ export type FiltersUiState = {
 	listScrollTop: number,
 };
 
+/**  Arguments for `window_hide_quick_bar` (`C4.2`). */
+export type HideQuickBarArgs = {
+	reason: HideReason,
+};
+
+/**  Reason why Quick Bar was hidden (`C3.4`, `D-0002`). */
+export type HideReason = "esc" | "hotkey" | "space_changed";
+
 /**  Global hotkey self-check state (`C3.4`, `C6.3`, `D-0004`). */
 export type HotkeySelfCheck = "pending" | "ok" | "conflict";
 
@@ -74,6 +82,11 @@ export type HotkeyStatus = {
 	combo: string,
 	backupCombo: string,
 	selfCheck: HotkeySelfCheck,
+};
+
+/**  Arguments for `hotkey_update` (`C4.2`). */
+export type HotkeyUpdateArgs = {
+	combo: string,
 };
 
 /**  Inbox configuration section (`C6.2`). */
@@ -93,6 +106,11 @@ export type LibraryInfo = {
 	root: string | null,
 	noteCount: number,
 	lastIndexedAt: number | null,
+};
+
+/**  Arguments for `window_show_main` (`C4.2`). */
+export type MainWindowArgs = {
+	mode: WindowMode | null,
 };
 
 /**  Main window configuration section (`C6.2`). */
@@ -131,6 +149,14 @@ export type PanelsSettings = {
 	width: number,
 	terminal: TerminalPanelSettings,
 };
+
+/**  Arguments for `window_show_quick_bar` (`C4.2`). */
+export type QuickBarArgs = {
+	mode: QuickBarMode | null,
+};
+
+/**  Quick Bar operating mode (`C3.4`). */
+export type QuickBarMode = "capture" | "open" | "command";
 
 /**  Quick Bar configuration section (`C6.2`). */
 export type QuickBarSettings = {
@@ -223,6 +249,15 @@ export type UiStateArgs = {
 
 /**  Main window presentation mode (`C3.4`, `C6.2`). */
 export type WindowMode = "standard" | "fullscreen" | "auxiliary";
+
+/**  Window visibility and mode state pushed via `window:state` and window IPC commands (`C3.4`, `C4.3`). */
+export type WindowState = {
+	windowId: string,
+	visible: boolean,
+	fullscreen: boolean,
+	mode: WindowMode | null,
+	reason: HideReason | null,
+};
 
 /**  Windows section of `ui-state.json` (`C6.3`). */
 export type WindowsUiState = {

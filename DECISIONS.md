@@ -136,3 +136,16 @@
   - 所有 Rust 单元测试与集成测试统一放置于 `src-tauri/tests/*.rs`（经由 library crate 公开接口或测试专用纯函数模块测试），测试数据统一引用 `src-tauri/tests/fixtures/vault/`。
 - 后果：静态扫描命令可无例外地精确校验生产代码健壮性，避免 AI 在生产路径留下 panic 隐患。
 - 否决替代：允许生产文件中内联 `#[cfg(test)]` 并靠复杂 AST 白名单豁免检查。
+
+## D-0011 macOS 原生桥接采用 Objective-C 静态桥接库（`cc` + `bridge.m`）结合 Tauri v2 托盘与菜单能力
+
+- 日期：2026-11-23
+- 状态：accepted（`C11.3`）
+- 关联：`C1.2`、`C2.4`、`C3.4`、`D-0001`、`D-0002`、`D-0003`、`D-0004`
+- 背景：QuickNote 需要将 Tauri `WebviewWindow` 转为非激活 `NSPanel`（`nonactivatingPanel`、`collectionBehavior = 256`、`canBecomeKeyWindow` 按窗口区分）、监听 `NSWorkspaceActiveSpaceDidChangeNotification` 复位切 Space 浮层，并通过 Carbon `RegisterEventHotKey` 实现 `⌃⌥Space` 全局热键注册、首启自检与热重注册。同时需要托盘常驻、动态顶部菜单栏、`.accessory ↔ .regular` 激活策略切换与单实例唤起。
+- 决策：
+  - 将 Tauri 不直接暴露的底层 AppKit/Carbon 能力（`NSPanel` 类转换与行为控制、`NSWorkspace` Space 切换监听、Carbon `RegisterEventHotKey` / `UnregisterEventHotKey`）收敛于原生 Objective-C 静态桥接文件 `src-tauri/src/infra/macos/bridge.m`，通过 `src-tauri/build.rs` 调用 `cc`（启用 `-fobjc-arc`，链接 `Cocoa` 与 `Carbon` framework）编译并经由 `extern "C"` FFI 暴露给 `src-tauri/src/infra/macos/`。
+  - 托盘图标（`tauri` `tray-icon` 特性）、原生顶部菜单栏（`tauri::menu`）、动态激活策略（`AppHandle::set_activation_policy`）与单实例唤起（`tauri-plugin-single-instance`）复用 Tauri v2 原生能力。
+  - `infra/macos` 对外提供 `NativeWindowBridge` trait 抽象与非 macOS / 无图形界面测试兜底实现（`NoopNativeBridge`），保证 `cargo test --all-features` 在 headless 环境下零 panic 运行。
+- 后果：原生 AppKit/Carbon 调用直接对齐 Apple 官方头文件，无宏样板与特征开关膨胀风险；`domain` 层保持纯内存状态机与热键解析，严格遵守 `C1.2` 单向分层。
+- 否决替代：使用 `objc2` / `objc2-app-kit` 纯 Rust 宏定义 `NSPanel` 子类（需维护大量 feature flag 与生命周期样板，且 Carbon 热键仍需手写 C FFI）；使用 `tauri-plugin-global-shortcut`（无法实现 `D-0004` 所需的 Carbon 热键自检与精确热重注册控制）。
