@@ -3,10 +3,23 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
-import { EditorState } from '@codemirror/state';
+import { EditorState, Prec, type StateCommand } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
+import { type ContextMenuEntry, QnContextMenu } from '@/components';
 import { useSettingsStore } from '@/features/settings';
+import { type ActionContext, actionRegistry } from '@/lib/actions';
+import { EDITOR_FORMAT_ACTION_IDS, executeEditorFormatAction } from './extensions/markdownFormat';
+import {
+  createMarkdownIndentCommand,
+  createMarkdownOutdentCommand,
+  type IndentConfig,
+} from './extensions/markdownIndent';
+import {
+  todoBackspaceCommand,
+  todoCheckboxPlugin,
+  todoEnterCommand,
+} from './extensions/markdownTodo';
 import { type EditorTab, useEditorTabsStore } from './store';
 
 const editorTabsStore = useEditorTabsStore();
@@ -16,9 +29,49 @@ const containerRef = ref<HTMLDivElement | null>(null);
 const stateMap = new Map<string, EditorState>();
 const syncedSeqMap = new Map<string, number>();
 
+const contextMenuOpen = ref(false);
+const contextMenuX = ref(0);
+const contextMenuY = ref(0);
+const contextMenuItems = ref<ContextMenuEntry[]>([]);
+
 let view: EditorView | null = null;
 let currentTabKey: string | null = null;
 let suppressUpdate = false;
+const actionDisposers: Array<() => void> = [];
+
+function getIndentConfig(): IndentConfig {
+  const relPath = editorTabsStore.activeTab?.relPath ?? '';
+  return {
+    isMarkdown: relPath ? relPath.toLowerCase().endsWith('.md') : true,
+    tabSizeProse: settingsStore.snapshot?.settings?.editor.tabSizeProse ?? 2,
+    tabSizeCode: settingsStore.snapshot?.settings?.editor.tabSizeCode ?? 4,
+  };
+}
+
+function buildEditorActionContext(): ActionContext {
+  const activeTab = editorTabsStore.activeTab;
+  const relPath = activeTab?.relPath ?? '';
+  return {
+    activeScope: 'editor',
+    activeScopes: ['editor', 'main-window', 'global'],
+    hasActiveDoc: Boolean(activeTab),
+    hasSelection: view ? !view.state.selection.main.empty : false,
+    isMarkdown: relPath ? relPath.toLowerCase().endsWith('.md') : true,
+    isInbox: relPath === 'inbox.md',
+  };
+}
+
+function guardComposing(cmd: StateCommand) {
+  return (targetView: EditorView): boolean => {
+    if (targetView.composing) {
+      return false;
+    }
+    return cmd(targetView);
+  };
+}
+
+const indentCommand = createMarkdownIndentCommand(getIndentConfig);
+const outdentCommand = createMarkdownOutdentCommand(getIndentConfig);
 
 const editorMaxWidth = computed<string>(() => {
   const maxWidth = settingsStore.snapshot?.settings?.editor.maxWidth ?? 900;
@@ -86,6 +139,13 @@ const qnEditorTheme = EditorView.theme({
     color: 'var(--qn-text-muted)',
     border: 'none',
   },
+  '.qn-cm-todo-checkbox': {
+    marginRight: 'var(--qn-space-2)',
+    verticalAlign: 'middle',
+    accentColor: 'var(--qn-accent)',
+    borderColor: 'var(--qn-border-strong)',
+    cursor: 'pointer',
+  },
 });
 
 function createEditorState(tab: EditorTab): EditorState {
@@ -99,6 +159,15 @@ function createEditorState(tab: EditorTab): EditorState {
       syntaxHighlighting(qnHighlightStyle),
       qnEditorTheme,
       EditorView.lineWrapping,
+      todoCheckboxPlugin,
+      Prec.high(
+        keymap.of([
+          { key: 'Tab', run: guardComposing(indentCommand) },
+          { key: 'Shift-Tab', run: guardComposing(outdentCommand) },
+          { key: 'Enter', run: guardComposing(todoEnterCommand) },
+          { key: 'Backspace', run: guardComposing(todoBackspaceCommand) },
+        ]),
+      ),
       keymap.of([
         ...defaultKeymap,
         ...historyKeymap,
@@ -217,6 +286,45 @@ function handleWindowBlur(): void {
   void editorTabsStore.flushSave();
 }
 
+function handleContextMenu(event: MouseEvent): void {
+  const ctx = buildEditorActionContext();
+  const formatEntries: ContextMenuEntry[] = actionRegistry
+    .getMenuItems('format', ctx)
+    .map((item) => ({
+      type: 'item',
+      id: item.id,
+      title: item.title,
+      shortcutLabel: item.shortcutLabel,
+      disabled: item.disabled,
+    }));
+  const contextEntries: ContextMenuEntry[] = actionRegistry
+    .getMenuItems('editor-context', ctx)
+    .map((item) => ({
+      type: 'item',
+      id: item.id,
+      title: item.title,
+      shortcutLabel: item.shortcutLabel,
+      disabled: item.disabled,
+    }));
+
+  const entries: ContextMenuEntry[] = [...formatEntries];
+  if (formatEntries.length > 0 && contextEntries.length > 0) {
+    entries.push({ type: 'separator', id: 'sep-editor-context' });
+  }
+  entries.push(...contextEntries);
+
+  contextMenuItems.value = entries;
+  contextMenuX.value = event.clientX;
+  contextMenuY.value = event.clientY;
+  contextMenuOpen.value = entries.length > 0;
+}
+
+function handleContextMenuSelect(id: string): void {
+  contextMenuOpen.value = false;
+  void actionRegistry.executeById(id, buildEditorActionContext());
+  view?.focus();
+}
+
 watch(
   () => editorTabsStore.activeTab,
   (nextTab) => {
@@ -298,12 +406,27 @@ onMounted(() => {
       view.scrollDOM.scrollTop = initialTab.scrollTop;
     }
   }
+  for (const actionId of EDITOR_FORMAT_ACTION_IDS) {
+    actionDisposers.push(
+      actionRegistry.bindHandler(actionId, () => {
+        if (!view) {
+          return;
+        }
+        executeEditorFormatAction(view, actionId, getIndentConfig());
+        view.focus();
+      }),
+    );
+  }
   if (typeof window !== 'undefined') {
     window.addEventListener('blur', handleWindowBlur);
   }
 });
 
 onUnmounted(() => {
+  while (actionDisposers.length > 0) {
+    const dispose = actionDisposers.pop();
+    dispose?.();
+  }
   if (typeof window !== 'undefined') {
     window.removeEventListener('blur', handleWindowBlur);
   }
@@ -322,6 +445,15 @@ onUnmounted(() => {
     class="qn-markdown-editor"
     data-testid="markdown-editor"
     :style="{ '--qn-editor-max-width': editorMaxWidth }"
+    @contextmenu.prevent="handleContextMenu"
+  />
+  <QnContextMenu
+    :open="contextMenuOpen"
+    :x="contextMenuX"
+    :y="contextMenuY"
+    :items="contextMenuItems"
+    @select="handleContextMenuSelect"
+    @close="contextMenuOpen = false"
   />
 </template>
 

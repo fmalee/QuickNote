@@ -18,3 +18,33 @@ export {
   type OpenNoteOptions,
   useEditorTabsStore,
 } from './store';
+export {
+  createMarkdownIndentCommand,
+  createMarkdownOutdentCommand,
+  DEFAULT_INDENT_CONFIG,
+  detectNonMarkdownIndentUnit,
+  type IndentConfig,
+  isLineInFencedCodeBlock,
+} from './extensions/markdownIndent';
+export {
+  TODO_LINE_RE,
+  todoBackspaceCommand,
+  todoCheckboxPlugin,
+  TodoCheckboxWidget,
+  todoEnterCommand,
+  toggleTodoCommand,
+} from './extensions/markdownTodo';
+export {
+  EDITOR_FORMAT_ACTION_IDS,
+  executeEditorFormatAction,
+  formatBlockquote,
+  formatBold,
+  formatBulletList,
+  formatCodeBlock,
+  formatHeading,
+  formatImage,
+  formatItalic,
+  formatLink,
+  formatTable,
+  type HeadingLevel,
+} from './extensions/markdownFormat';
