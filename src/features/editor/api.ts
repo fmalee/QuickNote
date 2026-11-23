@@ -1,7 +1,9 @@
 import type {
   ExternalChangeEvent,
+  InboxExtractArgs,
   NoteDoc,
   NoteSummary,
+  NoteUpdateMetaArgs,
   ReadNoteArgs,
   UiState,
   UiStatePatchKey,
@@ -9,8 +11,10 @@ import type {
   WriteResult,
 } from '@/bindings/types';
 import {
+  inboxExtractToNote,
   isAppError,
   noteRead,
+  noteUpdateMeta,
   noteWrite,
   notesList,
   uiStateGet,
@@ -29,6 +33,24 @@ export function readNote(args: ReadNoteArgs): Promise<NoteDoc> {
 
 export function writeNote(args: WriteNoteArgs): Promise<WriteResult> {
   return noteWrite(args);
+}
+
+export function updateNoteMeta(args: NoteUpdateMetaArgs): Promise<NoteDoc> {
+  return noteUpdateMeta(args);
+}
+
+export function extractInboxToNote(args: InboxExtractArgs): Promise<NoteDoc> {
+  return inboxExtractToNote(args);
+}
+
+export function listTemplates(): Promise<NoteSummary[]> {
+  return notesList({
+    tab: 'templates',
+    dirRelPath: null,
+    tags: [],
+    workspaceKey: null,
+    filterText: null,
+  });
 }
 
 export function listAllNotes(): Promise<NoteSummary[]> {

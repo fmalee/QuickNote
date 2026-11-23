@@ -16,6 +16,7 @@ import {
   fetchNavTreeAndTags,
   fetchNotesList,
   fetchUiState,
+  listNoteTemplates,
   patchUiState,
   renameNote,
   subscribeIndexStatus,
@@ -71,6 +72,9 @@ export const useNotesStore = defineStore('notes', () => {
   const loadingList = ref<boolean>(false);
   const mutating = ref<boolean>(false);
   const errorMessage = ref<string | null>(null);
+  const newNoteModalOpen = ref<boolean>(false);
+  const newNoteDefaultDir = ref<string>('');
+  const templates = ref<NoteSummary[]>([]);
 
   let requestSeq = 0;
   let filterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -187,17 +191,61 @@ export const useNotesStore = defineStore('notes', () => {
     await loadNotesList();
   }
 
-  async function createNewNote(title = '未命名笔记'): Promise<NoteDoc | null> {
+  async function loadTemplates(): Promise<NoteSummary[]> {
+    try {
+      const items = await listNoteTemplates();
+      templates.value = items;
+      return items;
+    } catch {
+      return templates.value;
+    }
+  }
+
+  function resolveContextDirRelPath(): string {
+    if (activeTab.value === 'projects' && selectedDir.value) {
+      return selectedDir.value;
+    }
+    const activeRelPath = editorTabsStore.activeDoc?.relPath;
+    if (activeRelPath && !activeRelPath.startsWith('_templates/')) {
+      const lastSlash = activeRelPath.lastIndexOf('/');
+      if (lastSlash > 0) {
+        return activeRelPath.slice(0, lastSlash);
+      }
+    }
+    return '';
+  }
+
+  async function openNewNoteModal(defaultDirRelPath?: string | null): Promise<void> {
+    newNoteDefaultDir.value =
+      defaultDirRelPath !== undefined ? (defaultDirRelPath ?? '') : resolveContextDirRelPath();
+    newNoteModalOpen.value = true;
+    await loadTemplates();
+  }
+
+  function closeNewNoteModal(): void {
+    newNoteModalOpen.value = false;
+  }
+
+  async function createNoteAndOpen(args: {
+    title?: string;
+    dirRelPath?: string;
+    templateName?: string | null;
+    body?: string | null;
+  }): Promise<NoteDoc | null> {
     mutating.value = true;
     errorMessage.value = null;
     try {
       const dirRelPath =
-        activeTab.value === 'projects' && selectedDir.value ? selectedDir.value : '';
+        args.dirRelPath !== undefined
+          ? args.dirRelPath.trim()
+          : activeTab.value === 'projects' && selectedDir.value
+            ? selectedDir.value
+            : '';
       const doc = await createNote({
-        title: title.trim() || '未命名笔记',
+        title: args.title?.trim() || '未命名笔记',
         dirRelPath,
-        templateName: null,
-        body: null,
+        templateName: args.templateName ?? null,
+        body: args.body ?? null,
       });
       await editorTabsStore.openNote(doc.relPath ?? doc.absPath, {
         preview: false,
@@ -211,6 +259,10 @@ export const useNotesStore = defineStore('notes', () => {
     } finally {
       mutating.value = false;
     }
+  }
+
+  async function createNewNote(title = '未命名笔记'): Promise<NoteDoc | null> {
+    return createNoteAndOpen({ title });
   }
 
   async function renameNoteItem(oldRelPath: string, newName: string): Promise<NoteDoc | null> {
@@ -325,8 +377,12 @@ export const useNotesStore = defineStore('notes', () => {
     loadingList,
     mutating,
     errorMessage,
+    newNoteModalOpen,
+    newNoteDefaultDir,
+    templates,
     loadTreeAndTags,
     loadNotesList,
+    loadTemplates,
     refreshAll,
     setFilterText,
     setActiveTab,
@@ -334,6 +390,9 @@ export const useNotesStore = defineStore('notes', () => {
     toggleTag,
     clearTags,
     selectWorkspace,
+    openNewNoteModal,
+    closeNewNoteModal,
+    createNoteAndOpen,
     createNewNote,
     renameNoteItem,
     deleteNoteItem,

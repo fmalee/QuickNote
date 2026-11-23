@@ -2,13 +2,15 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { QnBadge, QnBanner, QnButton, QnModalShell } from '@/components';
 import {
+  DocHeaderBar,
   EditorConflictBanner,
   EditorTabBar,
   InboxBloatBanner,
+  InboxExtractModal,
   MarkdownEditor,
   useEditorTabsStore,
 } from '@/features/editor';
-import { NotesSidebar, useNotesStore } from '@/features/notes';
+import { NewNoteTemplateModal, NotesSidebar, useNotesStore } from '@/features/notes';
 import { OnboardingView, useOnboardingStore } from '@/features/onboarding';
 import { OutlinePanel, usePanelsStore } from '@/features/panels';
 import { SettingsErrorBanner, VisualBaselinePreview, useSettingsStore } from '@/features/settings';
@@ -73,6 +75,14 @@ function buildActionContext(): ActionContext {
 function bindMainWindowActions(): void {
   actionDisposers.push(
     actionRegistry.bindHandler('window.save', () => editorTabsStore.flushSave()),
+    actionRegistry.bindHandler('window.newNote', () => notesStore.openNewNoteModal()),
+    actionRegistry.bindHandler(
+      'editor.moveSelectionToNewNote',
+      () => editorTabsStore.openInboxExtractModal(),
+      {
+        when: (ctx) => Boolean(ctx.isInbox) && Boolean(editorTabsStore.activeTab?.hasSelection),
+      },
+    ),
     actionRegistry.bindHandler('window.closeTab', () => {
       const current = editorTabsStore.activeTab;
       if (current) {
@@ -277,30 +287,7 @@ onUnmounted(() => {
                 class="qn-main-shell__editor-paper"
                 data-testid="editor-doc-stage"
               >
-                <header class="qn-main-shell__doc-header">
-                  <h1 class="qn-main-shell__doc-title" data-testid="editor-doc-title">
-                    {{ editorTabsStore.activeDoc.meta.title || editorTabsStore.activeDoc.relPath }}
-                  </h1>
-                  <div class="qn-main-shell__doc-meta">
-                    <QnBadge v-if="editorTabsStore.activeDoc.meta.docType" tone="neutral">
-                      {{ editorTabsStore.activeDoc.meta.docType }}
-                    </QnBadge>
-                    <QnBadge
-                      v-for="tag in editorTabsStore.activeDoc.meta.tags"
-                      :key="tag"
-                      tone="accent"
-                    >
-                      #{{ tag }}
-                    </QnBadge>
-                    <QnBadge
-                      v-if="editorTabsStore.activeDoc.meta.metaError"
-                      tone="warning"
-                      data-testid="editor-doc-meta-error"
-                    >
-                      Frontmatter 异常：{{ editorTabsStore.activeDoc.meta.metaError }}
-                    </QnBadge>
-                  </div>
-                </header>
+                <DocHeaderBar />
 
                 <div class="qn-main-shell__body-stage" data-testid="editor-body-stage">
                   <MarkdownEditor />
@@ -344,6 +331,8 @@ onUnmounted(() => {
         <QnButton variant="primary" size="sm" @click="baselinePreviewOpen = false">关闭</QnButton>
       </template>
     </QnModalShell>
+    <NewNoteTemplateModal />
+    <InboxExtractModal />
   </div>
 </template>
 

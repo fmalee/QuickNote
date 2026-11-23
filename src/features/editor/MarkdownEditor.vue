@@ -115,13 +115,19 @@ function createEditorState(tab: EditorTab): EditorState {
           return;
         }
         const key = currentTabKey;
-        const head = update.state.selection.main.head;
+        const main = update.state.selection.main;
+        const head = main.head;
         const lineObj = update.state.doc.lineAt(head);
         const line = lineObj.number;
         const col = head - lineObj.from + 1;
+        const fromLine = update.state.doc.lineAt(main.from).number;
+        const effectiveTo = main.empty ? main.to : Math.max(main.from, main.to - 1);
+        const toLine = update.state.doc.lineAt(effectiveTo).number;
+        const hasSelection = !main.empty;
 
         if (update.docChanged) {
           editorTabsStore.updateTabBody(key, update.state.doc.toString(), head, line, col);
+          editorTabsStore.updateTabSelection(key, fromLine, toLine, hasSelection);
           editorTabsStore.setActiveTopLine(line);
         } else if (update.selectionSet) {
           editorTabsStore.updateTabCursorAndScroll(key, {
@@ -129,6 +135,7 @@ function createEditorState(tab: EditorTab): EditorState {
             cursorLine: line,
             cursorCol: col,
           });
+          editorTabsStore.updateTabSelection(key, fromLine, toLine, hasSelection);
           editorTabsStore.setActiveTopLine(line);
         }
       }),

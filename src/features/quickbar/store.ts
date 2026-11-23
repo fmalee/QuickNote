@@ -6,6 +6,7 @@ import type {
   HideReason,
   LibraryInfo,
   NavTreeSnapshot,
+  NoteDoc,
   NoteSummary,
   QuickBarMode,
   ResolvedTarget,
@@ -16,15 +17,23 @@ import type {
   UiState,
   WorkspaceSummary,
 } from '@/bindings/types';
+import {
+  deriveTitleFromContent,
+  extractTemplateNameFromSummary,
+  flattenDirRelPaths,
+  inferDefaultTemplateName,
+} from '@/features/notes';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import {
   appendQuickBarNote,
+  createQuickBarNote,
   fetchQuickBarLibraryInfo,
   fetchQuickBarNavTree,
   fetchQuickBarNotesList,
   fetchQuickBarSettings,
   fetchQuickBarUiState,
   hideQuickBarWindow,
+  listQuickBarTemplates,
   patchQuickBarUiState,
   resolveQuickBarTarget,
   searchQuickBarNotes,
@@ -195,6 +204,12 @@ export const useQuickBarStore = defineStore('quickbar', () => {
   const selectedRelatedIndex = ref<number>(-1);
 
   const targetPickerOpen = ref<boolean>(false);
+  const saveAsModalOpen = ref<boolean>(false);
+  const saveAsTitle = ref<string>('');
+  const saveAsDir = ref<string>('');
+  const saveAsTemplate = ref<string>('note');
+  const availableTemplates = ref<string[]>(['note', 'doc', 'command-book']);
+  const saveAsDirs = ref<string[]>([]);
   const pickerLoading = ref<boolean>(false);
   const pickerSearchQuery = ref<string>('');
   const pickerSelectedTag = ref<string | null>(null);
@@ -690,7 +705,125 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     }
   }
 
+  function formatDraftBodyForNewNote(text: string, currentMode: CaptureMode): string {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return '';
+    }
+    if (currentMode === 'prose') {
+      return trimmed;
+    }
+    const prefix = currentMode === 'todo' ? '- [ ] ' : '- ';
+    return trimmed
+      .split(/\r?\n/)
+      .map((line) => {
+        const lineTrimmed = line.trim();
+        if (!lineTrimmed) {
+          return '';
+        }
+        if (currentMode === 'todo' && /^- \[[ xX]\]\s/.test(lineTrimmed)) {
+          return lineTrimmed;
+        }
+        if (currentMode === 'list' && /^[-*]\s/.test(lineTrimmed)) {
+          return lineTrimmed;
+        }
+        return `${prefix}${lineTrimmed}`;
+      })
+      .join('\n');
+  }
+
+  function resolveSaveAsDefaultDir(): string {
+    const relPath = effectiveTargetRelPath.value;
+    if (!relPath || relPath.startsWith('_templates/')) {
+      return '';
+    }
+    const lastSlash = relPath.lastIndexOf('/');
+    return lastSlash > 0 ? relPath.slice(0, lastSlash) : '';
+  }
+
+  function openSaveAsNoteDialog(): void {
+    if (!canSubmit.value) {
+      return;
+    }
+    const defaultDir = resolveSaveAsDefaultDir();
+    saveAsTitle.value = deriveTitleFromContent(draft.value);
+    saveAsDir.value = defaultDir;
+    saveAsTemplate.value = inferDefaultTemplateName(defaultDir);
+    saveAsModalOpen.value = true;
+
+    void Promise.all([
+      Promise.resolve(listQuickBarTemplates()).catch(() => [] as NoteSummary[]),
+      Promise.resolve(fetchQuickBarNavTree()).catch(() => null),
+    ]).then(([templateItems, tree]) => {
+      const merged = new Set<string>(['note', 'doc', 'command-book']);
+      for (const item of templateItems) {
+        merged.add(extractTemplateNameFromSummary(item));
+      }
+      availableTemplates.value = Array.from(merged);
+      if (tree) {
+        saveAsDirs.value = flattenDirRelPaths(tree.dirs);
+      }
+    });
+  }
+
+  function closeSaveAsNoteDialog(): void {
+    saveAsModalOpen.value = false;
+    focusTick.value += 1;
+  }
+
+  async function confirmSaveAsNote(): Promise<NoteDoc | null> {
+    if (!canSubmit.value) {
+      return null;
+    }
+    submitting.value = true;
+    errorMessage.value = null;
+    try {
+      const body = formatDraftBodyForNewNote(draft.value, captureMode.value);
+      const doc = await createQuickBarNote({
+        title: saveAsTitle.value.trim() || '未命名笔记',
+        dirRelPath: saveAsDir.value.trim(),
+        templateName: saveAsTemplate.value || null,
+        body,
+      });
+
+      clearRelatedTimer();
+      relatedRequestId += 1;
+      suppressDraftWatch = true;
+      draft.value = '';
+      suppressDraftWatch = false;
+      explicitTarget.value = null;
+      explicitTargetSource.value = null;
+      selectedRelatedIndex.value = -1;
+      relatedNotes.value = [];
+      modeTouchedInSession.value = false;
+      targetPickerOpen.value = false;
+      saveAsModalOpen.value = false;
+      removeDraftStorage();
+
+      await Promise.resolve(
+        patchQuickBarUiState('lastActiveDoc', {
+          key: doc.key,
+          relPath: doc.relPath ?? doc.absPath,
+          absPath: doc.absPath,
+        }),
+      ).catch(() => undefined);
+      await hideQuickBarWindow('esc');
+      await showMainWindowForOnboarding();
+
+      return doc;
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : '另存新笔记失败，请重试。';
+      return null;
+    } finally {
+      submitting.value = false;
+    }
+  }
+
   async function handleEscape(): Promise<void> {
+    if (saveAsModalOpen.value) {
+      closeSaveAsNoteDialog();
+      return;
+    }
     if (targetPickerOpen.value) {
       closeTargetPicker();
       return;
@@ -718,6 +851,7 @@ export const useQuickBarStore = defineStore('quickbar', () => {
         } else if (state.windowId === 'quickbar' && !state.visible) {
           // 切 Space 或 Esc 隐藏时关闭弹层但完整保留草稿
           targetPickerOpen.value = false;
+          saveAsModalOpen.value = false;
         }
       });
     }
@@ -759,6 +893,12 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     relatedNotes,
     selectedRelatedIndex,
     targetPickerOpen,
+    saveAsModalOpen,
+    saveAsTitle,
+    saveAsDir,
+    saveAsTemplate,
+    availableTemplates,
+    saveAsDirs,
     pickerLoading,
     pickerSearchQuery,
     pickerSelectedTag,
@@ -793,6 +933,9 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     clearExplicitTarget,
     clearDraft,
     submitAppend,
+    openSaveAsNoteDialog,
+    closeSaveAsNoteDialog,
+    confirmSaveAsNote,
     handleEscape,
   };
 });

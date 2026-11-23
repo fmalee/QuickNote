@@ -8,7 +8,12 @@ const store = useQuickBarStore();
 const editorRef = ref<HTMLTextAreaElement | null>(null);
 
 function focusEditor(): void {
-  if (store.isUnconfigured || store.mode !== 'capture' || store.targetPickerOpen) {
+  if (
+    store.isUnconfigured ||
+    store.mode !== 'capture' ||
+    store.targetPickerOpen ||
+    store.saveAsModalOpen
+  ) {
     return;
   }
   void nextTick(() => {
@@ -25,9 +30,16 @@ onUnmounted(() => {
 });
 
 watch(
-  () => [store.focusTick, store.isUnconfigured, store.mode, store.targetPickerOpen] as const,
-  ([, unconfigured, currentMode, pickerOpen]) => {
-    if (!unconfigured && currentMode === 'capture' && !pickerOpen) {
+  () =>
+    [
+      store.focusTick,
+      store.isUnconfigured,
+      store.mode,
+      store.targetPickerOpen,
+      store.saveAsModalOpen,
+    ] as const,
+  ([, unconfigured, currentMode, pickerOpen, saveAsOpen]) => {
+    if (!unconfigured && currentMode === 'capture' && !pickerOpen && !saveAsOpen) {
       focusEditor();
     }
   },
@@ -90,6 +102,10 @@ function handleKeydown(event: KeyboardEvent): void {
 
   if (event.key === 'Enter') {
     event.preventDefault();
+    if (event.altKey) {
+      store.openSaveAsNoteDialog();
+      return;
+    }
     void store.submitAppend(event.shiftKey);
   }
 }
@@ -239,6 +255,57 @@ function handleKeydown(event: KeyboardEvent): void {
         </div>
       </div>
 
+      <form
+        v-if="store.saveAsModalOpen"
+        class="qn-quickbar__save-as"
+        data-testid="quickbar-save-as-form"
+        @submit.prevent="store.confirmSaveAsNote()"
+      >
+        <div class="qn-quickbar__save-as-fields">
+          <input
+            v-model="store.saveAsTitle"
+            type="text"
+            class="qn-quickbar__save-as-input"
+            data-testid="quickbar-save-as-title"
+            placeholder="新笔记标题"
+          />
+          <input
+            v-model="store.saveAsDir"
+            type="text"
+            list="qn-quickbar-save-as-dirs"
+            class="qn-quickbar__save-as-input"
+            data-testid="quickbar-save-as-dir"
+            placeholder="目标目录（留空为库根）"
+          />
+          <datalist id="qn-quickbar-save-as-dirs">
+            <option v-for="dir in store.saveAsDirs" :key="dir" :value="dir" />
+          </datalist>
+          <select
+            v-model="store.saveAsTemplate"
+            class="qn-quickbar__save-as-select"
+            data-testid="quickbar-save-as-template"
+          >
+            <option v-for="tpl in store.availableTemplates" :key="tpl" :value="tpl">
+              {{ tpl }}
+            </option>
+          </select>
+        </div>
+        <div class="qn-quickbar__save-as-actions">
+          <QnButton type="button" variant="ghost" size="sm" @click="store.closeSaveAsNoteDialog()">
+            取消
+          </QnButton>
+          <QnButton
+            type="submit"
+            variant="primary"
+            size="sm"
+            :loading="store.submitting"
+            data-testid="quickbar-save-as-confirm"
+          >
+            确认另存
+          </QnButton>
+        </div>
+      </form>
+
       <footer class="qn-quickbar__footer">
         <div class="qn-quickbar__capture-modes">
           <button
@@ -285,6 +352,15 @@ function handleKeydown(event: KeyboardEvent): void {
             @click="store.clearDraft()"
           >
             清空
+          </QnButton>
+          <QnButton
+            variant="secondary"
+            size="sm"
+            :disabled="!store.canSubmit"
+            data-testid="quickbar-save-as-btn"
+            @click="store.openSaveAsNoteDialog()"
+          >
+            ⌥⌘↵ 另存新笔记
           </QnButton>
           <QnButton
             variant="secondary"
@@ -535,5 +611,42 @@ function handleKeydown(event: KeyboardEvent): void {
   display: flex;
   align-items: center;
   gap: var(--qn-space-2);
+}
+
+.qn-quickbar__save-as {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--qn-space-2);
+  padding: var(--qn-space-2);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qn-radius-sm);
+  background-color: var(--qn-bg-base);
+}
+
+.qn-quickbar__save-as-fields {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: var(--qn-space-2);
+}
+
+.qn-quickbar__save-as-input,
+.qn-quickbar__save-as-select {
+  min-width: 0;
+  flex: 1;
+  padding: var(--qn-space-1) var(--qn-space-2);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qn-radius-sm);
+  background-color: var(--qn-bg-elevated);
+  color: var(--qn-text-primary);
+  font-size: var(--qn-text-xs);
+}
+
+.qn-quickbar__save-as-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--qn-space-1);
+  flex-shrink: 0;
 }
 </style>

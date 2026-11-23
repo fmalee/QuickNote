@@ -364,7 +364,7 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
         size="sm"
         :loading="notesStore.mutating"
         data-testid="notes-create-btn"
-        @click="notesStore.createNewNote()"
+        @click="notesStore.openNewNoteModal()"
       >
         + 新建
       </QnButton>

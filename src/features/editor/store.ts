@@ -5,6 +5,7 @@ import type {
   ExternalChangeEvent,
   NoteDoc,
   NoteMeta,
+  NoteMetaPatch,
   NoteSummary,
   TabItemState,
   TabsUiState,
@@ -14,6 +15,7 @@ import { useSettingsStore } from '@/features/settings';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import {
   extractEditorErrorMessage,
+  extractInboxToNote,
   fetchUiState,
   isConflictError,
   isNoteNotFoundError,
@@ -22,6 +24,7 @@ import {
   patchUiState,
   readNote,
   subscribeFsExternalChange,
+  updateNoteMeta,
   writeNote,
 } from './api';
 
@@ -56,7 +59,27 @@ export interface EditorTab extends TabItemState {
   saveStatus: EditorSaveStatus;
   cursorLine: number;
   cursorCol: number;
+  selectionFromLine: number;
+  selectionToLine: number;
+  hasSelection: boolean;
   syncSeq: number;
+}
+
+export function needsExternalFrontmatterConfirm(doc: NoteDoc): boolean {
+  return (
+    !doc.isLibrary &&
+    doc.meta.id === null &&
+    doc.meta.created === null &&
+    doc.meta.tags.length === 0 &&
+    doc.meta.project === null &&
+    doc.meta.openDir === null &&
+    doc.meta.codeWorkspace === null &&
+    doc.meta.terminalDir === null &&
+    !doc.meta.pinned &&
+    !doc.meta.archived &&
+    doc.meta.docType === 'note' &&
+    doc.meta.metaError === null
+  );
 }
 
 export interface OpenNoteOptions {
@@ -101,6 +124,9 @@ function buildTabFromDoc(doc: NoteDoc, isPreview: boolean): EditorTab {
     saveStatus: 'saved',
     cursorLine: 1,
     cursorCol: 1,
+    selectionFromLine: 1,
+    selectionToLine: 1,
+    hasSelection: false,
     syncSeq: 0,
   };
 }
@@ -116,6 +142,8 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
   const initialized = ref<boolean>(false);
   const activeTopLine = ref<number>(1);
   const scrollTarget = ref<EditorScrollTarget | null>(null);
+  const confirmedExternalMetaPaths = ref<Set<string>>(new Set());
+  const inboxExtractModalOpen = ref<boolean>(false);
 
   let persistTimer: ReturnType<typeof setTimeout> | null = null;
   let scrollSeq = 0;
@@ -916,6 +944,9 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           saveStatus: 'saved',
           cursorLine: 1,
           cursorCol: 1,
+          selectionFromLine: 1,
+          selectionToLine: 1,
+          hasSelection: false,
           syncSeq: 0,
         });
       }
@@ -1030,6 +1061,107 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
   }
 
+  function updateTabSelection(
+    key: string,
+    fromLine: number,
+    toLine: number,
+    hasSelection: boolean,
+  ): void {
+    const tab = tabs.value.find((item) => item.key === key);
+    if (!tab) {
+      return;
+    }
+    tab.selectionFromLine = Math.max(1, Math.min(fromLine, toLine));
+    tab.selectionToLine = Math.max(tab.selectionFromLine, Math.max(fromLine, toLine));
+    tab.hasSelection = hasSelection;
+  }
+
+  function hasConfirmedExternalMeta(absPath: string): boolean {
+    return confirmedExternalMetaPaths.value.has(absPath);
+  }
+
+  function markExternalMetaConfirmed(absPath: string): void {
+    confirmedExternalMetaPaths.value.add(absPath);
+  }
+
+  function openInboxExtractModal(): void {
+    inboxExtractModalOpen.value = true;
+  }
+
+  function closeInboxExtractModal(): void {
+    inboxExtractModalOpen.value = false;
+  }
+
+  async function updateActiveMeta(patch: NoteMetaPatch): Promise<NoteDoc | null> {
+    const tab = activeTab.value;
+    if (!tab || !tab.doc) {
+      return null;
+    }
+    errorMessage.value = null;
+    try {
+      const updatedDoc = await updateNoteMeta({
+        absPath: tab.absPath,
+        patch,
+      });
+      // 严格遵守 D-0006（meta + body 分离）：只更新 meta 与 mtimeMs，绝不覆写未保存的 draftBody
+      tab.doc = {
+        ...tab.doc,
+        meta: updatedDoc.meta,
+        mtimeMs: updatedDoc.mtimeMs,
+      };
+      confirmedExternalMetaPaths.value.add(tab.absPath);
+      notifyNotesRefresh();
+      return tab.doc;
+    } catch (error) {
+      errorMessage.value = extractEditorErrorMessage(error);
+      return null;
+    }
+  }
+
+  async function extractInboxSelectionToNote(args: {
+    newTitle: string;
+    targetDirRelPath: string;
+    templateName: string;
+    fromLine?: number;
+    toLine?: number;
+  }): Promise<NoteDoc | null> {
+    const inboxTab = activeTab.value;
+    const doc = inboxTab?.doc;
+    if (!inboxTab || !doc || (!doc.isInbox && doc.relPath !== 'inbox.md')) {
+      return null;
+    }
+
+    errorMessage.value = null;
+    try {
+      await flushSave(inboxTab.key);
+      const fromLine = args.fromLine ?? inboxTab.selectionFromLine;
+      const toLine = args.toLine ?? inboxTab.selectionToLine;
+      const newDoc = await extractInboxToNote({
+        fromLine,
+        toLine,
+        newTitle: args.newTitle.trim() || '未命名笔记',
+        targetDirRelPath: args.targetDirRelPath.trim(),
+        templateName: args.templateName || 'note',
+      });
+
+      const refreshedInbox = await readNote({ absPath: inboxTab.absPath });
+      applyDocToTab(inboxTab, refreshedInbox);
+      inboxTab.selectionFromLine = 1;
+      inboxTab.selectionToLine = 1;
+      inboxTab.hasSelection = false;
+
+      notifyNotesRefresh();
+      await openNote(newDoc.relPath ?? newDoc.absPath, {
+        preview: false,
+        absPath: newDoc.absPath,
+      });
+      return newDoc;
+    } catch (error) {
+      errorMessage.value = extractEditorErrorMessage(error);
+      return null;
+    }
+  }
+
   function dispose(): void {
     if (persistTimer !== null) {
       clearTimeout(persistTimer);
@@ -1060,6 +1192,8 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     activeDoc,
     activeTopLine,
     scrollTarget,
+    confirmedExternalMetaPaths,
+    inboxExtractModalOpen,
     inboxBloatThreshold,
     autoSaveDebounceMs,
     autoSaveMaxWaitMs,
@@ -1070,6 +1204,13 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     promoteTabToPinned,
     updateTabBody,
     updateTabCursorAndScroll,
+    updateTabSelection,
+    hasConfirmedExternalMeta,
+    markExternalMetaConfirmed,
+    openInboxExtractModal,
+    closeInboxExtractModal,
+    updateActiveMeta,
+    extractInboxSelectionToNote,
     setActiveTopLine,
     requestScrollToLine,
     saveTab,

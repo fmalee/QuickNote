@@ -30,6 +30,16 @@ export function fetchNotesList(args: NotesFilterArgs): Promise<NoteSummary[]> {
   return notesList(args);
 }
 
+export function listNoteTemplates(): Promise<NoteSummary[]> {
+  return notesList({
+    tab: 'templates',
+    dirRelPath: null,
+    tags: [],
+    workspaceKey: null,
+    filterText: null,
+  });
+}
+
 export function createNote(args: CreateNoteArgs): Promise<NoteDoc> {
   return noteCreate(args);
 }

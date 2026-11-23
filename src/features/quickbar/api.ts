@@ -2,6 +2,7 @@ import {
   captureResolveTarget,
   libraryGetInfo,
   noteAppend,
+  noteCreate,
   notesGetTreeAndTags,
   notesList,
   searchNotesAndFiles,
@@ -15,9 +16,11 @@ import { onWindowState, type UnlistenFn } from '@/lib/ipc/events';
 import type {
   AppendNoteArgs,
   AppendResult,
+  CreateNoteArgs,
   HideReason,
   LibraryInfo,
   NavTreeSnapshot,
+  NoteDoc,
   NoteSummary,
   NotesFilterArgs,
   ResolvedTarget,
@@ -52,6 +55,20 @@ export function resolveQuickBarTarget(args: TargetResolveInput): Promise<Resolve
 
 export function appendQuickBarNote(args: AppendNoteArgs): Promise<AppendResult> {
   return noteAppend(args);
+}
+
+export function createQuickBarNote(args: CreateNoteArgs): Promise<NoteDoc> {
+  return noteCreate(args);
+}
+
+export function listQuickBarTemplates(): Promise<NoteSummary[]> {
+  return notesList({
+    tab: 'templates',
+    dirRelPath: null,
+    tags: [],
+    workspaceKey: null,
+    filterText: null,
+  });
 }
 
 export function searchQuickBarNotes(args: SearchQueryArgs): Promise<SearchResponse> {
