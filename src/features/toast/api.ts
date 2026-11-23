@@ -1,17 +1,11 @@
-import { listenEvent, type UnlistenFn } from '@/lib/ipc/events';
+import type { AppendResult, UndoAppendResult } from '@/bindings/types';
+import { noteUndoLastAppend as ipcNoteUndoLastAppend } from '@/lib/ipc/commands';
+import { onToastAppendUndo as ipcOnToastAppendUndo, type UnlistenFn } from '@/lib/ipc/events';
 
-export interface ToastAppendUndoPayload {
-  relPath: string;
-  title: string;
-  addedLines?: number;
-  sectionHeading?: string | null;
-  bodyHash?: string;
-  mtimeMs?: number;
-  undoAvailable?: boolean;
+export function onToastAppendUndo(handler: (payload: AppendResult) => void): Promise<UnlistenFn> {
+  return ipcOnToastAppendUndo(handler);
 }
 
-export function onToastAppendUndo(
-  handler: (payload: ToastAppendUndoPayload) => void,
-): Promise<UnlistenFn> {
-  return listenEvent<ToastAppendUndoPayload>('toast:append-undo', handler);
+export function undoLastAppend(): Promise<UndoAppendResult> {
+  return ipcNoteUndoLastAppend();
 }

@@ -4,6 +4,9 @@ use specta::Types;
 use specta_typescript::Typescript;
 
 use crate::domain::app::{ActivationPolicy, AppInfo};
+use crate::domain::capture::{
+    AppendNoteArgs, AppendResult, ResolvedTarget, TargetKind, TargetResolveInput, UndoAppendResult,
+};
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::hotkey::HotkeyUpdateArgs;
 use crate::domain::note::{
@@ -101,6 +104,12 @@ pub fn collect_types() -> Types {
         .register::<SearchResultItem>()
         .register::<SearchQueryArgs>()
         .register::<SearchResponse>()
+        .register::<TargetKind>()
+        .register::<TargetResolveInput>()
+        .register::<ResolvedTarget>()
+        .register::<AppendNoteArgs>()
+        .register::<AppendResult>()
+        .register::<UndoAppendResult>()
 }
 
 /// Renders the full TypeScript bindings content deterministically.

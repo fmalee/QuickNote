@@ -2,6 +2,8 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   AppError,
   AppInfo,
+  AppendNoteArgs,
+  AppendResult,
   CreateNoteArgs,
   ErrorCode,
   HideQuickBarArgs,
@@ -19,12 +21,15 @@ import type {
   ReadNoteArgs,
   RelPathArgs,
   RenameNoteArgs,
+  ResolvedTarget,
   SearchQueryArgs,
   SearchResponse,
   SetRootArgs,
   SettingsSnapshot,
+  TargetResolveInput,
   UiState,
   UiStateArgs,
+  UndoAppendResult,
   WindowState,
   WriteNoteArgs,
   WriteResult,
@@ -159,4 +164,16 @@ export function noteDelete(args: RelPathArgs): Promise<void> {
 
 export function searchNotesAndFiles(args: SearchQueryArgs): Promise<SearchResponse> {
   return invoke<SearchResponse>('search_notes_and_files', { args });
+}
+
+export function captureResolveTarget(args: TargetResolveInput): Promise<ResolvedTarget> {
+  return invoke<ResolvedTarget>('capture_resolve_target', { args });
+}
+
+export function noteAppend(args: AppendNoteArgs): Promise<AppendResult> {
+  return invoke<AppendResult>('note_append', { args });
+}
+
+export function noteUndoLastAppend(): Promise<UndoAppendResult> {
+  return invoke<UndoAppendResult>('note_undo_last_append');
 }

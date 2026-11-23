@@ -1,4 +1,5 @@
 pub mod app;
+pub mod capture;
 pub mod index;
 pub mod library;
 pub mod notes;

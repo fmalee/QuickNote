@@ -2,19 +2,38 @@ import { createPinia, setActivePinia } from 'pinia';
 import { createSSRApp } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ToastAppendUndoPayload } from '@/features/toast';
+import type { AppendResult } from '@/bindings/types';
 
-const { mockListenEvent } = vi.hoisted(() => ({
-  mockListenEvent: vi.fn(),
+const { mockOnToastAppendUndo, mockNoteUndoLastAppend } = vi.hoisted(() => ({
+  mockOnToastAppendUndo: vi.fn(),
+  mockNoteUndoLastAppend: vi.fn(),
 }));
 
 vi.mock('@/lib/ipc/events', () => ({
-  listenEvent: mockListenEvent,
+  onToastAppendUndo: mockOnToastAppendUndo,
   onSettingsStatus: vi.fn(),
   onWindowState: vi.fn(),
+  onIndexStatus: vi.fn(),
+}));
+
+vi.mock('@/lib/ipc/commands', () => ({
+  noteUndoLastAppend: mockNoteUndoLastAppend,
 }));
 
 import { ToastView, useToastStore } from '@/features/toast';
+
+function sampleAppendResult(overrides: Partial<AppendResult> = {}): AppendResult {
+  return {
+    relPath: 'inbox.md',
+    title: '收件箱',
+    addedLines: 1,
+    sectionHeading: '## 2026-11-24',
+    bodyHash: 'abc123',
+    mtimeMs: 1_732_400_000_000,
+    undoAvailable: true,
+    ...overrides,
+  };
+}
 
 describe('toast-view (toast:append-undo)', () => {
   beforeEach(() => {
@@ -30,9 +49,9 @@ describe('toast-view (toast:append-undo)', () => {
     const pinia = createPinia();
     setActivePinia(pinia);
 
-    let capturedHandler: ((payload: ToastAppendUndoPayload) => void) | undefined;
-    mockListenEvent.mockImplementationOnce(
-      async (_event: string, handler: (payload: ToastAppendUndoPayload) => void) => {
+    let capturedHandler: ((payload: AppendResult) => void) | undefined;
+    mockOnToastAppendUndo.mockImplementationOnce(
+      async (handler: (payload: AppendResult) => void) => {
         capturedHandler = handler;
         return () => {};
       },
@@ -41,15 +60,9 @@ describe('toast-view (toast:append-undo)', () => {
     const store = useToastStore();
     await store.initialize();
 
-    expect(mockListenEvent).toHaveBeenCalledWith('toast:append-undo', expect.any(Function));
+    expect(mockOnToastAppendUndo).toHaveBeenCalledWith(expect.any(Function));
 
-    capturedHandler?.({
-      relPath: 'inbox.md',
-      title: '收件箱',
-      addedLines: 1,
-      sectionHeading: '2026-11-23',
-      undoAvailable: true,
-    });
+    capturedHandler?.(sampleAppendResult());
 
     expect(store.visible).toBe(true);
     expect(store.payload?.title).toBe('收件箱');
@@ -67,9 +80,9 @@ describe('toast-view (toast:append-undo)', () => {
     const pinia = createPinia();
     setActivePinia(pinia);
 
-    let capturedHandler: ((payload: ToastAppendUndoPayload) => void) | undefined;
-    mockListenEvent.mockImplementationOnce(
-      async (_event: string, handler: (payload: ToastAppendUndoPayload) => void) => {
+    let capturedHandler: ((payload: AppendResult) => void) | undefined;
+    mockOnToastAppendUndo.mockImplementationOnce(
+      async (handler: (payload: AppendResult) => void) => {
         capturedHandler = handler;
         return () => {};
       },
@@ -78,13 +91,7 @@ describe('toast-view (toast:append-undo)', () => {
     const store = useToastStore();
     await store.initialize();
 
-    capturedHandler?.({
-      relPath: 'inbox.md',
-      title: '收件箱',
-      addedLines: 1,
-      sectionHeading: '2026-11-23',
-      undoAvailable: true,
-    });
+    capturedHandler?.(sampleAppendResult());
 
     expect(store.visible).toBe(true);
     expect(store.remainingSeconds).toBe(5);
@@ -99,6 +106,30 @@ describe('toast-view (toast:append-undo)', () => {
 
     vi.advanceTimersByTime(1000);
     expect(store.visible).toBe(false);
+
+    store.dispose();
+  });
+
+  it('invokes note_undo_last_append IPC when triggerUndo is called', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+
+    mockOnToastAppendUndo.mockResolvedValueOnce(() => {});
+    mockNoteUndoLastAppend.mockResolvedValueOnce({
+      relPath: 'inbox.md',
+      restoredBodyHash: 'restored-hash',
+      mtimeMs: 1_732_400_005_000,
+    });
+
+    const store = useToastStore();
+    await store.initialize();
+    store.showPayload(sampleAppendResult());
+
+    await store.triggerUndo();
+
+    expect(store.undoTriggered).toBe(true);
+    expect(store.visible).toBe(false);
+    expect(mockNoteUndoLastAppend).toHaveBeenCalledTimes(1);
 
     store.dispose();
   });

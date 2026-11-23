@@ -27,7 +27,7 @@ const targetTitle = computed<string>(() => {
         </div>
         <QnBadge tone="neutral" size="sm">{{ store.remainingSeconds }}s</QnBadge>
         <QnButton
-          v-if="store.payload.undoAvailable !== false"
+          v-if="store.payload.undoAvailable"
           variant="secondary"
           size="sm"
           @click="store.triggerUndo()"

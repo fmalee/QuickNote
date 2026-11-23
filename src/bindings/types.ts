@@ -18,6 +18,25 @@ export type AppInfo = {
 	activationPolicy: ActivationPolicy,
 };
 
+/**  Arguments for `note_append` (`C8.2`). */
+export type AppendNoteArgs = {
+	targetRelPath: string,
+	content: string,
+	mode: CaptureMode,
+	workspaceKey: string | null,
+};
+
+/**  Result returned by `note_append` and emitted on `toast:append-undo` (`C8.2`, `C8.3`). */
+export type AppendResult = {
+	relPath: string,
+	title: string,
+	addedLines: number,
+	sectionHeading: string | null,
+	bodyHash: string,
+	mtimeMs: number,
+	undoAvailable: boolean,
+};
+
 /**  Capture formatting mode (`C3.4`, `C6.3`). */
 export type CaptureMode = "list" | "todo" | "prose";
 
@@ -307,6 +326,20 @@ export type RenameNoteArgs = {
 	newRelPath: string,
 };
 
+/**  Resolved Quick Bar capture target and display metadata (`C8.1`). */
+export type ResolvedTarget = {
+	scenario: string,
+	kind: TargetKind,
+	targetRelPath: string | null,
+	targetTitle: string,
+	sectionHint: string | null,
+	workspaceKey: string | null,
+	workspaceName: string | null,
+	isCrossWorkspaceFallback: boolean,
+	recommendedMode: CaptureMode,
+	chipLabel: string,
+};
+
 /**  Search result kind (`C3.4`). */
 export type SearchItemKind = "note" | "file" | "dir" | "action";
 
@@ -400,6 +433,17 @@ export type TagNode = {
 	children: TagNode[],
 };
 
+/**  Resolved capture target kind (`C8.1`). */
+export type TargetKind = "unconfigured" | "note" | "inbox";
+
+/**  Input parameters for resolving Quick Bar capture target (`C8.1`). */
+export type TargetResolveInput = {
+	mainVisible: boolean,
+	activeDocKey: string | null,
+	selectedWorkspaceKey: string | null,
+	isInboxView: boolean,
+};
+
 /**  Embedded terminal panel configuration (`C6.2`). */
 export type TerminalPanelSettings = {
 	visibleByDefault: boolean,
@@ -429,6 +473,13 @@ export type UiStateArgs = {
 
 /**  Whitelisted patch keys accepted by `ui_state_set` (`C4.2`, `C6.3`). */
 export type UiStatePatchKey = "windows" | "tabs" | "panelGroup" | "filters" | "selectedWorkspace" | "hotkey" | "lastActiveDoc" | "workspaceModes";
+
+/**  Result returned by `note_undo_last_append` (`C8.3`). */
+export type UndoAppendResult = {
+	relPath: string,
+	restoredBodyHash: string,
+	mtimeMs: number,
+};
 
 /**  Main window presentation mode (`C3.4`, `C6.2`). */
 export type WindowMode = "standard" | "fullscreen" | "auxiliary";

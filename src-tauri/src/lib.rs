@@ -4,6 +4,7 @@ use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, Submen
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
+use crate::application::capture::CaptureManager;
 use crate::application::hotkey::HotkeyManager;
 use crate::application::persistence::PersistenceManager;
 use crate::application::window::WindowManager;
@@ -340,6 +341,9 @@ pub fn run() -> Result<(), tauri::Error> {
             let hm = Arc::new(HotkeyManager::new(Arc::clone(&bridge), Arc::clone(&pm)));
             app.manage(Arc::clone(&hm));
 
+            let cm = Arc::new(CaptureManager::new());
+            app.manage(Arc::clone(&cm));
+
             create_aux_windows(app.handle())?;
             wm.configure_native_panels(app.handle())
                 .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
@@ -425,6 +429,9 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::notes::note_rename,
             commands::notes::note_delete,
             commands::search::search_notes_and_files,
+            commands::capture::capture_resolve_target,
+            commands::capture::note_append,
+            commands::capture::note_undo_last_append,
         ])
         .run(tauri::generate_context!())
 }

@@ -5,6 +5,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
 use crate::domain::app::ActivationPolicy;
+use crate::domain::capture::AppendResult;
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::settings::WindowMode;
 use crate::domain::window::{HideReason, QuickBarMode, WindowPolicyState, WindowState};
@@ -241,6 +242,24 @@ impl WindowManager {
 
     /// Triggers the non-activating bottom Toast panel for 5 seconds and emits `toast:append-undo` (`M0-03`).
     pub fn show_debug_toast(&self, app: &AppHandle) -> Result<(), AppError> {
+        let debug_payload = AppendResult {
+            rel_path: "inbox.md".to_string(),
+            title: "收件箱".to_string(),
+            added_lines: 1,
+            section_heading: Some("2026-11-23".to_string()),
+            body_hash: "debug-toast".to_string(),
+            mtime_ms: 0,
+            undo_available: true,
+        };
+        self.show_append_toast(app, &debug_payload)
+    }
+
+    /// Shows the 5-second non-activating Toast panel and emits `toast:append-undo` with `AppendResult` (`C8.3`).
+    pub fn show_append_toast(
+        &self,
+        app: &AppHandle,
+        payload: &AppendResult,
+    ) -> Result<(), AppError> {
         let policy = self.current_activation_policy()?;
         let ptr = window_ns_ptr(app, "toast")?;
         let diag = self.bridge.show_toast_panel(ptr)?;
@@ -252,16 +271,7 @@ impl WindowManager {
             None,
         );
 
-        let debug_payload = serde_json::json!({
-            "relPath": "inbox.md",
-            "title": "收件箱",
-            "addedLines": 1,
-            "sectionHeading": "2026-11-23",
-            "bodyHash": "debug-toast",
-            "mtimeMs": 0,
-            "undoAvailable": true,
-        });
-        let _ = app.emit("toast:append-undo", debug_payload);
+        let _ = app.emit("toast:append-undo", payload);
 
         let gen = self.toast_generation.fetch_add(1, Ordering::SeqCst) + 1;
         let app_handle = app.clone();

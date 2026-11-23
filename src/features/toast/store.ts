@@ -1,13 +1,14 @@
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
+import type { AppendResult } from '@/bindings/types';
 import type { UnlistenFn } from '@/lib/ipc/events';
-import { onToastAppendUndo, type ToastAppendUndoPayload } from './api';
+import { onToastAppendUndo, undoLastAppend } from './api';
 
 export const TOAST_DURATION_SECONDS = 5;
 
 export const useToastStore = defineStore('toast', () => {
   const visible = ref<boolean>(false);
-  const payload = ref<ToastAppendUndoPayload | null>(null);
+  const payload = ref<AppendResult | null>(null);
   const remainingSeconds = ref<number>(TOAST_DURATION_SECONDS);
   const undoTriggered = ref<boolean>(false);
 
@@ -26,7 +27,7 @@ export const useToastStore = defineStore('toast', () => {
     visible.value = false;
   }
 
-  function showPayload(nextPayload: ToastAppendUndoPayload): void {
+  function showPayload(nextPayload: AppendResult): void {
     clearCountdown();
     payload.value = nextPayload;
     undoTriggered.value = false;
@@ -42,9 +43,17 @@ export const useToastStore = defineStore('toast', () => {
     }, 1000);
   }
 
-  function triggerUndo(): void {
+  async function triggerUndo(): Promise<void> {
+    if (undoTriggered.value) {
+      return;
+    }
     undoTriggered.value = true;
     dismiss();
+    try {
+      await undoLastAppend();
+    } catch {
+      // Undo errors (e.g., UndoUnavailable) are non-fatal for the 5s Toast overlay.
+    }
   }
 
   async function initialize(): Promise<void> {
