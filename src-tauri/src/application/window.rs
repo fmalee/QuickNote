@@ -246,12 +246,25 @@ impl WindowManager {
         let app_handle = app.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(5));
-            let wm = app_handle.state::<Arc<WindowManager>>();
-            if wm.toast_generation.load(Ordering::SeqCst) == gen {
-                if let Ok(toast_ptr) = window_ns_ptr(&app_handle, "toast") {
-                    let _ = wm.bridge.hide_toast_panel(toast_ptr);
+            let app_for_main = app_handle.clone();
+            let _ = app_handle.run_on_main_thread(move || {
+                let wm = app_for_main.state::<Arc<WindowManager>>();
+                if wm.toast_generation.load(Ordering::SeqCst) == gen {
+                    if let Ok(toast_ptr) = window_ns_ptr(&app_for_main, "toast") {
+                        if let Ok(diag) = wm.bridge.hide_toast_panel(toast_ptr) {
+                            if let Ok(policy) = wm.current_activation_policy() {
+                                log_native_event(
+                                    "toast_hide",
+                                    policy,
+                                    diag.collection_behavior,
+                                    diag.is_key_window,
+                                    None,
+                                );
+                            }
+                        }
+                    }
                 }
-            }
+            });
         });
 
         Ok(())

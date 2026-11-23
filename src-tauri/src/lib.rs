@@ -256,7 +256,7 @@ fn create_aux_windows(app: &AppHandle) -> Result<(), tauri::Error> {
             WebviewUrl::App("index.html?window=toast".into()),
         )
         .title("QuickNote Toast")
-        .inner_size(420.0, 56.0)
+        .inner_size(380.0, 44.0)
         .decorations(false)
         .resizable(false)
         .visible(false)
