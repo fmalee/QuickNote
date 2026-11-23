@@ -238,6 +238,9 @@ pub fn notes_get_tree_and_tags(pm: &PersistenceManager) -> Result<NavTreeSnapsho
     let mut all_tag_prefixes: HashSet<String> = HashSet::new();
     let mut tag_notes: HashMap<String, HashSet<String>> = HashMap::new();
     for row in &rows {
+        if row.rel_path.starts_with("_templates/") {
+            continue;
+        }
         for tag in &row.tags {
             let parts: Vec<&str> = tag.split('/').collect();
             for depth in 1..=parts.len() {

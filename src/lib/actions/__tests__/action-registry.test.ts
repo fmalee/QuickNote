@@ -345,6 +345,7 @@ describe('ActionRegistry 作用域优先级、显式吞键与冲突矩阵', () =
 
     const ctx: ActionContext = {
       activeScope: 'editor',
+      hasActiveDoc: true,
       isInbox: true,
       hasSelection: false,
     };
@@ -375,5 +376,35 @@ describe('ActionRegistry 作用域优先级、显式吞键与冲突矩阵', () =
       hasSelection: true,
     });
     expect(contextEnabled[0]?.disabled).toBe(false);
+  });
+
+  it('7. 无激活文档时 editor.* 菜单项禁用且快捷键放行不拦截', async () => {
+    const registry = createActionRegistry({ storage: null });
+    registerDefaultActionCatalog(registry);
+
+    const boldRun = vi.fn();
+    registry.bindHandler('editor.bold', boldRun);
+
+    const noDocCtx: ActionContext = {
+      activeScope: 'editor',
+      activeScopes: ['editor', 'main-window', 'global'],
+      hasActiveDoc: false,
+      isInbox: true,
+      hasSelection: true,
+    };
+
+    const formatItems = registry.getMenuItems('format', noDocCtx);
+    expect(formatItems.length).toBeGreaterThan(0);
+    expect(formatItems.every((item) => item.disabled)).toBe(true);
+
+    const contextItems = registry.getMenuItems('editor-context', noDocCtx);
+    expect(contextItems[0]?.disabled).toBe(true);
+    expect(await registry.executeById('editor.moveSelectionToNewNote', noDocCtx)).toBe(false);
+
+    const cmdB = createFakeKeyboardEvent({ key: 'b', code: 'KeyB', metaKey: true });
+    const dispatchRes = registry.dispatchKeyEvent(cmdB.event, noDocCtx);
+    expect(dispatchRes).toEqual({ handled: false, swallowed: false, actionId: null });
+    expect(cmdB.preventDefault).not.toHaveBeenCalled();
+    expect(boldRun).not.toHaveBeenCalled();
   });
 });

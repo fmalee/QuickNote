@@ -275,4 +275,18 @@ describe('CM6 全套 Markdown 格式命令', () => {
     const hOff = runCmd(h4.doc, { anchor: 0 }, formatHeading(4));
     expect(hOff.doc).toBe('标题');
   });
+
+  it('7. 异步图片插入坐标夹取至文档长度范围内，防止越界 dispatch 抛错', () => {
+    const state = EditorState.create({ doc: 'short' });
+    const stalePos = 999;
+    const clampedPos = Math.max(0, Math.min(stalePos, state.doc.length));
+    expect(clampedPos).toBe(state.doc.length);
+
+    const snippet = '![](assets/2026-11/img.png)';
+    const tr = state.update({
+      changes: { from: clampedPos, to: clampedPos, insert: snippet },
+      selection: { anchor: clampedPos + snippet.length },
+    });
+    expect(tr.state.doc.toString()).toBe('short![](assets/2026-11/img.png)');
+  });
 });

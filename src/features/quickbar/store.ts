@@ -802,9 +802,9 @@ export const useQuickBarStore = defineStore('quickbar', () => {
 
       await Promise.resolve(
         patchQuickBarUiState('lastActiveDoc', {
-          key: doc.key,
           relPath: doc.relPath ?? doc.absPath,
-          absPath: doc.absPath,
+          workspaceKey: doc.meta.project ?? null,
+          touchedAtMs: Date.now(),
         }),
       ).catch(() => undefined);
       await hideQuickBarWindow('esc');

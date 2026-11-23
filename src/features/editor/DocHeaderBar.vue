@@ -82,6 +82,9 @@ async function handleTitleCommit(): Promise<void> {
 }
 
 function handleTitleKeydown(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229) {
+    return;
+  }
   if (event.key === 'Enter') {
     event.preventDefault();
     (event.target as HTMLInputElement | null)?.blur();
@@ -118,6 +121,16 @@ async function handleAddTag(): Promise<void> {
     return;
   }
   await commitMetaPatch({ tags: [...currentDoc.meta.tags, cleaned] });
+}
+
+async function handleTagKeydown(event: KeyboardEvent): Promise<void> {
+  if (event.isComposing || event.keyCode === 229) {
+    return;
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    await handleAddTag();
+  }
 }
 
 async function handleRemoveTag(tag: string): Promise<void> {
@@ -242,7 +255,7 @@ function cancelExternalFrontmatter(): void {
           class="qn-doc-header__tag-input"
           data-testid="doc-header-tag-input"
           placeholder="+ 标签"
-          @keydown.enter.prevent="handleAddTag"
+          @keydown.enter="handleTagKeydown"
         />
       </div>
 

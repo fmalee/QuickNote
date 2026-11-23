@@ -61,12 +61,14 @@ function resolveActiveScopes(): ActionScope[] {
 
 function buildActionContext(): ActionContext {
   const activeScopes = resolveActiveScopes();
+  const activeTab = editorTabsStore.activeTab;
   const activeDoc = editorTabsStore.activeDoc;
   const relPath = activeDoc?.relPath ?? '';
   return {
     activeScope: activeScopes[0] ?? 'main-window',
     activeScopes,
     hasActiveDoc: Boolean(activeDoc),
+    hasSelection: Boolean(activeTab?.hasSelection),
     isMarkdown: relPath.toLowerCase().endsWith('.md'),
     isInbox: relPath === 'inbox.md',
   };
@@ -80,7 +82,7 @@ function bindMainWindowActions(): void {
       'editor.moveSelectionToNewNote',
       () => editorTabsStore.openInboxExtractModal(),
       {
-        when: (ctx) => Boolean(ctx.isInbox) && Boolean(editorTabsStore.activeTab?.hasSelection),
+        when: (ctx) => Boolean(ctx.hasActiveDoc && ctx.isInbox && ctx.hasSelection),
       },
     ),
     actionRegistry.bindHandler('window.closeTab', () => {
@@ -102,9 +104,25 @@ function bindMainWindowActions(): void {
 }
 
 function handleWindowKeyDown(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229) {
+    return;
+  }
   if (onboardingStore.isLocked) {
     return;
   }
+
+  const target = event.target instanceof Element ? event.target : document.activeElement;
+  if (
+    target instanceof Element &&
+    !target.closest('.cm-content') &&
+    target.matches('input, textarea, select')
+  ) {
+    const hasModifier = event.metaKey || event.ctrlKey || event.altKey;
+    if (!hasModifier && event.key !== 'Escape') {
+      return;
+    }
+  }
+
   actionRegistry.dispatchKeyEvent(event, buildActionContext());
 }
 
@@ -125,11 +143,19 @@ async function ensureCrossWindowListeners(): Promise<void> {
     });
     unlistenMainWindowState = await onWindowState((winState) => {
       if (winState.windowId === 'main' && winState.visible) {
+        void notesStore.refreshAll();
         void panelsStore.initialize().then(() => editorTabsStore.handleMainWindowShown());
       }
     });
     unlistenMenuAction = await onMenuAction((actionId) => {
-      void actionRegistry.executeById(actionId, buildActionContext());
+      const ctx = buildActionContext();
+      if (
+        (ctx.activeScope === 'terminal' || ctx.activeScopes?.includes('terminal')) &&
+        actionId.startsWith('editor.')
+      ) {
+        return;
+      }
+      void actionRegistry.executeById(actionId, ctx);
     });
   } catch {
     // 非 Tauri 测试环境容错

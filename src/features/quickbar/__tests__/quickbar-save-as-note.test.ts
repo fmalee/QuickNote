@@ -275,7 +275,9 @@ describe('template utils & Quick Bar save-as-note (M2-04)', () => {
     store.saveAsDir = 'projects/quicknote';
     store.saveAsTemplate = 'doc';
 
-    const createdDoc = makeDoc();
+    const createdDoc = makeDoc({
+      meta: makeMeta({ project: 'quicknote' }),
+    });
     mockNoteCreate.mockResolvedValueOnce(createdDoc);
 
     const doc = await store.confirmSaveAsNote();
@@ -292,9 +294,9 @@ describe('template utils & Quick Bar save-as-note (M2-04)', () => {
     expect(mockUiStateSet).toHaveBeenCalledWith({
       key: 'lastActiveDoc',
       value: {
-        key: createdDoc.key,
         relPath: createdDoc.relPath,
-        absPath: createdDoc.absPath,
+        workspaceKey: 'quicknote',
+        touchedAtMs: expect.any(Number),
       },
     });
     expect(mockWindowHideQuickBar).toHaveBeenCalledWith({ reason: 'esc' });

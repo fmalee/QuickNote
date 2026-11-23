@@ -345,4 +345,40 @@ describe('editor autosave, ULID backfill and external change handling', () => {
     expect(store.activeTab?.saveStatus).toBe('saved');
     expect(store.activeTab?.baseBodyHash).toBe('hash-restored-5');
   });
+
+  it('flushSave 正在保存时防重入，不并发发出携带旧 baseBodyHash 的 writeNote', async () => {
+    const doc = makeDoc();
+    mockNoteRead.mockResolvedValue(doc);
+
+    let resolveWrite: ((value: WriteResult) => void) | null = null;
+    mockNoteWrite.mockImplementation(
+      () =>
+        new Promise<WriteResult>((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+
+    const store = useEditorTabsStore();
+    await store.openNote(doc.relPath!, { preview: false, absPath: doc.absPath });
+    store.updateTabBody(doc.key, '第一版待保存正文');
+
+    const firstFlush = store.flushSave(doc.key);
+    expect(store.activeTab?.saveStatus).toBe('saving');
+    expect(mockNoteWrite).toHaveBeenCalledTimes(1);
+
+    // 在首次 writeNote 尚未返回前再次触发 flushSave，绝不能并发请求
+    const secondFlush = store.flushSave(doc.key);
+    expect(mockNoteWrite).toHaveBeenCalledTimes(1);
+
+    resolveWrite!({
+      bodyHash: 'hash-v2',
+      mtimeMs: 2000,
+      updatedMeta: null,
+    });
+    await Promise.all([firstFlush, secondFlush]);
+
+    expect(mockNoteWrite).toHaveBeenCalledTimes(1);
+    expect(store.activeTab?.saveStatus).toBe('saved');
+    expect(store.activeTab?.baseBodyHash).toBe('hash-v2');
+  });
 });

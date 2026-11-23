@@ -151,6 +151,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
   let lastQuickBarAppendedRelPath: string | null = null;
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const maxWaitTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const inFlightSaveMap = new Map<string, Promise<boolean>>();
 
   const activeTab = computed<EditorTab | null>(
     () => tabs.value.find((tab) => tab.key === activeKey.value) ?? null,
@@ -557,8 +558,16 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
   }
 
   async function saveTab(key: string): Promise<boolean> {
+    const existingInFlight = inFlightSaveMap.get(key);
+    if (existingInFlight) {
+      return existingInFlight;
+    }
+
     const tab = tabs.value.find((item) => item.key === key);
     if (!tab || !tab.doc || tab.isMissing || tab.conflictState !== null) {
+      return false;
+    }
+    if (tab.saveStatus === 'saving') {
       return false;
     }
 
@@ -572,61 +581,69 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     const savingBody = tab.draftBody;
     tab.saveStatus = 'saving';
 
-    try {
-      const res = await writeNote({
-        absPath: tab.absPath,
-        body: savingBody,
-        baseBodyHash: tab.baseBodyHash,
-      });
+    const savePromise = (async (): Promise<boolean> => {
+      try {
+        const res = await writeNote({
+          absPath: tab.absPath,
+          body: savingBody,
+          baseBodyHash: tab.baseBodyHash,
+        });
 
-      tab.baseBodyHash = res.bodyHash;
-      tab.doc.body = savingBody;
-      tab.doc.bodyHash = res.bodyHash;
-      tab.doc.mtimeMs = res.mtimeMs;
+        tab.baseBodyHash = res.bodyHash;
+        tab.doc!.body = savingBody;
+        tab.doc!.bodyHash = res.bodyHash;
+        tab.doc!.mtimeMs = res.mtimeMs;
 
-      if (tab.draftBody !== savingBody) {
-        tab.isDirty = true;
-        tab.saveStatus = 'dirty';
-        scheduleAutoSave(tab.key);
-      } else {
-        tab.isDirty = false;
-        tab.saveStatus = 'saved';
-      }
-
-      if (res.updatedMeta !== null) {
-        tab.doc.meta = res.updatedMeta;
-        if (tab.key.startsWith('path:') && res.updatedMeta.id) {
-          const oldKey = tab.key;
-          const newKey = res.updatedMeta.id;
-          tab.key = newKey;
-          tab.doc.key = newKey;
-          if (activeKey.value === oldKey) {
-            activeKey.value = newKey;
-          }
-          migrateTimerKeys(oldKey, newKey);
-          persistTabsDebounced();
+        if (tab.draftBody !== savingBody) {
+          tab.isDirty = true;
+          tab.saveStatus = 'dirty';
+          scheduleAutoSave(tab.key);
+        } else {
+          tab.isDirty = false;
+          tab.saveStatus = 'saved';
         }
-        notifyNotesRefresh();
-      }
 
-      return true;
-    } catch (error) {
-      if (isConflictError(error)) {
-        clearAutoSaveTimers(tab.key);
-        const info = parseConflictInfo(error);
-        tab.conflictState = {
-          kind: 'modified',
-          diskBody: info?.currentBody ?? '',
-          diskBodyHash: info?.currentBodyHash ?? '',
-          diskMeta: null,
-        };
-        tab.saveStatus = 'conflict';
+        if (res.updatedMeta !== null) {
+          tab.doc!.meta = res.updatedMeta;
+          if (tab.key.startsWith('path:') && res.updatedMeta.id) {
+            const oldKey = tab.key;
+            const newKey = res.updatedMeta.id;
+            tab.key = newKey;
+            tab.doc!.key = newKey;
+            if (activeKey.value === oldKey) {
+              activeKey.value = newKey;
+            }
+            migrateTimerKeys(oldKey, newKey);
+            persistTabsDebounced();
+          }
+          notifyNotesRefresh();
+        }
+
+        return true;
+      } catch (error) {
+        if (isConflictError(error)) {
+          clearAutoSaveTimers(tab.key);
+          const info = parseConflictInfo(error);
+          tab.conflictState = {
+            kind: 'modified',
+            diskBody: info?.currentBody ?? '',
+            diskBodyHash: info?.currentBodyHash ?? '',
+            diskMeta: null,
+          };
+          tab.saveStatus = 'conflict';
+          return false;
+        }
+        tab.saveStatus = 'error';
+        errorMessage.value = extractEditorErrorMessage(error);
         return false;
+      } finally {
+        inFlightSaveMap.delete(key);
+        inFlightSaveMap.delete(tab.key);
       }
-      tab.saveStatus = 'error';
-      errorMessage.value = extractEditorErrorMessage(error);
-      return false;
-    }
+    })();
+
+    inFlightSaveMap.set(key, savePromise);
+    return savePromise;
   }
 
   async function flushSave(key?: string): Promise<void> {
@@ -635,10 +652,22 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       return;
     }
     const tab = tabs.value.find((item) => item.key === targetKey);
-    if (!tab || !tab.isDirty || tab.conflictState !== null || tab.isMissing) {
+    if (!tab) {
       return;
     }
-    await saveTab(targetKey);
+    const inFlight = inFlightSaveMap.get(tab.key) ?? inFlightSaveMap.get(targetKey);
+    if (inFlight) {
+      await inFlight;
+    }
+    if (
+      tab.saveStatus === 'saving' ||
+      !tab.isDirty ||
+      tab.conflictState !== null ||
+      tab.isMissing
+    ) {
+      return;
+    }
+    await saveTab(tab.key);
   }
 
   function handleExternalChange(event: ExternalChangeEvent): void {

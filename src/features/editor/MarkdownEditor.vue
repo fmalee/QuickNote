@@ -245,6 +245,9 @@ function cancelOpenLocalPath(): void {
 }
 
 function requestExternalImageConfirm(): Promise<boolean> {
+  if (externalImageModalOpen.value || externalImageConfirmResolver !== null) {
+    return Promise.resolve(false);
+  }
   externalImageModalOpen.value = true;
   return new Promise<boolean>((resolve) => {
     externalImageConfirmResolver = resolve;
@@ -275,9 +278,11 @@ async function processImageFile(
     saveImage: saveNoteImage,
     confirmExternalSave: requestExternalImageConfirm,
     insertSnippet: (snippet) => {
+      const docLen = targetView.state.doc.length;
       const sel = targetView.state.selection.main;
-      const from = insertPos !== null ? insertPos : sel.from;
-      const to = insertPos !== null ? insertPos : sel.to;
+      const clampedPos = insertPos !== null ? Math.max(0, Math.min(insertPos, docLen)) : null;
+      const from = clampedPos !== null ? clampedPos : sel.from;
+      const to = clampedPos !== null ? clampedPos : sel.to;
       targetView.dispatch({
         changes: { from, to, insert: snippet },
         selection: { anchor: from + snippet.length },
@@ -388,17 +393,7 @@ function createEditorState(tab: EditorTab): EditorState {
           { key: 'Backspace', run: guardComposing(todoBackspaceCommand) },
         ]),
       ),
-      keymap.of([
-        ...defaultKeymap,
-        ...historyKeymap,
-        {
-          key: 'Mod-s',
-          run: () => {
-            void editorTabsStore.flushSave();
-            return true;
-          },
-        },
-      ]),
+      keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.updateListener.of((update) => {
         if (suppressUpdate || !currentTabKey) {
           return;
@@ -429,6 +424,18 @@ function createEditorState(tab: EditorTab): EditorState {
         }
       }),
       EditorView.domEventHandlers({
+        keydown: (event, targetView) => {
+          if (
+            event.key === 'Tab' &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            ((!event.isComposing && event.keyCode !== 229) || targetView.composing)
+          ) {
+            event.stopPropagation();
+          }
+          return false;
+        },
         click: (event, targetView) => {
           if (!isLinkTriggerEvent(event, singleClickLink.value)) {
             return false;

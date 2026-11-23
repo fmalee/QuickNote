@@ -69,6 +69,9 @@ function stopRecording(): void {
 }
 
 function handleRecordKeydown(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229) {
+    return;
+  }
   const targetId = recordingActionId.value;
   if (!targetId) {
     return;

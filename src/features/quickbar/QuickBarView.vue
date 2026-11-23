@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { QnBadge, QnBanner, QnButton } from '@/components';
+import { ACTION_KEYBINDINGS_STORAGE_KEY, actionRegistry } from '@/lib/actions';
 import QuickBarTargetPicker from './QuickBarTargetPicker.vue';
 import { useQuickBarStore } from './store';
 
 const store = useQuickBarStore();
 const editorRef = ref<HTMLTextAreaElement | null>(null);
+const actionDisposers: Array<() => void> = [];
 
 function focusEditor(): void {
   if (
@@ -21,11 +23,105 @@ function focusEditor(): void {
   });
 }
 
+function handleWindowStorage(event: StorageEvent): void {
+  if (event.key === ACTION_KEYBINDINGS_STORAGE_KEY || event.key === null) {
+    actionRegistry.syncFromStorage();
+  }
+}
+
+function bindQuickBarActions(): void {
+  const canAct = () => !store.isUnconfigured;
+  actionDisposers.push(
+    actionRegistry.bindHandler(
+      'quickbar.mode.capture',
+      () => {
+        store.mode = 'capture';
+      },
+      { when: canAct },
+    ),
+    actionRegistry.bindHandler(
+      'quickbar.mode.open',
+      () => {
+        store.mode = 'open';
+      },
+      { when: canAct },
+    ),
+    actionRegistry.bindHandler(
+      'quickbar.mode.command',
+      () => {
+        store.mode = 'command';
+      },
+      { when: canAct },
+    ),
+    actionRegistry.bindHandler(
+      'quickbar.selectTarget',
+      () => {
+        store.toggleTargetPicker();
+      },
+      { when: canAct },
+    ),
+    actionRegistry.bindHandler(
+      'quickbar.captureMode.list',
+      () => {
+        store.setCaptureMode('list');
+      },
+      { when: canAct },
+    ),
+    actionRegistry.bindHandler(
+      'quickbar.captureMode.todo',
+      () => {
+        store.setCaptureMode('todo');
+      },
+      { when: canAct },
+    ),
+    actionRegistry.bindHandler(
+      'quickbar.captureMode.prose',
+      () => {
+        store.setCaptureMode('prose');
+      },
+      { when: canAct },
+    ),
+    actionRegistry.bindHandler(
+      'quickbar.submitAppend',
+      () => {
+        void store.submitAppend(false);
+      },
+      { when: canAct },
+    ),
+    actionRegistry.bindHandler(
+      'quickbar.submitOpenMain',
+      () => {
+        void store.submitAppend(true);
+      },
+      { when: canAct },
+    ),
+    actionRegistry.bindHandler(
+      'quickbar.saveAsNote',
+      () => {
+        store.openSaveAsNoteDialog();
+      },
+      { when: canAct },
+    ),
+  );
+}
+
 onMounted(() => {
+  actionRegistry.syncFromStorage();
+  bindQuickBarActions();
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('storage', handleWindowStorage);
+  }
   focusEditor();
 });
 
 onUnmounted(() => {
+  if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+    window.removeEventListener('storage', handleWindowStorage);
+  }
+  while (actionDisposers.length > 0) {
+    const dispose = actionDisposers.pop();
+    dispose?.();
+  }
   store.dispose();
 });
 
@@ -46,68 +142,38 @@ watch(
 );
 
 function handleKeydown(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229) {
+    return;
+  }
+
   if (event.key === 'Escape') {
     event.preventDefault();
     void store.handleEscape();
     return;
   }
 
-  if (!event.metaKey || store.isUnconfigured) {
+  if (store.isUnconfigured) {
     return;
   }
 
-  const lowerKey = event.key.toLowerCase();
-
-  if (lowerKey === 'k') {
-    event.preventDefault();
-    store.mode = event.shiftKey ? 'command' : 'open';
-    return;
-  }
-
-  if (lowerKey === 't') {
-    event.preventDefault();
-    store.toggleTargetPicker();
-    return;
-  }
-
-  if (event.key === '1') {
-    event.preventDefault();
-    store.setCaptureMode('list');
-    return;
-  }
-
-  if (event.key === '2') {
-    event.preventDefault();
-    store.setCaptureMode('todo');
-    return;
-  }
-
-  if (event.key === '3') {
-    event.preventDefault();
-    store.setCaptureMode('prose');
-    return;
-  }
-
-  if (event.key === 'ArrowDown') {
-    event.preventDefault();
-    store.cycleRelatedTarget('next');
-    return;
-  }
-
-  if (event.key === 'ArrowUp') {
-    event.preventDefault();
-    store.cycleRelatedTarget('prev');
-    return;
-  }
-
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    if (event.altKey) {
-      store.openSaveAsNoteDialog();
+  if (event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      store.cycleRelatedTarget('next');
       return;
     }
-    void store.submitAppend(event.shiftKey);
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      store.cycleRelatedTarget('prev');
+      return;
+    }
   }
+
+  actionRegistry.dispatchKeyEvent(event, {
+    activeScope: 'quickbar',
+    activeScopes: ['quickbar', 'global'],
+  });
 }
 </script>
 

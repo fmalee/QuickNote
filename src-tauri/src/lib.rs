@@ -97,11 +97,7 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         .build()?;
 
     let file_submenu = SubmenuBuilder::new(app, "文件")
-        .item(
-            &MenuItemBuilder::with_id("window.newNote", "新建笔记")
-                .accelerator("CmdOrCtrl+N")
-                .build(app)?,
-        )
+        .item(&MenuItemBuilder::with_id("window.newNote", "新建笔记").build(app)?)
         .item(&MenuItemBuilder::with_id("menu_quick_bar", "快速捕捉").build(app)?)
         .item(
             &MenuItemBuilder::with_id("menu_quick_open", "快速打开…")
@@ -114,11 +110,7 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
                 .build(app)?,
         )
         .separator()
-        .item(
-            &MenuItemBuilder::with_id("menu_hide_window", "关闭窗口")
-                .accelerator("CmdOrCtrl+W")
-                .build(app)?,
-        )
+        .item(&MenuItemBuilder::with_id("menu_hide_window", "关闭窗口").build(app)?)
         .build()?;
 
     let edit_submenu = SubmenuBuilder::new(app, "编辑")
@@ -132,90 +124,26 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         .build()?;
 
     let format_submenu = SubmenuBuilder::new(app, "格式")
-        .item(
-            &MenuItemBuilder::with_id("editor.bold", "加粗")
-                .accelerator("CmdOrCtrl+B")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.italic", "斜体")
-                .accelerator("CmdOrCtrl+I")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.codeBlock", "代码块")
-                .accelerator("Alt+CmdOrCtrl+C")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.table", "表格")
-                .accelerator("Alt+CmdOrCtrl+T")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.toggleTodo", "切换待办")
-                .accelerator("CmdOrCtrl+Shift+L")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.link", "插入链接")
-                .accelerator("Alt+CmdOrCtrl+L")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.image", "插入图片")
-                .accelerator("Alt+CmdOrCtrl+I")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.bulletList", "无序列表")
-                .accelerator("CmdOrCtrl+Shift+8")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.blockquote", "引用块")
-                .accelerator("CmdOrCtrl+Shift+.")
-                .build(app)?,
-        )
+        .item(&MenuItemBuilder::with_id("editor.bold", "加粗").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.italic", "斜体").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.codeBlock", "代码块").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.table", "表格").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.toggleTodo", "切换待办").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.link", "插入链接").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.image", "插入图片").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.bulletList", "无序列表").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.blockquote", "引用块").build(app)?)
         .separator()
-        .item(
-            &MenuItemBuilder::with_id("editor.heading1", "标题 1")
-                .accelerator("CmdOrCtrl+1")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.heading2", "标题 2")
-                .accelerator("CmdOrCtrl+2")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.heading3", "标题 3")
-                .accelerator("CmdOrCtrl+3")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.heading4", "标题 4")
-                .accelerator("CmdOrCtrl+4")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.heading5", "标题 5")
-                .accelerator("CmdOrCtrl+5")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("editor.heading6", "标题 6")
-                .accelerator("CmdOrCtrl+6")
-                .build(app)?,
-        )
+        .item(&MenuItemBuilder::with_id("editor.heading1", "标题 1").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.heading2", "标题 2").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.heading3", "标题 3").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.heading4", "标题 4").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.heading5", "标题 5").build(app)?)
+        .item(&MenuItemBuilder::with_id("editor.heading6", "标题 6").build(app)?)
         .build()?;
 
     let view_submenu = SubmenuBuilder::new(app, "视图")
-        .item(
-            &MenuItemBuilder::with_id("panel.toggle.outline", "大纲面板")
-                .accelerator("Ctrl+CmdOrCtrl+O")
-                .build(app)?,
-        )
+        .item(&MenuItemBuilder::with_id("panel.toggle.outline", "大纲面板").build(app)?)
         .item(
             &MenuItemBuilder::with_id("menu_view_terminal", "终端面板")
                 .accelerator("Ctrl+CmdOrCtrl+T")

@@ -154,6 +154,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'cmd+b',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -163,6 +164,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'cmd+i',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -172,6 +174,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+c',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -181,6 +184,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+g',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -190,6 +194,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+x',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -199,6 +204,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+k',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -208,6 +214,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+i',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -217,6 +224,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+l',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -226,6 +234,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+q',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -235,6 +244,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+1',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -244,6 +254,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+2',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -253,6 +264,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+3',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -262,6 +274,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+4',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -271,6 +284,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+5',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -280,6 +294,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'alt+cmd+6',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -289,6 +304,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'tab',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -298,6 +314,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'shift+tab',
     scope: 'editor',
     menuGroup: 'format',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
     run: noopAction,
   },
   {
@@ -307,7 +324,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: null,
     scope: 'editor',
     menuGroup: 'editor-context',
-    when: (ctx) => Boolean(ctx.isInbox && ctx.hasSelection),
+    when: (ctx) => Boolean(ctx.hasActiveDoc && ctx.isInbox && ctx.hasSelection),
     run: noopAction,
   },
 

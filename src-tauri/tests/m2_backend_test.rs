@@ -5,7 +5,8 @@ use quicknote_lib::application::capture::inbox_extract_to_note;
 use quicknote_lib::application::index::index_rebuild;
 use quicknote_lib::application::library::set_library_root;
 use quicknote_lib::application::notes::{
-    note_create, note_read, note_save_image, note_update_meta, notes_list, MAX_IMAGE_BYTES,
+    note_create, note_read, note_save_image, note_update_meta, notes_get_tree_and_tags, notes_list,
+    MAX_IMAGE_BYTES,
 };
 use quicknote_lib::application::persistence::PersistenceManager;
 use quicknote_lib::domain::capture::InboxExtractArgs;
@@ -438,4 +439,37 @@ fn inbox_extract_to_note_moves_lines_safely_and_preserves_inbox_on_error() {
 
     let inbox_after_fail = fs::read_to_string(&inbox_path).expect("read inbox after fail");
     assert_eq!(inbox_after_fail, inbox_before_fail);
+}
+
+#[test]
+fn notes_get_tree_and_tags_excludes_template_tags() {
+    let (_dir, pm, library) = setup_pm_with_library();
+
+    fs::write(
+        library.join("_templates/tagged-tpl.md"),
+        "---\nid: {{id}}\ntitle: 模板\ntype: template\ntags:\n  - template-only-tag\n  - nested/tpl-tag\n---\n# 模板\n",
+    )
+    .expect("write tagged template");
+    fs::create_dir_all(library.join("notes")).expect("create notes dir");
+    fs::write(
+        library.join("notes/regular.md"),
+        "---\nid: 01JREGULARNOTE000000000001\ntitle: 普通笔记\ntype: note\ntags:\n  - work/review\n---\n正文\n",
+    )
+    .expect("write regular note");
+
+    index_rebuild(&pm, None).expect("rebuild index");
+
+    let tree = notes_get_tree_and_tags(&pm).expect("notes_get_tree_and_tags");
+    let root_tags: Vec<&str> = tree.tags.iter().map(|t| t.tag.as_str()).collect();
+    assert!(root_tags.contains(&"work"));
+    assert!(!root_tags.contains(&"template-only-tag"));
+    assert!(!root_tags.contains(&"nested"));
+
+    let work_node = tree
+        .tags
+        .iter()
+        .find(|t| t.tag == "work")
+        .expect("work tag node");
+    assert_eq!(work_node.children.len(), 1);
+    assert_eq!(work_node.children[0].tag, "work/review");
 }
