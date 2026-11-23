@@ -7,8 +7,9 @@
 - **当前阶段**：M0 已正式收官（`m0-baseline`）；正推进 **M1（捕捉与笔记库核心闭环，共 7 张轻量卡）**。
 - **已完成**：
   - M0 全阶段（`m0-baseline`）。
-  - **`M1-01a`**（`9dbf2d3`：已合入 `dev`，完成 `src-tauri/tests/fixtures/vault/**` 共享测试样本、`domain/{tokenizer,frontmatter,note}.rs` 纯算法、`bindings.rs` 导出与 `domain_note_and_tokenizer_test.rs`）。
-- **待执行**：**`M1-01b`**（当前待施工） → `M1-02` → `M1-03` → `M1-04a` → `M1-04b` → `M1-05` → M1 增量只读审查。
+  - **`M1-01a`**（`9dbf2d3`：共享 Fixture 库、`domain/{tokenizer,frontmatter,note}.rs` 纯算法与 TS 绑定导出）。
+  - **`M1-01b`**（`2ba211d`：SQLite FTS5 派生索引入库、笔记 CRUD 用例与 11 条 IPC 命令封装）。
+- **待执行**：**`M1-02`**（当前待施工） → `M1-03` → `M1-04a` → `M1-04b` → `M1-05` → M1 增量只读审查。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -35,5 +36,5 @@
 
 ## 5. 下一步动作
 
-1. 在独立新会话中从 `dev` 拉出 `feat/M1-01b-sqlite-fts-index-and-note-crud` 执行 `M1-01b`。
-2. 完成后回到主控会话获取 `M1-02` 极简提示词。
+1. 在独立新会话中从 `dev` 拉出 `feat/M1-02-capture-truth-table-append-and-undo` 执行 `M1-02`。
+2. 完成后回到主控会话获取 `M1-03` 极简提示词。
