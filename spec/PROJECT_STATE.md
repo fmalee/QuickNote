@@ -9,13 +9,14 @@
   - M0 全阶段（`m0-baseline`）。
   - **`M1-01a`**（`9dbf2d3`：共享 Fixture 库、`domain/{tokenizer,frontmatter,note}.rs` 纯算法与 TS 绑定导出）。
   - **`M1-01b`**（`2ba211d`：SQLite FTS5 派生索引入库、笔记 CRUD 用例与 11 条 IPC 命令封装）。
-- **待执行**：**`M1-02`**（当前待施工） → `M1-03` → `M1-04a` → `M1-04b` → `M1-05` → M1 增量只读审查。
+  - **`M1-02`**（`b8d6018`：Quick Bar `S1–S8` 真值表、分区追加、5 秒撤销与 `ToastAppendUndoPayload` 债务收口）。
+- **待执行**：**`M1-03`**（当前待施工） → `M1-04a` → `M1-04b` → `M1-05` → M1 增量只读审查。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
 | 挂起项 | 来源 | 目标里程碑 | 处理要求 |
 | --- | --- | --- | --- |
-| `ToastAppendUndoPayload` 手写类型收口 | M0 审查 🟡#4 | **M1（已排入 `M1-02`）** | 随 `AppendResult` 落地收归 Rust 生成并接入 `src/lib/ipc/events.ts`，移除 `src/features/toast/api.ts` 手写接口 |
+| `ToastAppendUndoPayload` 手写类型收口 | M0 审查 🟡#4 | **M1（已在 `M1-02` `b8d6018` 收口完成）** | 已随 `AppendResult` 收归 Rust 生成并接入 `src/lib/ipc/events.ts` |
 | 默认模板（`note/doc/command-book`）格式对齐 | M0 审查 🟢#4 | **M2** | `src-tauri/src/infra/fs.rs` 与 `v4` 附录 B.3 标题/字段完全对齐 |
 | `SettingsErrorBanner` “打开 `settings.yaml` 修复”按钮 | M0 审查 🟢#4 | **M3** | 接入 `external_action_run`（`D-0008` / `v4` §4.7） |
 | `QuickBarView` 与 `bridge.m` 幂等双 `Esc` | M0 审查 🟢#4 | **保留现状** | 保持不动，避免破坏已实机通过的 Quick Bar 原生焦点与全屏行为 |
@@ -36,5 +37,5 @@
 
 ## 5. 下一步动作
 
-1. 在独立新会话中从 `dev` 拉出 `feat/M1-02-capture-truth-table-append-and-undo` 执行 `M1-02`。
-2. 完成后回到主控会话获取 `M1-03` 极简提示词。
+1. 在独立新会话中从 `dev` 拉出 `feat/M1-03-notify-loop-guard-and-recovery` 执行 `M1-03`。
+2. 完成后回到主控会话获取 `M1-04a` 极简提示词。
