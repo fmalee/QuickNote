@@ -4,10 +4,10 @@
 
 ## 动手前
 
-1. 读机器契约 [spec/engineering-contract.md](spec/engineering-contract.md)，条目按 `Cx.y` 引用。
-2. 读架构决策 [DECISIONS.md](DECISIONS.md)（`D-xxxx`）；按 `C11` 处理契约未覆盖项与冲突。
-3. 查产品规格 [spec/quicknote-design-v4.md](spec/quicknote-design-v4.md) 确认交互与边界。
-4. 按 `spec/cards/` 中单张任务卡（模板 `C12`）施工；未定义的技术选择先记 `DECISIONS.md` 再写码，涉及产品行为取舍先询问用户。
+1. 完整阅读 `spec/cards/` 中的当前任务卡（模板 `C12`），锁定目标范围与文件白名单。
+2. 按任务卡关联的 `Cx.y` / `D-xxxx` 编号**定向查阅** [spec/engineering-contract.md](spec/engineering-contract.md) 与 [DECISIONS.md](DECISIONS.md) 对应小节，无需通读全文（仅拆卡、变更契约或里程碑只读审查会话需通读全文）。
+3. 遇交互或边界细节疑问时，按任务卡 `§x.y` 指针查阅 [spec/quicknote-design-v4.md](spec/quicknote-design-v4.md) 对应章节。
+4. 遇契约未定义的技术选型按 `C11` 先记 `DECISIONS.md` 再写码；涉及产品行为取舍先询问用户。
 
 ## 硬规则
 
