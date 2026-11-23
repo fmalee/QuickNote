@@ -62,4 +62,44 @@ describe('toast-view (toast:append-undo)', () => {
 
     store.dispose();
   });
+
+  it('counts down 5 seconds with fake timers and auto-hides', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+
+    let capturedHandler: ((payload: ToastAppendUndoPayload) => void) | undefined;
+    mockListenEvent.mockImplementationOnce(
+      async (_event: string, handler: (payload: ToastAppendUndoPayload) => void) => {
+        capturedHandler = handler;
+        return () => {};
+      },
+    );
+
+    const store = useToastStore();
+    await store.initialize();
+
+    capturedHandler?.({
+      relPath: 'inbox.md',
+      title: '收件箱',
+      addedLines: 1,
+      sectionHeading: '2026-11-23',
+      undoAvailable: true,
+    });
+
+    expect(store.visible).toBe(true);
+    expect(store.remainingSeconds).toBe(5);
+
+    vi.advanceTimersByTime(1000);
+    expect(store.remainingSeconds).toBe(4);
+    expect(store.visible).toBe(true);
+
+    vi.advanceTimersByTime(3000);
+    expect(store.remainingSeconds).toBe(1);
+    expect(store.visible).toBe(true);
+
+    vi.advanceTimersByTime(1000);
+    expect(store.visible).toBe(false);
+
+    store.dispose();
+  });
 });

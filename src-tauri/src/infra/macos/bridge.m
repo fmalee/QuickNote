@@ -16,6 +16,8 @@ static QnVoidCallback g_hotkey_cb = NULL;
 static id g_space_observer = nil;
 static EventHotKeyRef g_hotkey_ref = NULL;
 static EventHandlerRef g_hotkey_handler_ref = NULL;
+static uint32_t g_registered_key_code = 0;
+static uint32_t g_registered_modifiers = 0;
 
 @interface QuickNotePanel : NSPanel
 @end
@@ -246,6 +248,8 @@ void qn_configure_toast_panel(void *ns_window_ptr, QnPanelDiag *out_diag) {
                               defer:NO];
             g_toast_panel.releasedWhenClosed = NO;
             g_toast_panel.hasShadow = YES;
+            g_toast_panel.opaque = NO;
+            g_toast_panel.backgroundColor = [NSColor clearColor];
             g_toast_panel.floatingPanel = YES;
             g_toast_panel.level = NSFloatingWindowLevel;
             g_toast_panel.becomesKeyOnlyIfNeeded = YES;
@@ -257,6 +261,11 @@ void qn_configure_toast_panel(void *ns_window_ptr, QnPanelDiag *out_diag) {
             if (content != nil) {
                 [taoWin setContentView:[[NSView alloc] initWithFrame:taoWin.frame]];
                 content.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+                content.wantsLayer = YES;
+                if (content.layer != nil) {
+                    content.layer.cornerRadius = 10.0;
+                    content.layer.masksToBounds = YES;
+                }
                 [g_toast_panel setContentView:content];
                 [content setFrame:g_toast_panel.contentView.bounds];
             }
@@ -361,8 +370,6 @@ int32_t qn_register_carbon_hotkey(
     uint32_t modifiers,
     QnVoidCallback on_hotkey
 ) {
-    g_hotkey_cb = on_hotkey;
-
     if (g_hotkey_handler_ref == NULL) {
         EventTypeSpec event_type;
         event_type.eventClass = kEventClassKeyboard;
@@ -379,22 +386,36 @@ int32_t qn_register_carbon_hotkey(
         }
     }
 
-    if (g_hotkey_ref != NULL) {
-        UnregisterEventHotKey(g_hotkey_ref);
-        g_hotkey_ref = NULL;
+    if (g_hotkey_ref != NULL &&
+        g_registered_key_code == key_code &&
+        g_registered_modifiers == modifiers) {
+        g_hotkey_cb = on_hotkey;
+        return noErr;
     }
 
     EventHotKeyID hot_key_id;
     hot_key_id.signature = 'QNHk';
     hot_key_id.id = 1;
 
+    EventHotKeyRef new_ref = NULL;
     OSStatus reg_status = RegisterEventHotKey(
         (UInt32)key_code,
         (UInt32)modifiers,
         hot_key_id,
         GetApplicationEventTarget(),
         0,
-        &g_hotkey_ref
+        &new_ref
     );
+    if (reg_status != noErr) {
+        return (int32_t)reg_status;
+    }
+
+    if (g_hotkey_ref != NULL) {
+        UnregisterEventHotKey(g_hotkey_ref);
+    }
+    g_hotkey_ref = new_ref;
+    g_registered_key_code = key_code;
+    g_registered_modifiers = modifiers;
+    g_hotkey_cb = on_hotkey;
     return (int32_t)reg_status;
 }

@@ -15,7 +15,7 @@ use crate::domain::settings::{
 use crate::domain::ui_state::{
     CaptureMode, FiltersUiState, HotkeySelfCheck, HotkeyStatus, LastActiveDocState,
     MainWindowState, NavTab, PanelGroupUiState, TabItemState, TabsUiState, UiState, UiStateArgs,
-    WindowsUiState,
+    UiStatePatchKey, WindowsUiState,
 };
 use crate::domain::window::{
     HideQuickBarArgs, HideReason, MainWindowArgs, QuickBarArgs, QuickBarMode, WindowState,
@@ -61,6 +61,7 @@ pub fn collect_types() -> Types {
         .register::<FiltersUiState>()
         .register::<LastActiveDocState>()
         .register::<UiState>()
+        .register::<UiStatePatchKey>()
         .register::<UiStateArgs>()
         .register::<QuickBarMode>()
         .register::<HideReason>()

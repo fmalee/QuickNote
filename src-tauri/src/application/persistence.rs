@@ -1,16 +1,19 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use chrono::{Local, Utc};
 use rusqlite::Connection;
 
 use crate::domain::app::{ActivationPolicy, AppInfo};
+use crate::domain::backup::format_backup_filename;
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::settings::{
     parse_settings_yaml, serialize_settings_yaml, Settings, SettingsLoadStatus, SettingsSnapshot,
 };
-use crate::domain::ui_state::UiState;
-use crate::infra::fs::{atomic_write_str, init_app_data_dir, map_io_error};
+use crate::domain::ui_state::{UiState, UiStatePatchKey};
+use crate::infra::fs::{atomic_write_str, init_app_data_dir, map_io_error, prune_backups};
 use crate::infra::sqlite::{get_library_meta, init_sqlite};
 
 /// Coordinates `$APP_DATA_DIR` persistence (`settings.yaml`, `ui-state.json`, `index.sqlite`) (`C6.1`–`C6.3`).
@@ -60,13 +63,48 @@ impl PersistenceManager {
         let ui_state = if ui_state_path.exists() {
             let raw = fs::read_to_string(&ui_state_path)
                 .map_err(|e| map_io_error(e, "Failed to read ui-state.json"))?;
-            serde_json::from_str::<UiState>(&raw).map_err(|err| {
-                AppError::with_detail(
-                    ErrorCode::InternalError,
-                    "Failed to parse ui-state.json",
-                    err.to_string(),
-                )
-            })?
+            match serde_json::from_str::<UiState>(&raw) {
+                Ok(parsed) => parsed,
+                Err(err) => {
+                    eprintln!(
+                        "[persistence] ui-state.json parse failed at line={} col={}; backing up and resetting to default",
+                        err.line(),
+                        err.column()
+                    );
+                    let backups_dir = app_data_dir.join("backups");
+                    let ts = Local::now().format("%Y%m%d-%H%M%S").to_string();
+                    let mut backup_path =
+                        backups_dir.join(format_backup_filename("ui-state.json", &ts));
+                    if backup_path.exists() {
+                        let nanos = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map(|d| d.subsec_nanos())
+                            .unwrap_or(0);
+                        backup_path = backups_dir.join(format_backup_filename(
+                            "ui-state.json",
+                            &format!("{ts}-{nanos}"),
+                        ));
+                    }
+                    atomic_write_str(&backup_path, &raw)?;
+                    if let Err(prune_err) = prune_backups(&backups_dir, Utc::now().timestamp()) {
+                        eprintln!(
+                            "[persistence] backup prune failed: code={:?}",
+                            prune_err.code
+                        );
+                    }
+
+                    let default_ui = UiState::default();
+                    let json = serde_json::to_string_pretty(&default_ui).map_err(|ser_err| {
+                        AppError::with_detail(
+                            ErrorCode::InternalError,
+                            "Failed to serialize default ui-state.json",
+                            ser_err.to_string(),
+                        )
+                    })?;
+                    atomic_write_str(&ui_state_path, &json)?;
+                    default_ui
+                }
+            }
         } else {
             let default_ui = UiState::default();
             let json = serde_json::to_string_pretty(&default_ui).map_err(|err| {
@@ -180,7 +218,11 @@ impl PersistenceManager {
     }
 
     /// Validates and persists a single whitelisted key update to `ui-state.json` (`C4.2`, `C6.3`).
-    pub fn ui_state_set(&self, key: &str, value: serde_json::Value) -> Result<UiState, AppError> {
+    pub fn ui_state_set(
+        &self,
+        key: UiStatePatchKey,
+        value: serde_json::Value,
+    ) -> Result<UiState, AppError> {
         let mut guard = self
             .ui_state
             .write()
@@ -200,17 +242,26 @@ impl PersistenceManager {
         Ok(next)
     }
 
-    /// Resolves the active `library_root` from settings or SQLite `library_meta`.
+    /// Resolves the active `library_root`: when `settings.yaml` is valid, its `library_root`
+    /// is the single source of truth; falls back to SQLite `library_meta` only when `settings.yaml` is invalid.
     pub fn current_library_root(&self) -> Result<Option<String>, AppError> {
+        let status_valid = self
+            .settings_status
+            .read()
+            .map_err(|_| AppError::new(ErrorCode::InternalError, "Settings status lock poisoned"))?
+            .valid;
+
         let from_settings = self
             .settings
             .read()
             .map_err(|_| AppError::new(ErrorCode::InternalError, "Settings lock poisoned"))?
             .library_root
             .clone();
-        if from_settings.is_some() {
+
+        if status_valid || from_settings.is_some() {
             return Ok(from_settings);
         }
+
         let conn = self
             .db
             .lock()
@@ -220,6 +271,22 @@ impl PersistenceManager {
 
     /// Updates `library_root` in memory and persists to `settings.yaml` if currently valid (`D-0008`).
     pub(crate) fn update_library_root_in_settings(&self, root: &str) -> Result<(), AppError> {
+        self.update_settings_with(|settings| {
+            settings.library_root = Some(root.to_string());
+        })
+    }
+
+    /// Updates `hotkey.quick_bar` in memory and persists to `settings.yaml` if currently valid (`D-0004`, `D-0008`).
+    pub(crate) fn update_hotkey_in_settings(&self, combo: &str) -> Result<(), AppError> {
+        self.update_settings_with(|settings| {
+            settings.hotkey.quick_bar = combo.to_string();
+        })
+    }
+
+    fn update_settings_with<F>(&self, mutator: F) -> Result<(), AppError>
+    where
+        F: FnOnce(&mut Settings),
+    {
         let status_valid = self
             .settings_status
             .read()
@@ -231,7 +298,7 @@ impl PersistenceManager {
                 .settings
                 .write()
                 .map_err(|_| AppError::new(ErrorCode::InternalError, "Settings lock poisoned"))?;
-            guard.library_root = Some(root.to_string());
+            mutator(&mut guard);
             guard.clone()
         };
 

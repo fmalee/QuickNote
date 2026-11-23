@@ -1,6 +1,5 @@
-use quicknote_lib::application::app::build_app_info;
 use quicknote_lib::bindings::{render_ts_bindings, GENERATED_HEADER};
-use quicknote_lib::domain::app::ActivationPolicy;
+use quicknote_lib::domain::app::{ActivationPolicy, AppInfo};
 use quicknote_lib::domain::error::{AppError, ErrorCode};
 
 #[test]
@@ -48,7 +47,7 @@ fn app_error_roundtrips_with_optional_detail() {
 
 #[test]
 fn app_get_info_returns_baseline_domain_shape() {
-    let built = build_app_info("0.1.0", "macos");
+    let built = AppInfo::new("0.1.0", "macos", None, ActivationPolicy::Accessory);
     assert_eq!(built.version, "0.1.0");
     assert_eq!(built.platform, "macos");
     assert_eq!(built.library_root, None);

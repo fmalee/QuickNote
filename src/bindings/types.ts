@@ -243,9 +243,12 @@ export type UiState = {
 
 /**  Arguments for `ui_state_set` (`C4.2`). */
 export type UiStateArgs = {
-	key: string,
+	key: UiStatePatchKey,
 	value: unknown,
 };
+
+/**  Whitelisted patch keys accepted by `ui_state_set` (`C4.2`, `C6.3`). */
+export type UiStatePatchKey = "windows" | "tabs" | "panelGroup" | "filters" | "selectedWorkspace" | "hotkey" | "lastActiveDoc" | "workspaceModes";
 
 /**  Main window presentation mode (`C3.4`, `C6.2`). */
 export type WindowMode = "standard" | "fullscreen" | "auxiliary";

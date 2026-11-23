@@ -73,10 +73,24 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
               title="检测到全局热键冲突"
               data-testid="hotkey-conflict-banner"
             >
-              当前热键 {{ formatHotkeyCombo(store.hotkeyStatus?.combo ?? 'ctrl+alt+space') }}
-              可能已被系统或输入法占用，建议一键切换至备用热键。
+              当前热键
+              {{ formatHotkeyCombo(store.hotkeyStatus?.combo ?? 'ctrl+alt+space') }}
+              可能已被系统或输入法占用，建议{{
+                store.isUsingBackupHotkey ? '切回默认主热键' : '一键切换至备用热键'
+              }}。
               <template #actions>
                 <QnButton
+                  v-if="store.isUsingBackupHotkey"
+                  variant="primary"
+                  size="sm"
+                  :loading="store.updatingHotkey"
+                  data-testid="switch-primary-hotkey-btn"
+                  @click="store.switchToPrimaryHotkey()"
+                >
+                  一键切回主热键 ⌃⌥Space
+                </QnButton>
+                <QnButton
+                  v-else
                   variant="primary"
                   size="sm"
                   :loading="store.updatingHotkey"
@@ -111,6 +125,17 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
 
             <div v-if="!store.isHotkeyConflict" class="qn-settings__hotkey-actions">
               <QnButton
+                v-if="store.isUsingBackupHotkey"
+                variant="secondary"
+                size="sm"
+                :loading="store.updatingHotkey"
+                data-testid="switch-primary-hotkey-btn"
+                @click="store.switchToPrimaryHotkey()"
+              >
+                切回默认主热键 ⌃⌥Space
+              </QnButton>
+              <QnButton
+                v-else
                 variant="secondary"
                 size="sm"
                 :loading="store.updatingHotkey"

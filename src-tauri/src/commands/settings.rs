@@ -27,5 +27,5 @@ pub fn ui_state_set(
     state: State<'_, Arc<PersistenceManager>>,
     args: UiStateArgs,
 ) -> Result<UiState, AppError> {
-    state.ui_state_set(&args.key, args.value)
+    state.ui_state_set(args.key, args.value)
 }

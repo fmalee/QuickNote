@@ -142,6 +142,27 @@ impl WindowManager {
         Ok(win_state)
     }
 
+    /// Hides whichever standard window (`settings` or `main`) currently has focus (`⌘W`).
+    pub fn hide_focused_window(&self, app: &AppHandle) -> Result<Option<WindowState>, AppError> {
+        let settings_focused = app
+            .get_webview_window("settings")
+            .and_then(|w| w.is_focused().ok())
+            .unwrap_or(false);
+        if settings_focused {
+            return self.close_settings(app).map(Some);
+        }
+
+        let main_focused = app
+            .get_webview_window("main")
+            .and_then(|w| w.is_focused().ok())
+            .unwrap_or(false);
+        if main_focused {
+            return self.hide_main(app).map(Some);
+        }
+
+        Ok(None)
+    }
+
     pub fn show_quick_bar(
         &self,
         app: &AppHandle,
@@ -272,12 +293,10 @@ impl WindowManager {
 
     /// Configures `quickbar` and `toast` windows as native non-activating `NSPanel`s during app setup.
     pub fn configure_native_panels(&self, app: &AppHandle) -> Result<(), AppError> {
-        if let Ok(qb_ptr) = window_ns_ptr(app, "quickbar") {
-            let _ = self.bridge.configure_quick_bar_panel(qb_ptr)?;
-        }
-        if let Ok(toast_ptr) = window_ns_ptr(app, "toast") {
-            let _ = self.bridge.configure_toast_panel(toast_ptr)?;
-        }
+        let qb_ptr = window_ns_ptr(app, "quickbar")?;
+        self.bridge.configure_quick_bar_panel(qb_ptr)?;
+        let toast_ptr = window_ns_ptr(app, "toast")?;
+        self.bridge.configure_toast_panel(toast_ptr)?;
         Ok(())
     }
 }

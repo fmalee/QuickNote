@@ -13,11 +13,13 @@ import {
   fetchSettingsSnapshot,
   fetchUiState,
   subscribeSettingsStatus,
+  subscribeWindowState,
   updateGlobalHotkey,
 } from './api';
 
 export type SettingsSection = 'general' | 'appearance' | 'baseline';
 
+export const PRIMARY_HOTKEY_COMBO = 'ctrl+alt+space';
 export const BACKUP_HOTKEY_COMBO = 'ctrl+alt+cmd+space';
 
 export const useSettingsStore = defineStore('settings', () => {
@@ -30,12 +32,18 @@ export const useSettingsStore = defineStore('settings', () => {
   const hotkeyError = ref<string | null>(null);
 
   let unlistenStatus: UnlistenFn | null = null;
+  let unlistenWindowState: UnlistenFn | null = null;
 
   const loadStatus = computed<SettingsLoadStatus | null>(() => snapshot.value?.status ?? null);
   const isSettingsInvalid = computed<boolean>(
     () => loadStatus.value !== null && !loadStatus.value.valid,
   );
   const isHotkeyConflict = computed<boolean>(() => hotkeyStatus.value?.selfCheck === 'conflict');
+  const isUsingBackupHotkey = computed<boolean>(() => {
+    const active = hotkeyStatus.value?.combo;
+    const backup = hotkeyStatus.value?.backupCombo || BACKUP_HOTKEY_COMBO;
+    return active === backup;
+  });
 
   function setTheme(theme: EditorTheme): void {
     themePreference.value = theme;
@@ -48,6 +56,32 @@ export const useSettingsStore = defineStore('settings', () => {
         ...snapshot.value,
         status,
       };
+    }
+  }
+
+  async function handleSettingsStatusEvent(status: SettingsLoadStatus): Promise<void> {
+    applySettingsStatus(status);
+    if (!status.valid) {
+      return;
+    }
+    try {
+      const refreshed = await fetchSettingsSnapshot();
+      snapshot.value = refreshed;
+      setTheme(refreshed.settings.editor.theme);
+    } catch (error) {
+      console.error(
+        '[settings] failed to refresh settings snapshot after status event:',
+        extractSettingsErrorMessage(error),
+      );
+    }
+  }
+
+  async function refreshUiState(): Promise<void> {
+    try {
+      const uiStateRes = await fetchUiState();
+      hotkeyStatus.value = uiStateRes.hotkey;
+    } catch (error) {
+      console.error('[settings] failed to refresh ui-state:', extractSettingsErrorMessage(error));
     }
   }
 
@@ -64,7 +98,17 @@ export const useSettingsStore = defineStore('settings', () => {
 
       if (!unlistenStatus) {
         unlistenStatus = await subscribeSettingsStatus((nextStatus) => {
-          applySettingsStatus(nextStatus);
+          void handleSettingsStatusEvent(nextStatus);
+        });
+      }
+      if (!unlistenWindowState) {
+        unlistenWindowState = await subscribeWindowState((winState) => {
+          if (
+            winState.windowId === 'quickbar' ||
+            (winState.windowId === 'settings' && winState.visible)
+          ) {
+            void refreshUiState();
+          }
         });
       }
     } finally {
@@ -72,8 +116,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function switchToBackupHotkey(): Promise<HotkeyStatus | null> {
-    const targetCombo = hotkeyStatus.value?.backupCombo || BACKUP_HOTKEY_COMBO;
+  async function switchHotkey(targetCombo: string): Promise<HotkeyStatus | null> {
     updatingHotkey.value = true;
     hotkeyError.value = null;
     try {
@@ -88,10 +131,23 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  function switchToBackupHotkey(): Promise<HotkeyStatus | null> {
+    const targetCombo = hotkeyStatus.value?.backupCombo || BACKUP_HOTKEY_COMBO;
+    return switchHotkey(targetCombo);
+  }
+
+  function switchToPrimaryHotkey(): Promise<HotkeyStatus | null> {
+    return switchHotkey(PRIMARY_HOTKEY_COMBO);
+  }
+
   function dispose(): void {
     if (unlistenStatus) {
       unlistenStatus();
       unlistenStatus = null;
+    }
+    if (unlistenWindowState) {
+      unlistenWindowState();
+      unlistenWindowState = null;
     }
   }
 
@@ -106,10 +162,13 @@ export const useSettingsStore = defineStore('settings', () => {
     loadStatus,
     isSettingsInvalid,
     isHotkeyConflict,
+    isUsingBackupHotkey,
     setTheme,
     applySettingsStatus,
+    refreshUiState,
     initialize,
     switchToBackupHotkey,
+    switchToPrimaryHotkey,
     dispose,
   };
 });

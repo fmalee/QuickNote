@@ -169,4 +169,90 @@ describe('scripts/check-architecture.mjs', () => {
     expect(res.stderr).toContain('C1.4-bindings-header');
     expect(res.stderr).toContain('C1.4-bindings-integrity');
   });
+
+  it('rejects raw hex and magic zIndex after nested <template #slot> and in dynamic :style / v-bind:style', () => {
+    const fixture = createValidRepoFixture();
+    writeRepoFile(
+      fixture,
+      'src/components/BaseButton.vue',
+      `<template>
+  <div class="wrap">
+    <ModalShell>
+      <template #header><span>Header</span></template>
+      <div style="color: #fff">After slot</div>
+      <div :style="{ backgroundColor: '#123456', zIndex: 99 }">Dynamic</div>
+      <div v-bind:style="{ 'z-index': -1 }">VBind</div>
+    </ModalShell>
+  </div>
+</template>
+`,
+    );
+
+    const res = runCheck(fixture);
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain('C7.1-no-raw-hex-color');
+    expect(res.stderr).toContain('C7.1-no-magic-z-index');
+    expect(res.stderr).toContain('#fff');
+    expect(res.stderr).toContain('#123456');
+    expect(res.stderr).toContain('"99"');
+    expect(res.stderr).toContain('"-1"');
+  });
+
+  it('rejects reverse crate dependencies from domain into application/infra/commands', () => {
+    const fixture = createValidRepoFixture();
+    writeRepoFile(
+      fixture,
+      'src-tauri/src/domain/reverse.rs',
+      'use crate::application::persistence;\nuse crate::infra::fs;\nuse crate::commands::app;\n',
+    );
+
+    const res = runCheck(fixture);
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain('C1.2-rust-domain-isolation');
+    expect(res.stderr).toContain('crate::application');
+    expect(res.stderr).toContain('crate::infra');
+    expect(res.stderr).toContain('crate::commands');
+  });
+
+  it('rejects reverse crate dependencies from infra into application/commands', () => {
+    const fixture = createValidRepoFixture();
+    writeRepoFile(
+      fixture,
+      'src-tauri/src/infra/reverse.rs',
+      'use crate::application::window;\nuse crate::commands::settings;\n',
+    );
+
+    const res = runCheck(fixture);
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain('C1.2-rust-infra-isolation');
+    expect(res.stderr).toContain('crate::application');
+    expect(res.stderr).toContain('crate::commands');
+  });
+
+  it("handles char literals like '\"' and rejects Option::unwrap, Result::unwrap, unwrap_err, expect_err, and panic!", () => {
+    const fixture = createValidRepoFixture();
+    writeRepoFile(
+      fixture,
+      'src-tauri/src/application/char_and_panics.rs',
+      `pub fn ok_quote<'a>(_s: &'a str) -> char { '"' }
+pub fn bad_calls(a: Option<i32>, b: Result<i32, i32>) -> i32 {
+    let q = '"';
+    let _ = (q, a.map(Option::unwrap), b.map_err(|_| 0));
+    let _ = Result::<i32, i32>::unwrap(Ok(1));
+    let _ = Err::<i32, i32>(1).unwrap_err();
+    let _ = Err::<i32, i32>(1).expect_err("boom");
+    panic!("fatal");
+}
+`,
+    );
+
+    const res = runCheck(fixture);
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain('C2.1-rust-no-unwrap-expect');
+    expect(res.stderr).toContain('char_and_panics.rs:4');
+    expect(res.stderr).toContain('char_and_panics.rs:5');
+    expect(res.stderr).toContain('char_and_panics.rs:6');
+    expect(res.stderr).toContain('char_and_panics.rs:7');
+    expect(res.stderr).toContain('char_and_panics.rs:8');
+  });
 });

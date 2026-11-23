@@ -25,8 +25,53 @@ function walkFiles(dir, predicate, out = []) {
   return out;
 }
 
+function matchRustCharLiteralEnd(source, quoteIndex) {
+  const len = source.length;
+  let j = quoteIndex + 1;
+  if (j >= len || source[j] === '\n' || source[j] === "'") {
+    return -1;
+  }
+
+  if (source[j] === '\\') {
+    j += 1;
+    if (j >= len || source[j] === '\n') {
+      return -1;
+    }
+    const esc = source[j];
+    j += 1;
+    if (esc === 'x') {
+      if (j + 1 < len && /[0-9a-fA-F]/.test(source[j]) && /[0-9a-fA-F]/.test(source[j + 1])) {
+        j += 2;
+      } else {
+        return -1;
+      }
+    } else if (esc === 'u') {
+      if (j < len && source[j] === '{') {
+        j += 1;
+        let digits = 0;
+        while (j < len && /[0-9a-fA-F_]/.test(source[j])) {
+          digits += 1;
+          j += 1;
+        }
+        if (digits === 0 || j >= len || source[j] !== '}') {
+          return -1;
+        }
+        j += 1;
+      } else {
+        return -1;
+      }
+    }
+    return j < len && source[j] === "'" ? j + 1 : -1;
+  }
+
+  const cp = source.codePointAt(j);
+  const charLen = cp !== undefined && cp > 0xffff ? 2 : 1;
+  j += charLen;
+  return j < len && source[j] === "'" ? j + 1 : -1;
+}
+
 /**
- * Strips comments (and optionally string literals) while preserving newlines so line numbers stay accurate.
+ * Strips comments (and optionally string/char literals) while preserving newlines so line numbers stay accurate.
  */
 function stripRust(source, { stripStrings = true } = {}) {
   let out = '';
@@ -103,6 +148,26 @@ function stripRust(source, { stripStrings = true } = {}) {
             out += source[i] === '\n' ? '\n' : ' ';
             i += 1;
           }
+          continue;
+        }
+      }
+
+      // Byte character literal: b'...'
+      if (ch === 'b' && next === "'" && (i === 0 || !/[a-zA-Z0-9_]/.test(source[i - 1]))) {
+        const end = matchRustCharLiteralEnd(source, i + 1);
+        if (end !== -1) {
+          out += ' '.repeat(end - i);
+          i = end;
+          continue;
+        }
+      }
+
+      // Character literal: '...' (distinguished from lifetimes like 'a or 'static)
+      if (ch === "'") {
+        const end = matchRustCharLiteralEnd(source, i);
+        if (end !== -1) {
+          out += ' '.repeat(end - i);
+          i = end;
           continue;
         }
       }
@@ -247,6 +312,17 @@ function checkRustDomain(rootDir, violations) {
     { name: 'rusqlite', regex: /\brusqlite\b/g },
     { name: 'notify', regex: /\bnotify\b/g },
     { name: 'portable_pty', regex: /\bportable_pty\b/g },
+    { name: 'crate::application', regex: /\bcrate\s*::\s*application\b/g },
+    { name: 'crate::infra', regex: /\bcrate\s*::\s*infra\b/g },
+    { name: 'crate::commands', regex: /\bcrate\s*::\s*commands\b/g },
+    {
+      name: 'crate::{...application/infra/commands...}',
+      regex: /\buse\s+crate\s*::\s*\{[^}]*\b(?:application|infra|commands)\b[^}]*\}/g,
+    },
+    {
+      name: 'super::application/infra/commands',
+      regex: /\bsuper\s*::\s*(?:application|infra|commands)\b/g,
+    },
   ];
 
   for (const file of files) {
@@ -269,25 +345,79 @@ function checkRustDomain(rootDir, violations) {
   }
 }
 
-function checkRustNoPanic(rootDir, violations) {
-  const srcDir = path.join(rootDir, 'src-tauri', 'src');
-  const files = walkFiles(srcDir, (f) => f.endsWith('.rs'));
-  const panicRegex = /\.\s*(?:unwrap|expect)\s*\(/g;
+function checkRustInfra(rootDir, violations) {
+  const infraDir = path.join(rootDir, 'src-tauri', 'src', 'infra');
+  const files = walkFiles(infraDir, (f) => f.endsWith('.rs'));
+  const forbiddenPatterns = [
+    { name: 'crate::application', regex: /\bcrate\s*::\s*application\b/g },
+    { name: 'crate::commands', regex: /\bcrate\s*::\s*commands\b/g },
+    {
+      name: 'crate::{...application/commands...}',
+      regex: /\buse\s+crate\s*::\s*\{[^}]*\b(?:application|commands)\b[^}]*\}/g,
+    },
+    {
+      name: 'super::application/commands',
+      regex: /\bsuper\s*::\s*(?:application|commands)\b/g,
+    },
+  ];
 
   for (const file of files) {
     const raw = fs.readFileSync(file, 'utf8');
     const cleaned = stripRust(raw, { stripStrings: true });
     const rel = normalizeRel(path.relative(rootDir, file));
 
-    panicRegex.lastIndex = 0;
-    let match;
-    while ((match = panicRegex.exec(cleaned)) !== null) {
-      violations.push({
-        rule: 'C2.1-rust-no-unwrap-expect',
-        file: rel,
-        line: lineNumberAt(cleaned, match.index),
-        message: 'production Rust code under src-tauri/src/** must not call .unwrap() or .expect()',
-      });
+    for (const rule of forbiddenPatterns) {
+      rule.regex.lastIndex = 0;
+      let match;
+      while ((match = rule.regex.exec(cleaned)) !== null) {
+        violations.push({
+          rule: 'C1.2-rust-infra-isolation',
+          file: rel,
+          line: lineNumberAt(cleaned, match.index),
+          message: `infra module must not reference forbidden dependency "${rule.name}"`,
+        });
+      }
+    }
+  }
+}
+
+function checkRustNoPanic(rootDir, violations) {
+  const srcDir = path.join(rootDir, 'src-tauri', 'src');
+  const files = walkFiles(srcDir, (f) => f.endsWith('.rs'));
+  const panicPatterns = [
+    {
+      regex: /\.\s*(?:unwrap|expect|unwrap_err|expect_err)\s*\(/g,
+      message:
+        'production Rust code under src-tauri/src/** must not call .unwrap(), .expect(), .unwrap_err(), or .expect_err()',
+    },
+    {
+      regex:
+        /\b(?:Option|Result)\s*::\s*(?:<[^>]*>\s*::\s*)?(?:unwrap|expect|unwrap_err|expect_err)\b/g,
+      message:
+        'production Rust code under src-tauri/src/** must not reference Option/Result::unwrap*, expect*',
+    },
+    {
+      regex: /\bpanic\s*!\s*[([{]/g,
+      message: 'production Rust code under src-tauri/src/** must not invoke panic!()',
+    },
+  ];
+
+  for (const file of files) {
+    const raw = fs.readFileSync(file, 'utf8');
+    const cleaned = stripRust(raw, { stripStrings: true });
+    const rel = normalizeRel(path.relative(rootDir, file));
+
+    for (const pattern of panicPatterns) {
+      pattern.regex.lastIndex = 0;
+      let match;
+      while ((match = pattern.regex.exec(cleaned)) !== null) {
+        violations.push({
+          rule: 'C2.1-rust-no-unwrap-expect',
+          file: rel,
+          line: lineNumberAt(cleaned, match.index),
+          message: pattern.message,
+        });
+      }
     }
   }
 }
@@ -521,6 +651,68 @@ function scanStyleDeclarations(text, baseOffset, fullRaw, rel, violations) {
   }
 }
 
+function maskPreservingNewlines(source, regex) {
+  return source.replace(regex, (m) => m.replace(/[^\n]/g, ' '));
+}
+
+function extractVueOutermostTemplate(vueSource) {
+  let masked = maskPreservingNewlines(vueSource, /<script\b[^>]*>[\s\S]*?<\/script>/gi);
+  masked = maskPreservingNewlines(masked, /<style\b[^>]*>[\s\S]*?<\/style>/gi);
+  masked = maskPreservingNewlines(masked, /<!--[\s\S]*?-->/g);
+
+  const tagRegex = /<\/?template\b[^>]*>/gi;
+  let depth = 0;
+  let contentStart = -1;
+  let match;
+
+  while ((match = tagRegex.exec(masked)) !== null) {
+    const tag = match[0];
+    if (/^<\/template/i.test(tag)) {
+      if (depth > 0) {
+        depth -= 1;
+        if (depth === 0 && contentStart !== -1) {
+          return {
+            content: vueSource.slice(contentStart, match.index),
+            offset: contentStart,
+          };
+        }
+      }
+    } else if (!/\/>\s*$/.test(tag)) {
+      if (depth === 0) {
+        contentStart = match.index + tag.length;
+      }
+      depth += 1;
+    }
+  }
+
+  return null;
+}
+
+function scanDynamicStyleBinding(expr, baseOffset, fullRaw, rel, violations) {
+  const hexRegex = /(?:^|[^\w-])(#[0-9a-fA-F]{3,8})(?![0-9a-fA-F_-])/g;
+  let hexMatch;
+  while ((hexMatch = hexRegex.exec(expr)) !== null) {
+    const tokenOffset = hexMatch.index + (hexMatch[0].length - hexMatch[1].length);
+    violations.push({
+      rule: 'C7.1-no-raw-hex-color',
+      file: rel,
+      line: lineNumberAt(fullRaw, baseOffset + tokenOffset),
+      message: `raw hex color "${hexMatch[1]}" is forbidden; use --qn-* CSS tokens`,
+    });
+  }
+
+  const zIndexRegex = /(?:['"]z-index['"]|\bzIndex)\s*:\s*['"]?\s*(-?\d+)\b/g;
+  let zMatch;
+  while ((zMatch = zIndexRegex.exec(expr)) !== null) {
+    violations.push({
+      rule: 'C7.1-no-magic-z-index',
+      file: rel,
+      line: lineNumberAt(fullRaw, baseOffset + zMatch.index),
+      message: `hardcoded z-index "${zMatch[1]}" is forbidden; use --qn-z-* tokens`,
+    });
+  }
+}
+
 function checkStyles(rootDir, violations) {
   const srcDir = path.join(rootDir, 'src');
   const cssFiles = walkFiles(srcDir, (f) => f.endsWith('.css'));
@@ -542,16 +734,25 @@ function checkStyles(rootDir, violations) {
       scanStyleDeclarations(block.content, block.offset, raw, rel, violations);
     }
 
-    const templateMatch = /<template\b[^>]*>([\s\S]*?)<\/template>/i.exec(raw);
-    if (templateMatch) {
-      const tpl = templateMatch[1] ?? '';
-      const tplOffset = templateMatch.index + templateMatch[0].indexOf('>') + 1;
-      const inlineStyleRegex = /\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+    const templateBlock = extractVueOutermostTemplate(raw);
+    if (templateBlock) {
+      const tpl = templateBlock.content;
+      const tplOffset = templateBlock.offset;
+
+      const staticStyleRegex = /(?:^|\s)style\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
       let attrMatch;
-      while ((attrMatch = inlineStyleRegex.exec(tpl)) !== null) {
+      while ((attrMatch = staticStyleRegex.exec(tpl)) !== null) {
         const styleVal = attrMatch[1] ?? attrMatch[2] ?? '';
         const valOffset = tplOffset + attrMatch.index + attrMatch[0].indexOf(styleVal);
         scanStyleDeclarations(styleVal, valOffset, raw, rel, violations);
+      }
+
+      const dynamicStyleRegex = /(?:^|\s)(?::|v-bind:)style\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+      let dynMatch;
+      while ((dynMatch = dynamicStyleRegex.exec(tpl)) !== null) {
+        const styleExpr = dynMatch[1] ?? dynMatch[2] ?? '';
+        const exprOffset = tplOffset + dynMatch.index + dynMatch[0].indexOf(styleExpr);
+        scanDynamicStyleBinding(styleExpr, exprOffset, raw, rel, violations);
       }
     }
   }
@@ -562,6 +763,7 @@ export function checkArchitecture(rootDir) {
   const violations = [];
 
   checkRustDomain(resolvedRoot, violations);
+  checkRustInfra(resolvedRoot, violations);
   checkRustNoPanic(resolvedRoot, violations);
   checkFrontendBoundaries(resolvedRoot, violations);
   checkBindingsDir(resolvedRoot, violations);

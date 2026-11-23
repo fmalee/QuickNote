@@ -1,11 +1,12 @@
 import { hotkeyUpdate, isAppError, settingsGet, uiStateGet } from '@/lib/ipc/commands';
-import { onSettingsStatus, type UnlistenFn } from '@/lib/ipc/events';
+import { onSettingsStatus, onWindowState, type UnlistenFn } from '@/lib/ipc/events';
 import type {
   HotkeyStatus,
   HotkeyUpdateArgs,
   SettingsLoadStatus,
   SettingsSnapshot,
   UiState,
+  WindowState,
 } from '@/bindings/types';
 
 export function fetchSettingsSnapshot(): Promise<SettingsSnapshot> {
@@ -24,6 +25,10 @@ export function subscribeSettingsStatus(
   handler: (status: SettingsLoadStatus) => void,
 ): Promise<UnlistenFn> {
   return onSettingsStatus(handler);
+}
+
+export function subscribeWindowState(handler: (state: WindowState) => void): Promise<UnlistenFn> {
+  return onWindowState(handler);
 }
 
 export function extractSettingsErrorMessage(error: unknown): string {

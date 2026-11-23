@@ -112,7 +112,7 @@ impl NativeWindowBridge for NoopNativeBridge {
         _hotkey: &ParsedHotkey,
         _on_hotkey: extern "C" fn(),
     ) -> Result<HotkeySelfCheck, AppError> {
-        Ok(HotkeySelfCheck::Ok)
+        Ok(HotkeySelfCheck::Pending)
     }
 }
 
@@ -261,7 +261,7 @@ pub mod darwin {
                 )
             };
             if status == 0 {
-                Ok(HotkeySelfCheck::Ok)
+                Ok(HotkeySelfCheck::Pending)
             } else {
                 Ok(HotkeySelfCheck::Conflict)
             }

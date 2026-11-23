@@ -22,15 +22,24 @@ static GLOBAL_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 /// C callback invoked by Carbon `RegisterEventHotKey` when the global hotkey fires.
 pub extern "C" fn on_hotkey_pressed() {
     if let Some(app) = GLOBAL_APP_HANDLE.get() {
+        if let Some(hm) = app.try_state::<Arc<HotkeyManager>>() {
+            if let Err(err) = hm.mark_hotkey_triggered() {
+                eprintln!("[hotkey] mark_hotkey_triggered failed: code={:?}", err.code);
+            }
+        }
         let wm = app.state::<Arc<WindowManager>>();
-        let _ = wm.toggle_quick_bar(app);
+        if let Err(err) = wm.toggle_quick_bar(app) {
+            eprintln!("[hotkey] toggle_quick_bar failed: code={:?}", err.code);
+        }
     }
 }
 
 extern "C" fn on_quick_bar_esc() {
     if let Some(app) = GLOBAL_APP_HANDLE.get() {
         let wm = app.state::<Arc<WindowManager>>();
-        let _ = wm.hide_quick_bar(app, HideReason::Esc);
+        if let Err(err) = wm.hide_quick_bar(app, HideReason::Esc) {
+            eprintln!("[quickbar] hide_quick_bar(esc) failed: code={:?}", err.code);
+        }
     }
 }
 
@@ -38,7 +47,12 @@ extern "C" fn on_space_changed() {
     if let Some(app) = GLOBAL_APP_HANDLE.get() {
         let wm = app.state::<Arc<WindowManager>>();
         if wm.is_quick_bar_visible().unwrap_or(false) {
-            let _ = wm.hide_quick_bar(app, HideReason::SpaceChanged);
+            if let Err(err) = wm.hide_quick_bar(app, HideReason::SpaceChanged) {
+                eprintln!(
+                    "[quickbar] hide_quick_bar(space_changed) failed: code={:?}",
+                    err.code
+                );
+            }
         }
     }
 }
@@ -81,11 +95,7 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         .build()?;
 
     let file_submenu = SubmenuBuilder::new(app, "文件")
-        .item(
-            &MenuItemBuilder::with_id("menu_quick_bar", "快速捕捉")
-                .accelerator("Ctrl+Alt+Space")
-                .build(app)?,
-        )
+        .item(&MenuItemBuilder::with_id("menu_quick_bar", "快速捕捉").build(app)?)
         .item(
             &MenuItemBuilder::with_id("menu_quick_open", "快速打开…")
                 .accelerator("CmdOrCtrl+K")
@@ -180,7 +190,7 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
     app.set_menu(menu)?;
 
     let tray_menu = MenuBuilder::new(app)
-        .item(&MenuItemBuilder::with_id("tray_quick_bar", "快速捕捉 (⌃⌥Space)").build(app)?)
+        .item(&MenuItemBuilder::with_id("tray_quick_bar", "快速捕捉").build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("tray_show_main", "打开主窗口").build(app)?)
         .item(&MenuItemBuilder::with_id("tray_hide_main", "隐藏主窗口").build(app)?)
@@ -207,21 +217,37 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
 
     app.on_menu_event(|app_handle, event| {
         let wm = app_handle.state::<Arc<WindowManager>>();
-        match event.id().as_ref() {
+        let menu_id = event.id().as_ref();
+        match menu_id {
             "tray_quick_bar" | "menu_quick_bar" => {
-                let _ = wm.show_quick_bar(app_handle, None);
+                if let Err(err) = wm.show_quick_bar(app_handle, None) {
+                    eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
+                }
             }
             "tray_show_main" | "menu_show_main" => {
-                let _ = wm.show_main(app_handle, None);
+                if let Err(err) = wm.show_main(app_handle, None) {
+                    eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
+                }
             }
-            "tray_hide_main" | "menu_hide_window" => {
-                let _ = wm.hide_main(app_handle);
+            "tray_hide_main" => {
+                if let Err(err) = wm.hide_main(app_handle) {
+                    eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
+                }
+            }
+            "menu_hide_window" => {
+                if let Err(err) = wm.hide_focused_window(app_handle) {
+                    eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
+                }
             }
             "tray_settings" | "menu_settings" => {
-                let _ = wm.open_settings(app_handle);
+                if let Err(err) = wm.open_settings(app_handle) {
+                    eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
+                }
             }
             "tray_debug_toast" | "menu_tools_toast" => {
-                let _ = wm.show_debug_toast(app_handle);
+                if let Err(err) = wm.show_debug_toast(app_handle) {
+                    eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
+                }
             }
             "tray_quit" => {
                 app_handle.exit(0);
@@ -284,7 +310,9 @@ pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(wm) = app.try_state::<Arc<WindowManager>>() {
-                let _ = wm.show_main(app, None);
+                if let Err(err) = wm.show_main(app, None) {
+                    eprintln!("[single-instance] show_main failed: code={:?}", err.code);
+                }
             }
         }))
         .setup(|app| {
@@ -321,7 +349,9 @@ pub fn run() -> Result<(), tauri::Error> {
                 .register_space_observer(on_space_changed)
                 .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
 
-            let _ = hm.init_and_self_check(on_hotkey_pressed);
+            if let Err(err) = hm.init_and_self_check(on_hotkey_pressed) {
+                eprintln!("[hotkey] init_and_self_check failed: code={:?}", err.code);
+            }
             setup_tray_and_menu(app.handle())?;
 
             let policy = wm
@@ -332,8 +362,18 @@ pub fn run() -> Result<(), tauri::Error> {
             let handle = app.handle().clone();
             let pm_for_watch = Arc::clone(&pm);
             let watcher = SettingsWatcher::start(pm.app_data_dir(), move || {
-                if let Ok(snapshot) = pm_for_watch.reload_settings() {
-                    let _ = handle.emit("settings:status", &snapshot.status);
+                match pm_for_watch.reload_settings() {
+                    Ok(snapshot) => {
+                        if let Err(err) = handle.emit("settings:status", &snapshot.status) {
+                            eprintln!("[settings-watch] emit settings:status failed: {err}");
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!(
+                            "[settings-watch] reload_settings failed: code={:?}",
+                            err.code
+                        );
+                    }
                 }
             })
             .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
@@ -347,12 +387,16 @@ pub fn run() -> Result<(), tauri::Error> {
                 if label == "main" {
                     api.prevent_close();
                     if let Some(wm) = window.app_handle().try_state::<Arc<WindowManager>>() {
-                        let _ = wm.hide_main(window.app_handle());
+                        if let Err(err) = wm.hide_main(window.app_handle()) {
+                            eprintln!("[window] hide_main failed: code={:?}", err.code);
+                        }
                     }
                 } else if label == "settings" {
                     api.prevent_close();
                     if let Some(wm) = window.app_handle().try_state::<Arc<WindowManager>>() {
-                        let _ = wm.close_settings(window.app_handle());
+                        if let Err(err) = wm.close_settings(window.app_handle()) {
+                            eprintln!("[window] close_settings failed: code={:?}", err.code);
+                        }
                     }
                 }
             }

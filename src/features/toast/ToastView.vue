@@ -42,25 +42,26 @@ const targetTitle = computed<string>(() => {
 <style scoped>
 .qn-toast-viewport {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: stretch;
   width: 100%;
   height: 100%;
-  padding: var(--qn-space-2);
+  padding: 0;
   background-color: transparent;
 }
 
 .qn-toast-pill {
   z-index: var(--qn-z-toast);
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: var(--qn-space-3);
-  padding: var(--qn-space-2) var(--qn-space-3);
+  gap: var(--qn-space-2);
+  width: 100%;
+  height: 100%;
+  padding: 0 var(--qn-space-3);
   background-color: var(--qn-bg-elevated);
   border: 1px solid var(--qn-border-subtle);
-  border-radius: var(--qn-radius-lg);
-  box-shadow: var(--qn-shadow-md);
-  max-width: 100%;
+  border-radius: var(--qn-radius-md);
+  box-sizing: border-box;
 }
 
 .qn-toast-pill__dot {
@@ -72,6 +73,7 @@ const targetTitle = computed<string>(() => {
 }
 
 .qn-toast-pill__text {
+  flex: 1;
   display: flex;
   align-items: baseline;
   gap: var(--qn-space-2);

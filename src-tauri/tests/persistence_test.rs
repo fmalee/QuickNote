@@ -2,10 +2,12 @@ use std::fs::{self, File};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use quicknote_lib::application::library::{get_library_info, set_library_root};
 use quicknote_lib::application::persistence::PersistenceManager;
 use quicknote_lib::domain::backup::{select_backups_to_prune, BackupEntry, MAX_BACKUP_COUNT};
 use quicknote_lib::domain::error::ErrorCode;
-use quicknote_lib::domain::settings::{parse_settings_yaml, Settings};
+use quicknote_lib::domain::settings::{parse_settings_yaml, SetRootArgs, Settings};
+use quicknote_lib::domain::ui_state::{UiState, UiStateArgs, UiStatePatchKey};
 use quicknote_lib::infra::fs::prune_backups;
 
 fn make_temp_dir(label: &str) -> PathBuf {
@@ -91,12 +93,18 @@ fn ui_state_set_persists_whitelisted_keys_and_rejects_invalid_keys() {
     let pm = PersistenceManager::open(app_data_dir.clone()).expect("open PersistenceManager");
 
     let updated = pm
-        .ui_state_set("selectedWorkspace", serde_json::json!("quicknote"))
+        .ui_state_set(
+            UiStatePatchKey::SelectedWorkspace,
+            serde_json::json!("quicknote"),
+        )
         .expect("selectedWorkspace must succeed");
     assert_eq!(updated.selected_workspace_key.as_deref(), Some("quicknote"));
 
     let updated_modes = pm
-        .ui_state_set("workspaceModes", serde_json::json!({ "quicknote": "todo" }))
+        .ui_state_set(
+            UiStatePatchKey::WorkspaceModes,
+            serde_json::json!({ "quicknote": "todo" }),
+        )
         .expect("workspaceModes must succeed");
     assert_eq!(updated_modes.workspace_modes.len(), 1);
 
@@ -108,15 +116,16 @@ fn ui_state_set_persists_whitelisted_keys_and_rejects_invalid_keys() {
     assert_eq!(loaded.selected_workspace_key.as_deref(), Some("quicknote"));
     assert_eq!(loaded.workspace_modes.len(), 1);
 
-    // Non-whitelisted key must return ValidationError.
-    let invalid_key_err = reopened
-        .ui_state_set("unknownKey", serde_json::json!(true))
-        .expect_err("unknownKey must fail");
-    assert_eq!(invalid_key_err.code, ErrorCode::ValidationError);
+    // Non-whitelisted key must be rejected by UiStatePatchKey deserialization.
+    let invalid_key_deser = serde_json::from_value::<UiStateArgs>(serde_json::json!({
+        "key": "unknownKey",
+        "value": true
+    }));
+    assert!(invalid_key_deser.is_err());
 
     // Wrong value type for whitelisted key must return ValidationError.
     let invalid_type_err = reopened
-        .ui_state_set("windows", serde_json::json!("not-an-object"))
+        .ui_state_set(UiStatePatchKey::Windows, serde_json::json!("not-an-object"))
         .expect_err("invalid type must fail");
     assert_eq!(invalid_type_err.code, ErrorCode::ValidationError);
 
@@ -182,6 +191,167 @@ fn backup_rolling_prune_pure_and_filesystem() {
             .join(format!("sample.{old_idx:02}.bak"))
             .exists());
     }
+
+    let _ = fs::remove_dir_all(&app_data_dir);
+}
+
+#[test]
+fn corrupt_ui_state_json_backs_up_and_resets_to_default() {
+    let app_data_dir = make_temp_dir("corrupt_ui_state");
+    let corrupt_raw = "{ invalid json: [unclosed";
+    fs::write(app_data_dir.join("ui-state.json"), corrupt_raw).expect("seed corrupt ui-state.json");
+
+    let pm = PersistenceManager::open(app_data_dir.clone()).expect("open must not fail");
+    let state = pm.ui_state_get().expect("ui_state_get");
+    assert_eq!(state, UiState::default());
+
+    // ui-state.json on disk is repaired to valid default JSON.
+    let disk_state: UiState = serde_json::from_str(
+        &fs::read_to_string(pm.ui_state_path()).expect("read repaired ui-state.json"),
+    )
+    .expect("repaired ui-state.json must parse");
+    assert_eq!(disk_state, UiState::default());
+
+    // Corrupt original is preserved in backups/.
+    let backup_files: Vec<PathBuf> = fs::read_dir(pm.backups_dir())
+        .expect("read backups dir")
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("ui-state.json.") && n.ends_with(".bak"))
+        })
+        .collect();
+    assert_eq!(backup_files.len(), 1);
+    assert_eq!(
+        fs::read_to_string(&backup_files[0]).expect("read backup"),
+        corrupt_raw
+    );
+
+    let _ = fs::remove_dir_all(&app_data_dir);
+}
+
+#[test]
+fn current_library_root_respects_valid_settings_clear_and_falls_back_only_when_invalid() {
+    let app_data_dir = make_temp_dir("library_root_truth");
+    let vault_dir = app_data_dir.join("vault");
+    let pm = PersistenceManager::open(app_data_dir.clone()).expect("open PersistenceManager");
+
+    let info = set_library_root(
+        &pm,
+        SetRootArgs {
+            root: vault_dir.to_string_lossy().to_string(),
+            create_if_missing: true,
+        },
+    )
+    .expect("set_library_root");
+    assert_eq!(
+        info.root.as_deref(),
+        Some(vault_dir.to_string_lossy().as_ref())
+    );
+
+    // User clears library_root in valid settings.yaml -> must return None (not stale SQLite value).
+    fs::write(pm.settings_path(), "library_root: null\n").expect("clear library_root");
+    let reloaded = pm.reload_settings().expect("reload_settings");
+    assert!(reloaded.status.valid);
+    assert_eq!(
+        pm.current_library_root().expect("current_library_root"),
+        None
+    );
+    assert_eq!(get_library_info(&pm).expect("get_library_info").root, None);
+
+    // When settings.yaml is invalid on cold start, fall back to SQLite library_meta.
+    drop(pm);
+    fs::write(
+        app_data_dir.join("settings.yaml"),
+        "bad_unknown_field: 123\n",
+    )
+    .expect("write invalid settings");
+    let reopened =
+        PersistenceManager::open(app_data_dir.clone()).expect("reopen PersistenceManager");
+    assert!(!reopened.settings_get().expect("settings_get").status.valid);
+    assert_eq!(
+        reopened
+            .current_library_root()
+            .expect("fallback current_library_root")
+            .as_deref(),
+        Some(vault_dir.to_string_lossy().as_ref())
+    );
+
+    let _ = fs::remove_dir_all(&app_data_dir);
+}
+
+#[test]
+fn library_set_root_boundaries_and_broken_settings_protection() {
+    let app_data_dir = make_temp_dir("library_set_root_bounds");
+    let pm = PersistenceManager::open(app_data_dir.clone()).expect("open PersistenceManager");
+
+    // 1. Empty or whitespace root -> ValidationError.
+    let empty_err = set_library_root(
+        &pm,
+        SetRootArgs {
+            root: "   ".to_string(),
+            create_if_missing: true,
+        },
+    )
+    .expect_err("empty root must fail");
+    assert_eq!(empty_err.code, ErrorCode::ValidationError);
+
+    // 2. Missing directory with create_if_missing=false -> NotFound.
+    let missing_dir = app_data_dir.join("does_not_exist");
+    let not_found_err = set_library_root(
+        &pm,
+        SetRootArgs {
+            root: missing_dir.to_string_lossy().to_string(),
+            create_if_missing: false,
+        },
+    )
+    .expect_err("missing dir without create must fail");
+    assert_eq!(not_found_err.code, ErrorCode::NotFound);
+    assert!(!missing_dir.exists());
+
+    // 3. Regular file instead of directory -> ValidationError.
+    let file_path = app_data_dir.join("not_a_dir.txt");
+    fs::write(&file_path, "hello").expect("create regular file");
+    let file_err = set_library_root(
+        &pm,
+        SetRootArgs {
+            root: file_path.to_string_lossy().to_string(),
+            create_if_missing: true,
+        },
+    )
+    .expect_err("regular file path must fail");
+    assert_eq!(file_err.code, ErrorCode::ValidationError);
+
+    // 4. Broken settings.yaml on disk must NOT be overwritten when set_library_root succeeds.
+    drop(pm);
+    let broken_settings = "editor:\n  font_size: \"bad\"\n  unknown_key: true\n";
+    fs::write(app_data_dir.join("settings.yaml"), broken_settings).expect("seed broken settings");
+
+    let reopened =
+        PersistenceManager::open(app_data_dir.clone()).expect("reopen PersistenceManager");
+    let created_vault = app_data_dir.join("new_vault");
+    let ok_info = set_library_root(
+        &reopened,
+        SetRootArgs {
+            root: created_vault.to_string_lossy().to_string(),
+            create_if_missing: true,
+        },
+    )
+    .expect("set_library_root with create_if_missing=true");
+    assert_eq!(
+        ok_info.root.as_deref(),
+        Some(created_vault.to_string_lossy().as_ref())
+    );
+    assert!(created_vault.join("inbox.md").is_file());
+    assert!(created_vault.join("assets").is_dir());
+    assert!(created_vault.join("_templates").is_dir());
+
+    // Corrupt settings.yaml remains untouched on disk.
+    assert_eq!(
+        fs::read_to_string(app_data_dir.join("settings.yaml")).expect("read settings.yaml"),
+        broken_settings
+    );
 
     let _ = fs::remove_dir_all(&app_data_dir);
 }

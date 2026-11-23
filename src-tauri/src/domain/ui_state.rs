@@ -179,62 +179,77 @@ pub struct UiState {
     pub hotkey: HotkeyStatus,
 }
 
-/// Whitelisted patch keys accepted by `ui_state_set` (`C4.2`).
-pub const UI_STATE_ALLOWED_KEYS: [&str; 8] = [
-    "windows",
-    "tabs",
-    "panelGroup",
-    "filters",
-    "selectedWorkspace",
-    "hotkey",
-    "lastActiveDoc",
-    "workspaceModes",
-];
+/// Whitelisted patch keys accepted by `ui_state_set` (`C4.2`, `C6.3`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum UiStatePatchKey {
+    Windows,
+    Tabs,
+    PanelGroup,
+    Filters,
+    SelectedWorkspace,
+    Hotkey,
+    LastActiveDoc,
+    WorkspaceModes,
+}
+
+impl UiStatePatchKey {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Windows => "windows",
+            Self::Tabs => "tabs",
+            Self::PanelGroup => "panelGroup",
+            Self::Filters => "filters",
+            Self::SelectedWorkspace => "selectedWorkspace",
+            Self::Hotkey => "hotkey",
+            Self::LastActiveDoc => "lastActiveDoc",
+            Self::WorkspaceModes => "workspaceModes",
+        }
+    }
+}
 
 /// Arguments for `ui_state_set` (`C4.2`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct UiStateArgs {
-    pub key: String,
+    pub key: UiStatePatchKey,
     #[specta(type = specta_typescript::Unknown)]
     pub value: serde_json::Value,
 }
 
 impl UiState {
     /// Applies a single whitelisted key update, returning `ErrorCode::ValidationError`
-    /// if the key is unknown or the JSON value does not match the target schema (`C4.2`).
-    pub fn apply_patch(&mut self, key: &str, value: serde_json::Value) -> Result<(), AppError> {
+    /// if the JSON value does not match the target schema (`C4.2`).
+    pub fn apply_patch(
+        &mut self,
+        key: UiStatePatchKey,
+        value: serde_json::Value,
+    ) -> Result<(), AppError> {
+        let key_name = key.as_str();
         match key {
-            "windows" => {
-                self.windows = parse_patch_value(key, value)?;
+            UiStatePatchKey::Windows => {
+                self.windows = parse_patch_value(key_name, value)?;
             }
-            "tabs" => {
-                self.tabs = parse_patch_value(key, value)?;
+            UiStatePatchKey::Tabs => {
+                self.tabs = parse_patch_value(key_name, value)?;
             }
-            "panelGroup" => {
-                self.panel_group = parse_patch_value(key, value)?;
+            UiStatePatchKey::PanelGroup => {
+                self.panel_group = parse_patch_value(key_name, value)?;
             }
-            "filters" => {
-                self.filters = parse_patch_value(key, value)?;
+            UiStatePatchKey::Filters => {
+                self.filters = parse_patch_value(key_name, value)?;
             }
-            "selectedWorkspace" => {
-                self.selected_workspace_key = parse_patch_value(key, value)?;
+            UiStatePatchKey::SelectedWorkspace => {
+                self.selected_workspace_key = parse_patch_value(key_name, value)?;
             }
-            "hotkey" => {
-                self.hotkey = parse_patch_value(key, value)?;
+            UiStatePatchKey::Hotkey => {
+                self.hotkey = parse_patch_value(key_name, value)?;
             }
-            "lastActiveDoc" => {
-                self.last_active_doc = parse_patch_value(key, value)?;
+            UiStatePatchKey::LastActiveDoc => {
+                self.last_active_doc = parse_patch_value(key_name, value)?;
             }
-            "workspaceModes" => {
-                self.workspace_modes = parse_patch_value(key, value)?;
-            }
-            _ => {
-                return Err(AppError::with_detail(
-                    ErrorCode::ValidationError,
-                    "Unsupported ui_state_set key",
-                    format!("key={key}"),
-                ));
+            UiStatePatchKey::WorkspaceModes => {
+                self.workspace_modes = parse_patch_value(key_name, value)?;
             }
         }
         Ok(())
