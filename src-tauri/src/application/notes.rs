@@ -420,6 +420,12 @@ pub fn note_create(pm: &PersistenceManager, args: CreateNoteArgs) -> Result<Note
     atomic_write_str(&abs_path, &content)?;
     let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
     index_single_note(pm, &rel_path, &content, mtime_ms, size_bytes as i64)?;
+    let stem = abs_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("note");
+    let created_parsed = parse_note(&content, stem);
+    pm.record_self_write(&abs_path, &compute_body_hash(&created_parsed.body));
 
     note_read(
         pm,
@@ -508,8 +514,16 @@ pub fn note_write(pm: &PersistenceManager, args: WriteNoteArgs) -> Result<WriteR
         index_single_note(pm, &rel, &new_content, new_mtime_ms, new_size_bytes as i64)?;
     }
 
+    let new_body_hash = compute_body_hash(&new_parsed.body);
+    pm.record_self_write(&abs_path, &new_body_hash);
+    let _ = pm.clear_recovery_snapshot(&args.abs_path);
+    let abs_lossy = abs_path.to_string_lossy();
+    if abs_lossy != args.abs_path {
+        let _ = pm.clear_recovery_snapshot(&abs_lossy);
+    }
+
     Ok(WriteResult {
-        body_hash: compute_body_hash(&new_parsed.body),
+        body_hash: new_body_hash,
         mtime_ms: new_mtime_ms,
         updated_meta,
     })
@@ -572,6 +586,12 @@ pub fn note_update_meta(
     if let Some(rel) = root.as_deref().and_then(|r| resolve_rel_path(r, &abs_path)) {
         index_single_note(pm, &rel, &new_content, mtime_ms, size_bytes as i64)?;
     }
+    let meta_stem = abs_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("note");
+    let updated_parsed = parse_note(&new_content, meta_stem);
+    pm.record_self_write(&abs_path, &compute_body_hash(&updated_parsed.body));
 
     note_read(
         pm,
@@ -681,6 +701,13 @@ pub fn note_rename(pm: &PersistenceManager, args: RenameNoteArgs) -> Result<Note
 
     pm.with_db(|conn| delete_note_index_by_rel_path(conn, &old_rel))?;
     index_single_note(pm, &new_rel, &raw, mtime_ms, size_bytes as i64)?;
+    pm.clear_self_write(&old_abs);
+    let rename_stem = new_abs
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("note");
+    let renamed_parsed = parse_note(&raw, rename_stem);
+    pm.record_self_write(&new_abs, &compute_body_hash(&renamed_parsed.body));
 
     note_read(
         pm,
@@ -712,6 +739,7 @@ pub fn note_delete(pm: &PersistenceManager, args: RelPathArgs) -> Result<(), App
 
     fs::remove_file(&abs_path).map_err(|e| map_io_error(e, "Failed to delete note file"))?;
     pm.with_db(|conn| delete_note_index_by_rel_path(conn, &rel))?;
+    pm.clear_self_write(&abs_path);
     Ok(())
 }
 

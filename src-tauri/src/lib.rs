@@ -11,6 +11,7 @@ use crate::application::window::WindowManager;
 use crate::domain::window::HideReason;
 use crate::infra::macos::{NativeWindowBridge, NoopNativeBridge};
 use crate::infra::settings_watch::SettingsWatcher;
+use crate::infra::vault_watch::VaultWatcher;
 
 pub mod application;
 pub mod bindings;
@@ -382,6 +383,34 @@ pub fn run() -> Result<(), tauri::Error> {
             })
             .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
             app.manage(watcher);
+
+            let initial_root = pm
+                .current_library_root()
+                .ok()
+                .flatten()
+                .map(std::path::PathBuf::from);
+            let handle_for_vault = app.handle().clone();
+            let pm_for_vault = Arc::clone(&pm);
+            let vault_watcher = Arc::new(
+                VaultWatcher::start(initial_root.as_deref(), move |path| {
+                    match crate::application::watch::process_external_fs_path(&pm_for_vault, path) {
+                        Ok(Some(event)) => {
+                            if let Err(err) = handle_for_vault.emit("fs:external-change", &event) {
+                                eprintln!("[vault-watch] emit fs:external-change failed: {err}");
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(err) => {
+                            eprintln!(
+                                "[vault-watch] process_external_fs_path failed: code={:?}",
+                                err.code
+                            );
+                        }
+                    }
+                })
+                .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?,
+            );
+            app.manage(vault_watcher);
 
             Ok(())
         })

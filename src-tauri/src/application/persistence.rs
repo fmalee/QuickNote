@@ -9,12 +9,28 @@ use rusqlite::Connection;
 use crate::domain::app::{ActivationPolicy, AppInfo};
 use crate::domain::backup::format_backup_filename;
 use crate::domain::error::{AppError, ErrorCode};
+use crate::domain::note::compute_body_hash;
 use crate::domain::settings::{
     parse_settings_yaml, serialize_settings_yaml, Settings, SettingsLoadStatus, SettingsSnapshot,
 };
 use crate::domain::ui_state::{UiState, UiStatePatchKey};
+use crate::domain::watch::{QuickBarDraft, RecoverySnapshot, SelfWriteGuard};
 use crate::infra::fs::{atomic_write_str, init_app_data_dir, map_io_error, prune_backups};
 use crate::infra::sqlite::{get_library_meta, init_sqlite};
+
+/// Normalizes a filesystem path for `SelfWriteGuard` and watcher comparisons (`C8.5`).
+/// Handles macOS `/var` -> `/private/var` symlinks even when the target file no longer exists.
+pub fn canonicalize_watch_path(path: &Path) -> String {
+    if let Ok(canon) = fs::canonicalize(path) {
+        return canon.to_string_lossy().to_string();
+    }
+    if let (Some(parent), Some(name)) = (path.parent(), path.file_name()) {
+        if let Ok(canon_parent) = fs::canonicalize(parent) {
+            return canon_parent.join(name).to_string_lossy().to_string();
+        }
+    }
+    path.to_string_lossy().to_string()
+}
 
 /// Coordinates `$APP_DATA_DIR` persistence (`settings.yaml`, `ui-state.json`, `index.sqlite`) (`C6.1`–`C6.3`).
 pub struct PersistenceManager {
@@ -24,6 +40,7 @@ pub struct PersistenceManager {
     last_valid_settings: RwLock<Option<Settings>>,
     ui_state: RwLock<UiState>,
     db: Mutex<Connection>,
+    self_write_guard: Mutex<SelfWriteGuard>,
 }
 
 impl PersistenceManager {
@@ -128,6 +145,7 @@ impl PersistenceManager {
             last_valid_settings: RwLock::new(last_valid),
             ui_state: RwLock::new(ui_state),
             db: Mutex::new(conn),
+            self_write_guard: Mutex::new(SelfWriteGuard::new()),
         })
     }
 
@@ -145,6 +163,160 @@ impl PersistenceManager {
 
     pub fn backups_dir(&self) -> PathBuf {
         self.app_data_dir.join("backups")
+    }
+
+    pub fn quickbar_draft_path(&self) -> PathBuf {
+        self.app_data_dir.join("quickbar-draft.json")
+    }
+
+    pub fn recovery_dir(&self) -> PathBuf {
+        self.app_data_dir.join("recovery")
+    }
+
+    pub fn recovery_snapshot_path(&self, abs_path: &str) -> PathBuf {
+        self.recovery_dir()
+            .join(format!("{}.json", compute_body_hash(abs_path)))
+    }
+
+    /// Records an internal write in `SelfWriteGuard` to suppress `notify` loopbacks (`C8.5`).
+    pub fn record_self_write(&self, path: &Path, body_hash: &str) {
+        let canonical = canonicalize_watch_path(path);
+        let now_ms = Utc::now().timestamp_millis();
+        if let Ok(mut guard) = self.self_write_guard.lock() {
+            guard.record_write(&canonical, body_hash, now_ms);
+        }
+    }
+
+    /// Checks whether an external modify callback matches our own recent write (`C8.5`).
+    pub fn should_suppress_external_modify(&self, path: &Path, disk_body_hash: &str) -> bool {
+        let canonical = canonicalize_watch_path(path);
+        let now_ms = Utc::now().timestamp_millis();
+        if let Ok(mut guard) = self.self_write_guard.lock() {
+            guard.should_suppress_modify(&canonical, disk_body_hash, now_ms)
+        } else {
+            false
+        }
+    }
+
+    /// Clears cached self-write state for a deleted or moved-away file path (`C8.5`).
+    pub fn clear_self_write(&self, path: &Path) {
+        let canonical = canonicalize_watch_path(path);
+        if let Ok(mut guard) = self.self_write_guard.lock() {
+            guard.clear_path(&canonical);
+        }
+    }
+
+    /// Persists the Quick Bar draft to `$APP_DATA_DIR/quickbar-draft.json` (`C6.1`).
+    pub fn save_quickbar_draft(&self, draft: &QuickBarDraft) -> Result<(), AppError> {
+        let json = serde_json::to_string_pretty(draft).map_err(|err| {
+            AppError::with_detail(
+                ErrorCode::InternalError,
+                "Failed to serialize quickbar-draft.json",
+                err.to_string(),
+            )
+        })?;
+        atomic_write_str(&self.quickbar_draft_path(), &json)
+    }
+
+    /// Loads `$APP_DATA_DIR/quickbar-draft.json` if present (`C6.1`).
+    pub fn load_quickbar_draft(&self) -> Result<Option<QuickBarDraft>, AppError> {
+        let path = self.quickbar_draft_path();
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let raw = fs::read_to_string(&path)
+            .map_err(|e| map_io_error(e, "Failed to read quickbar-draft.json"))?;
+        let parsed = serde_json::from_str::<QuickBarDraft>(&raw).map_err(|err| {
+            AppError::with_detail(
+                ErrorCode::InternalError,
+                "Failed to parse quickbar-draft.json",
+                err.to_string(),
+            )
+        })?;
+        Ok(Some(parsed))
+    }
+
+    /// Removes `$APP_DATA_DIR/quickbar-draft.json` if present (`C6.1`).
+    pub fn clear_quickbar_draft(&self) -> Result<(), AppError> {
+        let path = self.quickbar_draft_path();
+        if path.exists() {
+            match fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(map_io_error(err, "Failed to remove quickbar-draft.json")),
+            }
+        }
+        Ok(())
+    }
+
+    /// Persists an unsaved editor recovery snapshot under `$APP_DATA_DIR/recovery/` (`C6.1`).
+    pub fn save_recovery_snapshot(&self, snapshot: &RecoverySnapshot) -> Result<(), AppError> {
+        let dir = self.recovery_dir();
+        if !dir.exists() {
+            fs::create_dir_all(&dir)
+                .map_err(|e| map_io_error(e, "Failed to create recovery directory"))?;
+        }
+        let json = serde_json::to_string_pretty(snapshot).map_err(|err| {
+            AppError::with_detail(
+                ErrorCode::InternalError,
+                "Failed to serialize recovery snapshot",
+                err.to_string(),
+            )
+        })?;
+        atomic_write_str(&self.recovery_snapshot_path(&snapshot.abs_path), &json)
+    }
+
+    /// Lists all recovery snapshots under `$APP_DATA_DIR/recovery/`, sorted newest first (`C6.1`).
+    pub fn list_recovery_snapshots(&self) -> Result<Vec<RecoverySnapshot>, AppError> {
+        let dir = self.recovery_dir();
+        if !dir.is_dir() {
+            return Ok(Vec::new());
+        }
+
+        let entries =
+            fs::read_dir(&dir).map_err(|e| map_io_error(e, "Failed to read recovery directory"))?;
+        let mut snapshots = Vec::new();
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            match fs::read_to_string(&path) {
+                Ok(raw) => match serde_json::from_str::<RecoverySnapshot>(&raw) {
+                    Ok(snap) => snapshots.push(snap),
+                    Err(err) => {
+                        eprintln!(
+                            "[persistence] invalid recovery snapshot json: line={} col={}",
+                            err.line(),
+                            err.column()
+                        );
+                    }
+                },
+                Err(err) => {
+                    eprintln!("[persistence] failed to read recovery snapshot: {err}");
+                }
+            }
+        }
+
+        snapshots.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
+        Ok(snapshots)
+    }
+
+    /// Removes the recovery snapshot corresponding to `abs_path` if present (`C6.1`).
+    pub fn clear_recovery_snapshot(&self, abs_path: &str) -> Result<(), AppError> {
+        let path = self.recovery_snapshot_path(abs_path);
+        if path.exists() {
+            match fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(map_io_error(err, "Failed to remove recovery snapshot")),
+            }
+        }
+        Ok(())
     }
 
     /// Returns the current in-memory settings and load diagnostics (`C4.2`).

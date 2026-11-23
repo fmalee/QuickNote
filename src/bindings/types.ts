@@ -95,6 +95,18 @@ export type ExternalAppConfig = {
 	bundleId: string,
 };
 
+/**  Payload for `"fs:external-change"` events (`C4.3`, `C8.5`). */
+export type ExternalChangeEvent = {
+	absPath: string,
+	kind: ExternalChangeKind,
+	newBody: string | null,
+	newBodyHash: string | null,
+	newMeta: NoteMeta | null,
+};
+
+/**  Kind of external filesystem change emitted to the frontend (`C4.3`, `C8.5`). */
+export type ExternalChangeKind = "modified" | "deleted";
+
 /**  Navigation filter state (`C6.3`). */
 export type FiltersUiState = {
 	activeTab: NavTab,
@@ -299,6 +311,15 @@ export type QuickBarArgs = {
 	mode: QuickBarMode | null,
 };
 
+/**  Persisted Quick Bar draft stored at `$APP_DATA_DIR/quickbar-draft.json` (`C6.1`). */
+export type QuickBarDraft = {
+	mode: CaptureMode,
+	targetRelPath: string | null,
+	selectedWorkspaceKey: string | null,
+	text: string,
+	updatedAt: number,
+};
+
 /**  Quick Bar operating mode (`C3.4`). */
 export type QuickBarMode = "capture" | "open" | "command";
 
@@ -313,6 +334,15 @@ export type QuickBarSettings = {
 /**  Arguments for `note_read` (`C4.2`). */
 export type ReadNoteArgs = {
 	absPath: string,
+};
+
+/**  Unsaved editor crash-recovery snapshot stored under `$APP_DATA_DIR/recovery/` (`C6.1`). */
+export type RecoverySnapshot = {
+	absPath: string,
+	relPath: string | null,
+	dirtyBody: string,
+	baseBodyHash: string,
+	updatedAt: number,
 };
 
 /**  Arguments carrying a single library-relative path (`C4.2`). */

@@ -26,6 +26,9 @@ use crate::domain::ui_state::{
     MainWindowState, NavTab, PanelGroupUiState, TabItemState, TabsUiState, UiState, UiStateArgs,
     UiStatePatchKey, WindowsUiState,
 };
+use crate::domain::watch::{
+    ExternalChangeEvent, ExternalChangeKind, QuickBarDraft, RecoverySnapshot,
+};
 use crate::domain::window::{
     HideQuickBarArgs, HideReason, MainWindowArgs, QuickBarArgs, QuickBarMode, WindowState,
 };
@@ -110,6 +113,10 @@ pub fn collect_types() -> Types {
         .register::<AppendNoteArgs>()
         .register::<AppendResult>()
         .register::<UndoAppendResult>()
+        .register::<ExternalChangeKind>()
+        .register::<ExternalChangeEvent>()
+        .register::<QuickBarDraft>()
+        .register::<RecoverySnapshot>()
 }
 
 /// Renders the full TypeScript bindings content deterministically.

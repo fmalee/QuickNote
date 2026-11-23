@@ -1,5 +1,11 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { AppendResult, IndexStatus, SettingsLoadStatus, WindowState } from '@/bindings/types';
+import type {
+  AppendResult,
+  ExternalChangeEvent,
+  IndexStatus,
+  SettingsLoadStatus,
+  WindowState,
+} from '@/bindings/types';
 
 export type { UnlistenFn };
 
@@ -28,4 +34,10 @@ export function onIndexStatus(handler: (status: IndexStatus) => void): Promise<U
 
 export function onToastAppendUndo(handler: (payload: AppendResult) => void): Promise<UnlistenFn> {
   return listenEvent<AppendResult>('toast:append-undo', handler);
+}
+
+export function onFsExternalChange(
+  handler: (event: ExternalChangeEvent) => void,
+): Promise<UnlistenFn> {
+  return listenEvent<ExternalChangeEvent>('fs:external-change', handler);
 }

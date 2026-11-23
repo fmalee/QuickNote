@@ -173,6 +173,8 @@ impl CaptureManager {
 
         let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
         index_single_note(pm, &rel_path, &new_raw, mtime_ms, size_bytes as i64)?;
+        pm.record_self_write(&abs_path, &after_body_hash);
+        let _ = pm.clear_quickbar_draft();
 
         {
             let mut guard = self.last_undo.lock().map_err(|_| {
@@ -300,10 +302,12 @@ impl CaptureManager {
             mtime_ms,
             size_bytes as i64,
         )?;
+        let restored_body_hash = compute_body_hash(&snapshot.before_body);
+        pm.record_self_write(&abs_path, &restored_body_hash);
 
         Ok(UndoAppendResult {
             rel_path: snapshot.rel_path,
-            restored_body_hash: compute_body_hash(&snapshot.before_body),
+            restored_body_hash,
             mtime_ms,
         })
     }
