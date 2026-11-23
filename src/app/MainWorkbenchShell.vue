@@ -1,22 +1,32 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { QnBadge, QnButton, QnModalShell, QnPanelCard } from '@/components';
+import { onUnmounted, ref, watch } from 'vue';
+import { QnBadge, QnBanner, QnButton, QnModalShell } from '@/components';
+import { EditorTabBar, InboxBloatBanner, useEditorTabsStore } from '@/features/editor';
+import { NotesSidebar, useNotesStore } from '@/features/notes';
 import { OnboardingView, useOnboardingStore } from '@/features/onboarding';
 import { SettingsErrorBanner, VisualBaselinePreview, useSettingsStore } from '@/features/settings';
 
 const onboardingStore = useOnboardingStore();
 const settingsStore = useSettingsStore();
+const notesStore = useNotesStore();
+const editorTabsStore = useEditorTabsStore();
 
 const baselinePreviewOpen = ref(false);
-const activeNav = ref<'inbox' | 'projects' | 'tags' | 'recent' | 'workspaces'>('inbox');
 
-const navItems: { id: 'inbox' | 'projects' | 'tags' | 'recent' | 'workspaces'; label: string }[] = [
-  { id: 'inbox', label: '收件箱' },
-  { id: 'projects', label: '项目' },
-  { id: 'tags', label: '标签' },
-  { id: 'recent', label: '最近' },
-  { id: 'workspaces', label: '工作区' },
-];
+watch(
+  () => onboardingStore.libraryInfo?.root ?? null,
+  (nextRoot) => {
+    if (nextRoot) {
+      void Promise.all([notesStore.initialize(), editorTabsStore.restoreTabsFromUiState()]);
+    }
+  },
+  { immediate: true },
+);
+
+onUnmounted(() => {
+  notesStore.dispose();
+  editorTabsStore.dispose();
+});
 </script>
 
 <template>
@@ -48,48 +58,77 @@ const navItems: { id: 'inbox' | 'projects' | 'tags' | 'recent' | 'workspaces'; l
       </header>
 
       <div class="qn-main-shell__body">
-        <aside class="qn-main-shell__nav-col">
-          <div class="qn-main-shell__nav-tabs">
-            <button
-              v-for="item in navItems"
-              :key="item.id"
-              type="button"
-              :class="[
-                'qn-main-shell__nav-btn',
-                { 'qn-main-shell__nav-btn--active': activeNav === item.id },
-              ]"
-              @click="activeNav = item.id"
-            >
-              {{ item.label }}
-            </button>
-          </div>
-          <div class="qn-main-shell__note-list">
-            <QnPanelCard title="M0 工作台骨架" subtitle="笔记目录与列表加载将于 M1 接入">
-              <p class="qn-main-shell__placeholder-text">
-                当前库已就绪，可通过 <code>⌃⌥Space</code> 呼出 Quick Bar 或按
-                <code>⌘,</code> 打开设置窗口。
-              </p>
-            </QnPanelCard>
-          </div>
-        </aside>
+        <NotesSidebar />
 
         <section class="qn-main-shell__editor-col">
-          <div class="qn-main-shell__tabbar">
-            <span class="qn-main-shell__tab qn-main-shell__tab--active">inbox.md</span>
-          </div>
+          <EditorTabBar />
+          <InboxBloatBanner />
+
           <div class="qn-main-shell__workspace">
             <div class="qn-main-shell__editor-stage">
-              <div class="qn-main-shell__editor-paper">
-                <h1 class="qn-main-shell__doc-title">收件箱（M0 骨架视图）</h1>
-                <p class="qn-main-shell__placeholder-text">
-                  正文阅读宽度受 <code>--qn-editor-max-width</code>（900px）约束；CodeMirror 6
-                  编辑器实例将于 M1 阶段挂载。
-                </p>
+              <div
+                v-if="editorTabsStore.activeTab?.isMissing"
+                class="qn-main-shell__editor-paper"
+                data-testid="editor-missing-doc"
+              >
+                <QnBanner tone="danger" title="文件已移走或失联">
+                  未在当前笔记库或磁盘路径中找到：{{ editorTabsStore.activeTab.relPath }}
+                  <template #actions>
+                    <QnButton
+                      size="sm"
+                      variant="secondary"
+                      @click="editorTabsStore.closeTab(editorTabsStore.activeTab.key)"
+                    >
+                      关闭标签
+                    </QnButton>
+                  </template>
+                </QnBanner>
+              </div>
+
+              <div
+                v-else-if="editorTabsStore.activeDoc"
+                class="qn-main-shell__editor-paper"
+                data-testid="editor-doc-stage"
+              >
+                <header class="qn-main-shell__doc-header">
+                  <h1 class="qn-main-shell__doc-title" data-testid="editor-doc-title">
+                    {{ editorTabsStore.activeDoc.meta.title || editorTabsStore.activeDoc.relPath }}
+                  </h1>
+                  <div class="qn-main-shell__doc-meta">
+                    <QnBadge v-if="editorTabsStore.activeDoc.meta.docType" tone="neutral">
+                      {{ editorTabsStore.activeDoc.meta.docType }}
+                    </QnBadge>
+                    <QnBadge
+                      v-for="tag in editorTabsStore.activeDoc.meta.tags"
+                      :key="tag"
+                      tone="accent"
+                    >
+                      #{{ tag }}
+                    </QnBadge>
+                    <QnBadge
+                      v-if="editorTabsStore.activeDoc.meta.metaError"
+                      tone="warning"
+                      data-testid="editor-doc-meta-error"
+                    >
+                      Frontmatter 异常：{{ editorTabsStore.activeDoc.meta.metaError }}
+                    </QnBadge>
+                  </div>
+                </header>
+
+                <div class="qn-main-shell__body-stage" data-testid="editor-body-stage">
+                  <pre class="qn-main-shell__body-preview">{{
+                    editorTabsStore.activeDoc.body
+                  }}</pre>
+                </div>
+              </div>
+
+              <div v-else class="qn-main-shell__editor-paper">
+                <p class="qn-main-shell__placeholder-text">从左侧选择或新建一篇笔记。</p>
               </div>
             </div>
             <aside class="qn-main-shell__right-panel">
               <div class="qn-main-shell__panel-header">大纲 / 右侧面板组</div>
-              <p class="qn-main-shell__placeholder-text">M1 阶段接入大纲与关联面板。</p>
+              <p class="qn-main-shell__placeholder-text">M1-04b 阶段接入大纲与关联面板。</p>
             </aside>
           </div>
         </section>
@@ -180,49 +219,6 @@ const navItems: { id: 'inbox' | 'projects' | 'tags' | 'recent' | 'workspaces'; l
   display: flex;
 }
 
-.qn-main-shell__nav-col {
-  width: 300px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--qn-border-subtle);
-  background-color: var(--qn-bg-sidebar);
-  display: flex;
-  flex-direction: column;
-  padding: var(--qn-space-3);
-  gap: var(--qn-space-3);
-}
-
-.qn-main-shell__nav-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--qn-space-1);
-}
-
-.qn-main-shell__nav-btn {
-  padding: var(--qn-space-1) var(--qn-space-2);
-  border: none;
-  border-radius: var(--qn-radius-sm);
-  background: transparent;
-  color: var(--qn-text-secondary);
-  font-size: var(--qn-text-xs);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.qn-main-shell__nav-btn:hover {
-  background-color: var(--qn-bg-hover);
-  color: var(--qn-text-primary);
-}
-
-.qn-main-shell__nav-btn--active {
-  background-color: var(--qn-bg-active);
-  color: var(--qn-text-primary);
-}
-
-.qn-main-shell__note-list {
-  flex: 1;
-  overflow-y: auto;
-}
-
 .qn-main-shell__editor-col {
   flex: 1;
   min-width: 0;
@@ -230,26 +226,10 @@ const navItems: { id: 'inbox' | 'projects' | 'tags' | 'recent' | 'workspaces'; l
   flex-direction: column;
 }
 
-.qn-main-shell__tabbar {
-  display: flex;
-  align-items: center;
-  height: 36px;
-  padding: 0 var(--qn-space-3);
+.qn-main-shell__editor-banner {
+  padding: var(--qn-space-2) var(--qn-space-4);
   border-bottom: 1px solid var(--qn-border-subtle);
-  background-color: var(--qn-bg-sidebar);
-}
-
-.qn-main-shell__tab {
-  padding: var(--qn-space-1) var(--qn-space-3);
-  border-radius: var(--qn-radius-sm);
-  font-size: var(--qn-text-xs);
-  color: var(--qn-text-secondary);
-}
-
-.qn-main-shell__tab--active {
   background-color: var(--qn-bg-base);
-  color: var(--qn-text-primary);
-  border: 1px solid var(--qn-border-subtle);
 }
 
 .qn-main-shell__workspace {
@@ -272,10 +252,40 @@ const navItems: { id: 'inbox' | 'projects' | 'tags' | 'recent' | 'workspaces'; l
   max-width: var(--qn-editor-max-width);
 }
 
+.qn-main-shell__doc-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qn-space-2);
+  margin-bottom: var(--qn-space-4);
+  padding-bottom: var(--qn-space-3);
+  border-bottom: 1px solid var(--qn-border-subtle);
+}
+
 .qn-main-shell__doc-title {
-  margin: 0 0 var(--qn-space-3);
+  margin: 0;
   font-size: var(--qn-text-lg);
   font-weight: 600;
+  color: var(--qn-text-primary);
+}
+
+.qn-main-shell__doc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--qn-space-1);
+}
+
+.qn-main-shell__body-stage {
+  min-height: 240px;
+}
+
+.qn-main-shell__body-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--qn-font-sans);
+  font-size: var(--qn-text-base);
+  line-height: 1.7;
   color: var(--qn-text-primary);
 }
 
