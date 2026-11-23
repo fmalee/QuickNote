@@ -10,7 +10,8 @@
   - **`M1-01a`**（`9dbf2d3`：共享 Fixture 库、`domain/{tokenizer,frontmatter,note}.rs` 纯算法与 TS 绑定导出）。
   - **`M1-01b`**（`2ba211d`：SQLite FTS5 派生索引入库、笔记 CRUD 用例与 11 条 IPC 命令封装）。
   - **`M1-02`**（`b8d6018`：Quick Bar `S1–S8` 真值表、分区追加、5 秒撤销与 `ToastAppendUndoPayload` 债务收口）。
-- **待执行**：**`M1-03`**（当前待施工） → `M1-04a` → `M1-04b` → `M1-05` → M1 增量只读审查。
+  - **`M1-03`**（`3d297b7`：`notify` 自身写入防回环、外部变更事件、中文锚点 Slug 与 `recovery/` / `quickbar-draft.json` 持久化）。
+- **待执行**：**`M1-04a`**（当前待施工） → `M1-04b` → `M1-05` → M1 增量只读审查。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -37,5 +38,5 @@
 
 ## 5. 下一步动作
 
-1. 在独立新会话中从 `dev` 拉出 `feat/M1-03-notify-loop-guard-and-recovery` 执行 `M1-03`。
-2. 完成后回到主控会话获取 `M1-04a` 极简提示词。
+1. 在独立新会话中从 `dev` 拉出 `feat/M1-04a-main-navigation-list-and-tabs` 执行 `M1-04a`。
+2. 完成后回到主控会话获取 `M1-04b` 极简提示词。
