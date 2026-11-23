@@ -1,4 +1,5 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { SettingsLoadStatus } from '@/bindings/types';
 
 export type { UnlistenFn };
 
@@ -9,4 +10,10 @@ export function listenEvent<TPayload>(
   return listen<TPayload>(event, (eventObj) => {
     handler(eventObj.payload);
   });
+}
+
+export function onSettingsStatus(
+  handler: (status: SettingsLoadStatus) => void,
+): Promise<UnlistenFn> {
+  return listenEvent<SettingsLoadStatus>('settings:status', handler);
 }

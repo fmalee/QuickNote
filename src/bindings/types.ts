@@ -18,5 +18,225 @@ export type AppInfo = {
 	activationPolicy: ActivationPolicy,
 };
 
+/**  Capture formatting mode (`C3.4`, `C6.3`). */
+export type CaptureMode = "list" | "todo" | "prose";
+
+/**  Editor configuration section (`C6.2`). */
+export type EditorSettings = {
+	theme: EditorTheme,
+	fontSize: number,
+	lineHeight: number,
+	maxWidth: number,
+	tabSizeProse: number,
+	tabSizeCode: number,
+	autoSaveDebounceMs: number,
+	autoSaveMaxWaitMs: number,
+	singleClickLink: boolean,
+};
+
+/**  Editor color theme preference (`C6.2`). */
+export type EditorTheme = "system" | "light" | "dark";
+
+/**  External editors configuration (`C6.2`). */
+export type EditorsSettings = {
+	vscode: ExternalAppConfig,
+	sublime: ExternalAppConfig,
+};
+
 /**  Unified application error code for all Tauri IPC responses (`C3.3`). */
 export type ErrorCode = "validationError" | "libraryNotConfigured" | "notFound" | "permissionDenied" | "conflict" | "undoUnavailable" | "invalidFrontmatter" | "settingsParseError" | "externalAppMissing" | "workspaceDirMissing" | "terminalLimitReached" | "terminalSpawnFailed" | "internalError";
+
+/**  External macOS app descriptor (`C6.2`). */
+export type ExternalAppConfig = {
+	name: string,
+	bundleId: string,
+};
+
+/**  Navigation filter state (`C6.3`). */
+export type FiltersUiState = {
+	activeTab: NavTab,
+	selectedDir: string | null,
+	selectedTags: string[],
+	listScrollTop: number,
+};
+
+/**  Global hotkey self-check state (`C3.4`, `C6.3`, `D-0004`). */
+export type HotkeySelfCheck = "pending" | "ok" | "conflict";
+
+/**  Hotkey configuration section (`C6.2`). */
+export type HotkeySettings = {
+	quickBar: string,
+	quickBarBackup: string,
+};
+
+/**  Global hotkey registration state (`C3.4`, `C6.3`). */
+export type HotkeyStatus = {
+	combo: string,
+	backupCombo: string,
+	selfCheck: HotkeySelfCheck,
+};
+
+/**  Inbox configuration section (`C6.2`). */
+export type InboxSettings = {
+	bloatThresholdLines: number,
+};
+
+/**  Last active document tracking for Quick Bar target resolution (`C6.3`, `C8.1`). */
+export type LastActiveDocState = {
+	relPath: string,
+	workspaceKey: string | null,
+	touchedAtMs: number,
+};
+
+/**  Summary of the configured note library (`C3.4`). */
+export type LibraryInfo = {
+	root: string | null,
+	noteCount: number,
+	lastIndexedAt: number | null,
+};
+
+/**  Main window configuration section (`C6.2`). */
+export type MainWindowSettings = {
+	mode: WindowMode,
+	auxiliaryWidthPercent: number,
+};
+
+/**  Main window geometry and mode state (`C6.3`). */
+export type MainWindowState = {
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	mode: WindowMode,
+	isOpen: boolean,
+};
+
+/**  Left navigation active tab (`C6.3`). */
+export type NavTab = "inbox" | "projects" | "tags" | "recent" | "workspaces";
+
+/**  Right panel group state (`C6.3`). */
+export type PanelGroupUiState = {
+	visible: boolean,
+	activeId: PanelId,
+	width: number,
+	collapsed: boolean,
+};
+
+/**  Right-side panel identifier (`C6.2`, `C6.3`, `C7.4`). */
+export type PanelId = "outline" | "terminal" | "related" | "recent";
+
+/**  Right-side panel configuration (`C6.2`). */
+export type PanelsSettings = {
+	default: PanelId,
+	width: number,
+	terminal: TerminalPanelSettings,
+};
+
+/**  Quick Bar configuration section (`C6.2`). */
+export type QuickBarSettings = {
+	defaultTarget: string,
+	lastActiveTtlHours: number,
+	destroyAfterHiddenMinutes: number,
+	autoCreateMissingSection: boolean,
+};
+
+/**  Arguments for `library_set_root` (`C4.2`). */
+export type SetRootArgs = {
+	root: string,
+	createIfMissing: boolean,
+};
+
+/**  Application settings exposed over IPC (`C3.4`, `C6.2`). */
+export type Settings = {
+	libraryRoot: string | null,
+	hotkey: HotkeySettings,
+	quickBar: QuickBarSettings,
+	mainWindow: MainWindowSettings,
+	editor: EditorSettings,
+	panels: PanelsSettings,
+	inbox: InboxSettings,
+	terminal: ExternalAppConfig,
+	editors: EditorsSettings,
+	searchRoots: string[],
+	workspaces: { [key in string]: WorkspaceConfig },
+};
+
+/**  Diagnostic status of loading `settings.yaml` (`C3.4`, `D-0008`). */
+export type SettingsLoadStatus = {
+	valid: boolean,
+	activeSource: string,
+	errorLine: number | null,
+	errorColumn: number | null,
+	errorMessage: string | null,
+};
+
+/**  Combined settings and load-status payload returned by `settings_get` (`C4.2`). */
+export type SettingsSnapshot = {
+	settings: Settings,
+	status: SettingsLoadStatus,
+};
+
+/**  Single open editor tab state (`C6.3`). */
+export type TabItemState = {
+	key: string,
+	relPath: string | null,
+	absPath: string,
+	isPinned: boolean,
+	isPreview: boolean,
+	scrollTop: number,
+	cursorPos: number,
+};
+
+/**  Open tabs section of `ui-state.json` (`C6.3`). */
+export type TabsUiState = {
+	items: TabItemState[],
+	activeKey: string | null,
+	closedStack: string[],
+};
+
+/**  Embedded terminal panel configuration (`C6.2`). */
+export type TerminalPanelSettings = {
+	visibleByDefault: boolean,
+	width: number,
+	shell: string,
+	idleRecycleMinutes: number,
+	maxConcurrentSessions: number,
+};
+
+/**  Complete persisted UI state (`C6.3`). */
+export type UiState = {
+	windows: WindowsUiState,
+	tabs: TabsUiState,
+	panelGroup: PanelGroupUiState,
+	filters: FiltersUiState,
+	selectedWorkspaceKey: string | null,
+	lastActiveDoc: LastActiveDocState | null,
+	workspaceModes: { [key in string]: CaptureMode },
+	hotkey: HotkeyStatus,
+};
+
+/**  Arguments for `ui_state_set` (`C4.2`). */
+export type UiStateArgs = {
+	key: string,
+	value: unknown,
+};
+
+/**  Main window presentation mode (`C3.4`, `C6.2`). */
+export type WindowMode = "standard" | "fullscreen" | "auxiliary";
+
+/**  Windows section of `ui-state.json` (`C6.3`). */
+export type WindowsUiState = {
+	main: MainWindowState,
+};
+
+/**  Workspace configuration entry (`C3.4`, `C6.2`). */
+export type WorkspaceConfig = {
+	name: string,
+	key: string,
+	root: string,
+	openDir: string,
+	codeWorkspace: string | null,
+	terminalDir: string | null,
+	defaultEditor: string,
+	defaultEntryDoc: string | null,
+};

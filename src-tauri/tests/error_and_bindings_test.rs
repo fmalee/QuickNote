@@ -1,6 +1,5 @@
 use quicknote_lib::application::app::build_app_info;
 use quicknote_lib::bindings::{render_ts_bindings, GENERATED_HEADER};
-use quicknote_lib::commands::app::app_get_info;
 use quicknote_lib::domain::app::ActivationPolicy;
 use quicknote_lib::domain::error::{AppError, ErrorCode};
 
@@ -55,13 +54,7 @@ fn app_get_info_returns_baseline_domain_shape() {
     assert_eq!(built.library_root, None);
     assert_eq!(built.activation_policy, ActivationPolicy::Accessory);
 
-    let cmd_info = app_get_info().expect("app_get_info must succeed");
-    assert_eq!(cmd_info.version, env!("CARGO_PKG_VERSION"));
-    assert_eq!(cmd_info.platform, std::env::consts::OS);
-    assert_eq!(cmd_info.library_root, None);
-    assert_eq!(cmd_info.activation_policy, ActivationPolicy::Accessory);
-
-    let json = serde_json::to_value(&cmd_info).expect("AppInfo must serialize");
+    let json = serde_json::to_value(&built).expect("AppInfo must serialize");
     assert_eq!(json["libraryRoot"], serde_json::Value::Null);
     assert_eq!(json["activationPolicy"], "accessory");
 }

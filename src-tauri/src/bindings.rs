@@ -5,6 +5,17 @@ use specta_typescript::Typescript;
 
 use crate::domain::app::{ActivationPolicy, AppInfo};
 use crate::domain::error::{AppError, ErrorCode};
+use crate::domain::settings::{
+    EditorSettings, EditorTheme, EditorsSettings, ExternalAppConfig, HotkeySettings, InboxSettings,
+    LibraryInfo, MainWindowSettings, PanelId, PanelsSettings, QuickBarSettings, SetRootArgs,
+    Settings, SettingsLoadStatus, SettingsSnapshot, TerminalPanelSettings, WindowMode,
+    WorkspaceConfig,
+};
+use crate::domain::ui_state::{
+    CaptureMode, FiltersUiState, HotkeySelfCheck, HotkeyStatus, LastActiveDocState,
+    MainWindowState, NavTab, PanelGroupUiState, TabItemState, TabsUiState, UiState, UiStateArgs,
+    WindowsUiState,
+};
 
 /// Exact header line required at line 1 of `src/bindings/types.ts` (`C1.4`).
 pub const GENERATED_HEADER: &str = "/* GENERATED — DO NOT EDIT. */";
@@ -16,6 +27,37 @@ pub fn collect_types() -> Types {
         .register::<AppInfo>()
         .register::<ErrorCode>()
         .register::<AppError>()
+        .register::<WindowMode>()
+        .register::<EditorTheme>()
+        .register::<PanelId>()
+        .register::<LibraryInfo>()
+        .register::<SetRootArgs>()
+        .register::<WorkspaceConfig>()
+        .register::<HotkeySettings>()
+        .register::<QuickBarSettings>()
+        .register::<MainWindowSettings>()
+        .register::<EditorSettings>()
+        .register::<TerminalPanelSettings>()
+        .register::<PanelsSettings>()
+        .register::<InboxSettings>()
+        .register::<ExternalAppConfig>()
+        .register::<EditorsSettings>()
+        .register::<Settings>()
+        .register::<SettingsLoadStatus>()
+        .register::<SettingsSnapshot>()
+        .register::<CaptureMode>()
+        .register::<NavTab>()
+        .register::<HotkeySelfCheck>()
+        .register::<HotkeyStatus>()
+        .register::<MainWindowState>()
+        .register::<WindowsUiState>()
+        .register::<TabItemState>()
+        .register::<TabsUiState>()
+        .register::<PanelGroupUiState>()
+        .register::<FiltersUiState>()
+        .register::<LastActiveDocState>()
+        .register::<UiState>()
+        .register::<UiStateArgs>()
 }
 
 /// Renders the full TypeScript bindings content deterministically.

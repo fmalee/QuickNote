@@ -1,5 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppError, AppInfo, ErrorCode } from '@/bindings/types';
+import type {
+  AppError,
+  AppInfo,
+  ErrorCode,
+  LibraryInfo,
+  SetRootArgs,
+  SettingsSnapshot,
+  UiState,
+  UiStateArgs,
+} from '@/bindings/types';
 
 const ERROR_CODES = new Set<ErrorCode>([
   'validationError',
@@ -42,4 +51,24 @@ export function isAppError(error: unknown): error is AppError {
 
 export function appGetInfo(): Promise<AppInfo> {
   return invoke<AppInfo>('app_get_info');
+}
+
+export function libraryGetInfo(): Promise<LibraryInfo> {
+  return invoke<LibraryInfo>('library_get_info');
+}
+
+export function librarySetRoot(args: SetRootArgs): Promise<LibraryInfo> {
+  return invoke<LibraryInfo>('library_set_root', { args });
+}
+
+export function settingsGet(): Promise<SettingsSnapshot> {
+  return invoke<SettingsSnapshot>('settings_get');
+}
+
+export function uiStateGet(): Promise<UiState> {
+  return invoke<UiState>('ui_state_get');
+}
+
+export function uiStateSet(args: UiStateArgs): Promise<UiState> {
+  return invoke<UiState>('ui_state_set', { args });
 }
