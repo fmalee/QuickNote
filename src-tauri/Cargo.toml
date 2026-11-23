@@ -1,0 +1,23 @@
+[package]
+name = "quicknote"
+version = "0.1.0"
+description = "QuickNote local-first markdown notes and quick capture"
+authors = ["QuickNote"]
+edition = "2021"
+default-run = "quicknote"
+
+[lib]
+name = "quicknote_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+specta = { version = "=2.0.0-rc.28", features = ["derive"] }
+specta-serde = "0.0.15"
+specta-typescript = "0.0.15"
+tauri = { version = "2", features = [] }
+thiserror = "2"

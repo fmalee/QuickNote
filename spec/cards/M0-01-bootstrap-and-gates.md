@@ -21,9 +21,9 @@
 
 ## 2. 允许修改文件白名单
 
-- 根配置与脚本：`package.json`、`pnpm-lock.yaml`、`tsconfig.json`、`vite.config.ts`、`eslint.config.js`、`.prettierrc`、`.prettierignore`、`.gitignore`、`index.html`、`scripts/check-architecture.mjs`、`scripts/check-all.sh`
+- 根配置与脚本：`package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`tsconfig.json`、`vite.config.ts`、`eslint.config.js`、`.prettierrc`、`.prettierignore`、`.gitignore`、`index.html`、`scripts/check-architecture.mjs`、`scripts/check-all.sh`、`scripts/__tests__/**`
 - 前端骨架：`src/app/**`、`src/styles/tokens.css`（空/最小占位）、`src/lib/ipc/**`、`src/lib/utils/**`、`src/bindings/types.ts`（生成物）、`src/components/.gitkeep`、`src/features/.gitkeep`
-- 后端骨架：`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/build.rs`、`src-tauri/tauri.conf.json`、`src-tauri/capabilities/**`、`src-tauri/src/**`、`src-tauri/tests/**`
+- 后端骨架：`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/build.rs`、`src-tauri/tauri.conf.json`、`src-tauri/capabilities/**`、`src-tauri/icons/icon.png`、`src-tauri/src/**`、`src-tauri/tests/**`
 
 ## 3. 具体实现要求
 

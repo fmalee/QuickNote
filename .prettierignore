@@ -1,0 +1,8 @@
+dist/
+node_modules/
+pnpm-lock.yaml
+src-tauri/
+src/bindings/
+spec/
+AGENTS.md
+DECISIONS.md
