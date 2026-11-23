@@ -5,6 +5,8 @@ import type {
   NoteSummary,
   NoteUpdateMetaArgs,
   ReadNoteArgs,
+  SaveImageArgs,
+  SavedImageResult,
   UiState,
   UiStatePatchKey,
   WriteNoteArgs,
@@ -14,6 +16,7 @@ import {
   inboxExtractToNote,
   isAppError,
   noteRead,
+  noteSaveImage,
   noteUpdateMeta,
   noteWrite,
   notesList,
@@ -41,6 +44,10 @@ export function updateNoteMeta(args: NoteUpdateMetaArgs): Promise<NoteDoc> {
 
 export function extractInboxToNote(args: InboxExtractArgs): Promise<NoteDoc> {
   return inboxExtractToNote(args);
+}
+
+export function saveNoteImage(args: SaveImageArgs): Promise<SavedImageResult> {
+  return noteSaveImage(args);
 }
 
 export function listTemplates(): Promise<NoteSummary[]> {

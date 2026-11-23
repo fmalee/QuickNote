@@ -48,3 +48,25 @@ export {
   formatTable,
   type HeadingLevel,
 } from './extensions/markdownFormat';
+export {
+  type CurrentDocContext,
+  type ExtractedLink,
+  extractLinksFromState,
+  findLinkAtPos,
+  isLinkTriggerEvent,
+  markdownLinkPlugin,
+  type ParsedLinkTarget,
+  parseLinkTarget,
+  resolveHeadingAnchor,
+} from './extensions/markdownLinks';
+export {
+  arrayBufferToBase64,
+  buildMarkdownImageSnippet,
+  extractImageExtFromFile,
+  extractImageFileFromDataTransfer,
+  handleImageInsert,
+  type HandleImageInsertOptions,
+  type ImageInputFile,
+  type ImageInsertOutcome,
+  MAX_IMAGE_SIZE_BYTES,
+} from './extensions/markdownImages';
