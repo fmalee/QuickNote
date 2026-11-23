@@ -1,25 +1,33 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { EditorTheme } from '@/bindings/types';
 import { QnBadge, QnBanner, QnButton, QnPanelCard } from '@/components';
 import { formatHotkeyCombo } from '@/lib/utils';
+import SettingsAppearancePanel from './SettingsAppearancePanel.vue';
 import SettingsErrorBanner from './SettingsErrorBanner.vue';
+import SettingsLibraryPanel from './SettingsLibraryPanel.vue';
+import SettingsShortcutsPanel from './SettingsShortcutsPanel.vue';
 import VisualBaselinePreview from './VisualBaselinePreview.vue';
 import { BACKUP_HOTKEY_COMBO, type SettingsSection, useSettingsStore } from './store';
 
 const store = useSettingsStore();
 
 const sections: { id: SettingsSection; label: string }[] = [
-  { id: 'general', label: '通用与快捷键' },
-  { id: 'appearance', label: '外观主题' },
+  { id: 'general', label: '通用与热键' },
+  { id: 'appearance', label: '外观与编辑器' },
+  { id: 'library', label: '库与收件箱' },
+  { id: 'shortcuts', label: '快捷键' },
   { id: 'baseline', label: '视觉基线预览' },
 ];
 
-const themeOptions: { value: EditorTheme; label: string; desc: string }[] = [
-  { value: 'system', label: '跟随系统', desc: '自动匹配 macOS 深浅色外观' },
-  { value: 'light', label: '浅色主题', desc: '高对比日间纸面阅读体验' },
-  { value: 'dark', label: '深色主题', desc: '低眩光夜间专注工作模式' },
-];
+const saveStatusLabel = computed<string | null>(() => {
+  if (store.saving) {
+    return '正在保存…';
+  }
+  if (store.lastSavedAt) {
+    return '已保存';
+  }
+  return null;
+});
 
 const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label: string }>(() => {
   const status = store.hotkeyStatus?.selfCheck ?? 'pending';
@@ -42,6 +50,7 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
           v-for="item in sections"
           :key="item.id"
           type="button"
+          :data-testid="`settings-nav-${item.id}`"
           :class="[
             'qn-settings__nav-item',
             { 'qn-settings__nav-item--active': store.activeSection === item.id },
@@ -54,7 +63,22 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
     </aside>
 
     <main class="qn-settings__content">
+      <div v-if="saveStatusLabel" class="qn-settings__save-bar">
+        <QnBadge :tone="store.saving ? 'warning' : 'success'" data-testid="settings-save-status">
+          {{ saveStatusLabel }}
+        </QnBadge>
+      </div>
+
       <SettingsErrorBanner :status="store.loadStatus" />
+
+      <QnBanner
+        v-if="store.saveError"
+        tone="danger"
+        title="保存设置失败"
+        data-testid="settings-save-error-banner"
+      >
+        {{ store.saveError }}
+      </QnBanner>
 
       <section v-if="store.activeSection === 'general'" class="qn-settings__section">
         <QnPanelCard
@@ -167,28 +191,15 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
       </section>
 
       <section v-else-if="store.activeSection === 'appearance'" class="qn-settings__section">
-        <QnPanelCard title="主题模式" subtitle="实时切换 --qn-* 浅色与深色视觉变量">
-          <div class="qn-settings__theme-grid">
-            <button
-              v-for="opt in themeOptions"
-              :key="opt.value"
-              type="button"
-              :class="[
-                'qn-settings__theme-card',
-                { 'qn-settings__theme-card--active': store.themePreference === opt.value },
-              ]"
-              @click="store.setTheme(opt.value)"
-            >
-              <span class="qn-settings__theme-name">{{ opt.label }}</span>
-              <span class="qn-settings__theme-desc">{{ opt.desc }}</span>
-            </button>
-          </div>
-          <div class="qn-settings__appearance-footer">
-            <QnButton variant="secondary" size="sm" @click="store.activeSection = 'baseline'">
-              打开视觉基线预览页
-            </QnButton>
-          </div>
-        </QnPanelCard>
+        <SettingsAppearancePanel />
+      </section>
+
+      <section v-else-if="store.activeSection === 'library'" class="qn-settings__section">
+        <SettingsLibraryPanel />
+      </section>
+
+      <section v-else-if="store.activeSection === 'shortcuts'" class="qn-settings__section">
+        <SettingsShortcutsPanel />
       </section>
 
       <section v-else class="qn-settings__section">
@@ -309,47 +320,7 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
   justify-content: flex-end;
 }
 
-.qn-settings__theme-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--qn-space-3);
-}
-
-.qn-settings__theme-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--qn-space-1);
-  padding: var(--qn-space-3);
-  border: 1px solid var(--qn-border-subtle);
-  border-radius: var(--qn-radius-md);
-  background-color: var(--qn-bg-base);
-  cursor: pointer;
-  text-align: left;
-}
-
-.qn-settings__theme-card:hover {
-  background-color: var(--qn-bg-hover);
-}
-
-.qn-settings__theme-card--active {
-  border-color: var(--qn-accent);
-  background-color: var(--qn-accent-soft);
-}
-
-.qn-settings__theme-name {
-  font-size: var(--qn-text-sm);
-  font-weight: 600;
-  color: var(--qn-text-primary);
-}
-
-.qn-settings__theme-desc {
-  font-size: var(--qn-text-xs);
-  color: var(--qn-text-secondary);
-}
-
-.qn-settings__appearance-footer {
-  margin-top: var(--qn-space-4);
+.qn-settings__save-bar {
   display: flex;
   justify-content: flex-end;
 }

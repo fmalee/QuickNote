@@ -1,9 +1,23 @@
-import { hotkeyUpdate, isAppError, settingsGet, uiStateGet } from '@/lib/ipc/commands';
+import {
+  hotkeyUpdate,
+  isAppError,
+  librarySetRoot,
+  noteCreate,
+  notesList,
+  settingsGet,
+  settingsUpdate,
+  uiStateGet,
+} from '@/lib/ipc/commands';
 import { onSettingsStatus, onWindowState, type UnlistenFn } from '@/lib/ipc/events';
 import type {
   HotkeyStatus,
   HotkeyUpdateArgs,
+  LibraryInfo,
+  NoteDoc,
+  NoteSummary,
+  SetRootArgs,
   SettingsLoadStatus,
+  SettingsPatch,
   SettingsSnapshot,
   UiState,
   WindowState,
@@ -15,6 +29,33 @@ export function fetchSettingsSnapshot(): Promise<SettingsSnapshot> {
 
 export function fetchUiState(): Promise<UiState> {
   return uiStateGet();
+}
+
+export function saveSettingsPatch(patch: SettingsPatch): Promise<SettingsSnapshot> {
+  return settingsUpdate(patch);
+}
+
+export function changeLibraryRoot(args: SetRootArgs): Promise<LibraryInfo> {
+  return librarySetRoot(args);
+}
+
+export function listTemplateNotes(): Promise<NoteSummary[]> {
+  return notesList({
+    tab: 'templates',
+    dirRelPath: null,
+    tags: [],
+    workspaceKey: null,
+    filterText: null,
+  });
+}
+
+export function createTemplateNote(title: string): Promise<NoteDoc> {
+  return noteCreate({
+    title,
+    dirRelPath: '_templates',
+    templateName: 'note',
+    body: null,
+  });
 }
 
 export function updateGlobalHotkey(args: HotkeyUpdateArgs): Promise<HotkeyStatus> {
