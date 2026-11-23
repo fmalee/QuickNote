@@ -12,7 +12,13 @@ import { NotesSidebar, useNotesStore } from '@/features/notes';
 import { OnboardingView, useOnboardingStore } from '@/features/onboarding';
 import { OutlinePanel, usePanelsStore } from '@/features/panels';
 import { SettingsErrorBanner, VisualBaselinePreview, useSettingsStore } from '@/features/settings';
-import { onToastAppendUndo, onWindowState, type UnlistenFn } from '@/lib/ipc/events';
+import {
+  ACTION_KEYBINDINGS_STORAGE_KEY,
+  actionRegistry,
+  type ActionContext,
+  type ActionScope,
+} from '@/lib/actions';
+import { onMenuAction, onToastAppendUndo, onWindowState, type UnlistenFn } from '@/lib/ipc/events';
 
 const onboardingStore = useOnboardingStore();
 const settingsStore = useSettingsStore();
@@ -23,7 +29,80 @@ const panelsStore = usePanelsStore();
 const baselinePreviewOpen = ref(false);
 let unlistenToastAppendUndo: UnlistenFn | null = null;
 let unlistenMainWindowState: UnlistenFn | null = null;
+let unlistenMenuAction: UnlistenFn | null = null;
 let crossWindowListenersBound = false;
+const actionDisposers: Array<() => void> = [];
+
+function resolveActiveScopes(): ActionScope[] {
+  const scopes: ActionScope[] = ['main-window', 'global'];
+  if (typeof document === 'undefined') {
+    return scopes;
+  }
+
+  if (baselinePreviewOpen.value || document.querySelector('[role="dialog"]')) {
+    scopes.unshift('modal');
+  }
+
+  const activeEl = document.activeElement;
+  if (activeEl instanceof Element) {
+    if (activeEl.closest('.xterm, [data-action-scope="terminal"]')) {
+      scopes.unshift('terminal');
+    } else if (activeEl.closest('.cm-editor, [data-testid="editor-body-stage"]')) {
+      scopes.unshift('editor');
+    } else if (activeEl.closest('[data-testid="notes-sidebar"], .qn-notes-sidebar')) {
+      scopes.unshift('list');
+    }
+  }
+
+  return scopes;
+}
+
+function buildActionContext(): ActionContext {
+  const activeScopes = resolveActiveScopes();
+  const activeDoc = editorTabsStore.activeDoc;
+  const relPath = activeDoc?.relPath ?? '';
+  return {
+    activeScope: activeScopes[0] ?? 'main-window',
+    activeScopes,
+    hasActiveDoc: Boolean(activeDoc),
+    isMarkdown: relPath.toLowerCase().endsWith('.md'),
+    isInbox: relPath === 'inbox.md',
+  };
+}
+
+function bindMainWindowActions(): void {
+  actionDisposers.push(
+    actionRegistry.bindHandler('window.save', () => editorTabsStore.flushSave()),
+    actionRegistry.bindHandler('window.closeTab', () => {
+      const current = editorTabsStore.activeTab;
+      if (current) {
+        editorTabsStore.closeTab(current.key);
+      }
+    }),
+    actionRegistry.bindHandler('window.reopenTab', () => {
+      void editorTabsStore.reopenLastClosedTab();
+    }),
+    actionRegistry.bindHandler('panel.toggle.outline', () => {
+      panelsStore.toggleOutlinePanel();
+    }),
+    actionRegistry.bindHandler('panel.collapseGroup', () => {
+      panelsStore.toggleCollapseAll();
+    }),
+  );
+}
+
+function handleWindowKeyDown(event: KeyboardEvent): void {
+  if (onboardingStore.isLocked) {
+    return;
+  }
+  actionRegistry.dispatchKeyEvent(event, buildActionContext());
+}
+
+function handleWindowStorage(event: StorageEvent): void {
+  if (event.key === ACTION_KEYBINDINGS_STORAGE_KEY || event.key === null) {
+    actionRegistry.syncFromStorage();
+  }
+}
 
 async function ensureCrossWindowListeners(): Promise<void> {
   if (crossWindowListenersBound) {
@@ -39,9 +118,30 @@ async function ensureCrossWindowListeners(): Promise<void> {
         void panelsStore.initialize().then(() => editorTabsStore.handleMainWindowShown());
       }
     });
+    unlistenMenuAction = await onMenuAction((actionId) => {
+      void actionRegistry.executeById(actionId, buildActionContext());
+    });
   } catch {
     // 非 Tauri 测试环境容错
   }
+}
+
+let mainWindowActionsBound = false;
+
+function ensureMainWindowActionBindings(): void {
+  if (mainWindowActionsBound) {
+    return;
+  }
+  mainWindowActionsBound = true;
+  bindMainWindowActions();
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('keydown', handleWindowKeyDown);
+    window.addEventListener('storage', handleWindowStorage);
+  }
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  ensureMainWindowActionBindings();
 }
 
 const saveStatusLabel = computed<string>(() => {
@@ -87,6 +187,15 @@ watch(
 );
 
 onUnmounted(() => {
+  if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+    window.removeEventListener('keydown', handleWindowKeyDown);
+    window.removeEventListener('storage', handleWindowStorage);
+  }
+  while (actionDisposers.length > 0) {
+    const dispose = actionDisposers.pop();
+    dispose?.();
+  }
+  mainWindowActionsBound = false;
   if (unlistenToastAppendUndo) {
     unlistenToastAppendUndo();
     unlistenToastAppendUndo = null;
@@ -94,6 +203,10 @@ onUnmounted(() => {
   if (unlistenMainWindowState) {
     unlistenMainWindowState();
     unlistenMainWindowState = null;
+  }
+  if (unlistenMenuAction) {
+    unlistenMenuAction();
+    unlistenMenuAction = null;
   }
   crossWindowListenersBound = false;
   notesStore.dispose();
