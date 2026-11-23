@@ -4,18 +4,19 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0（`m0-baseline`）与 **M1（`m1-baseline`：捕捉与笔记库核心闭环）** 均已正式收官，准备进入 **M2（Markdown 完整编辑、模板与文档属性）**。
+- **当前阶段**：M0（`m0-baseline`）与 M1（`m1-baseline`）已正式收官；**M2（Markdown 完整编辑、模板与文档属性）** 已完成全部 6 张自包含轻量任务卡拆卡并提交至 `dev`，进入逐卡施工阶段。
 - **已完成**：
   - M0 全阶段（`m0-baseline`）。
-  - M1 全阶段（`m1-baseline`：`M1-01a`、`M1-01b`、`M1-02`、`M1-03`、`M1-04a`、`M1-04b`、`M1-05`、M1 独立只读审查与 `fix/M1-audit` 实机点验收官）。
-- **待执行**：拆分 **M2（Markdown 完整编辑、模板与文档属性）** 阶段自包含轻量任务卡并逐卡推进。
+  - M1 全阶段（`m1-baseline`：`M1-01a`–`M1-05` + M1 独立只读审查与 `fix/M1-audit` 实机点验收官）。
+  - M2 全阶段拆卡（`M2-01` → `M2-02` → `M2-03` → `M2-04` → `M2-05a` → `M2-05b`）。
+- **待执行**：从 `dev` 拉取功能分支按序推进 `M2-01` → `M2-02` → `M2-03` → `M2-04` → `M2-05a` → `M2-05b`，全卡合入后执行 M2 独立只读审查与实机点验。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
 | 挂起项 | 来源 | 目标里程碑 | 处理要求 |
 | --- | --- | --- | --- |
-| `ToastAppendUndoPayload` 手写类型收口 | M0 审查 🟡#4 | **M1（已在 `M1-02` `b8d6018` 收口完成）** | 已随 `AppendResult` 收归 Rust 生成并接入 `src/lib/ipc/events.ts` |
-| 默认模板（`note/doc/command-book`）格式对齐 | M0 审查 🟢#4 | **M2** | `src-tauri/src/infra/fs.rs` 与 `v4` 附录 B.3 标题/字段完全对齐 |
+| `ToastAppendUndoPayload` 手写类型收口 | M0 审查 🟡#4 | **M1（已在 `M1-02` `b8d6018` 收口）** | 已随 `AppendResult` 收归 Rust 生成并接入 `src/lib/ipc/events.ts` |
+| 默认模板（`note/doc/command-book`）格式对齐 | M0 审查 🟢#4 | **M2（已排入 `M2-01`）** | `src-tauri/src/infra/fs.rs` 复用 `domain::template` 常量，与 `v4` 附录 B.3 逐字对齐 |
 | `SettingsErrorBanner` “打开 `settings.yaml` 修复”按钮 | M0 审查 🟢#4 | **M3** | 接入 `external_action_run`（`D-0008` / `v4` §4.7） |
 | `QuickBarView` 与 `bridge.m` 幂等双 `Esc` | M0 审查 🟢#4 | **保留现状** | 保持不动，避免破坏已实机通过的 Quick Bar 原生焦点与全屏行为 |
 
@@ -23,17 +24,18 @@
 
 - **辅助窗口 URL 路由**：`src-tauri/src/lib.rs` 已固定为 `index.html?window=quickbar|toast|settings`，主窗口为无参 `index.html`。
 - **原生 Toast 零私有 API**：严禁开启 Tauri `.transparent(true)`（依赖 `macos-private-api`）；采用 `bridge.m` `NSPanel` `opaque = NO` + `clearColor` + `CALayer` 圆角裁剪（`cornerRadius = 10`）。
-- **目录选择方式**：M0 暂不引入 `tauri-plugin-dialog`，选库使用路径输入框（默认 `~/Documents/QuickNote`）+ 自动创建开关。
+- **目录选择方式**：暂不引入 `tauri-plugin-dialog`，选库使用路径输入框（默认 `~/Documents/QuickNote`）+ 自动创建开关。
 - **`serde_yaml 0.9` 报错特性**：语法缩进错误能精准返回行列号；`deny_unknown_fields` 未知字段错误不带行列号，报错文案与测试断言须明确命中字段名而非强求行列号。
-- **macOS 原生桥接选型**：已在 `DECISIONS.md` `D-0011` 锁定 `cc` 编译 `src-tauri/src/infra/macos/bridge.m`（ObjC 静态桥接）。
+- **macOS `Option` 快捷键识别**：macOS 按 `⌥⌘C`/`⌥⌘1` 等组合键时 `KeyboardEvent.key` 会变成特殊字符，前端统一动作注册表（`M2-02`）与录制器（`M2-03`）须优先基于 `event.code` 归一化。
+- **模板文件 YAML 占位符**：`v4` B.3 模板含裸 `id: {{id}}` / `title: {{title}}`，索引 `_templates/` 时强制按 `NoteType::Template` 归类并不计入 `meta_error` / 重复 `id`（`M2-01`）。
 
 ## 4. 协作与防膨胀规矩（含 Token 省流铁律，已写入 `AGENTS.md`）
 
 - **施工会话零大文档读取**：任务卡与施工提示词内联所需函数签名、结构体定义、SQL 列名与边界要求；**施工会话禁止读取 `spec/quicknote-design-v4.md`（1150 行）、`spec/engineering-contract.md`（745 行）、`DECISIONS.md` 及 `fixtures/vault/` 大样本文件**，只读 `AGENTS.md` + 当期任务卡 + 白名单目标源码。
-- **单卡体量控制**：单卡新增/修改生产代码控制在 ≤ 800 行，超过立即拆为 `a/b` 子卡（如 `M1-01a/b`、`M1-04a/b`）。
-- **增量审查防膨胀**：M1 起每张里程碑审查只看 `git diff <prev-tag>..dev` 增量与当期契约。
+- **单卡体量控制**：单卡新增/修改生产代码控制在 ≤ 800 行，超过立即拆为 `a/b` 子卡（如 `M1-01a/b`、`M1-04a/b`、`M2-05a/b`）。
+- **增量审查防膨胀**：里程碑审查只看 `git diff <prev-tag>..dev` 增量与当期契约。
 
 ## 5. 下一步动作
 
-1. 基于 `m1-baseline` 与 M2 挂起债务（默认模板格式对齐 `v4` 附录 B.3），拆分 **M2（Markdown 完整编辑、模板与文档属性）** 自包含轻量任务卡。
-2. 从 `dev` 拉出 `M2-01` 分支并依卡逐个推进。
+1. 开独立干净会话执行首张卡 `M2-01`（分支 `feat/M2-01-backend-m2-contracts`），完成后跑通 `pnpm check:all` 并合并回 `dev`。
+2. 依序串行推进 `M2-02` → `M2-03` → `M2-04` → `M2-05a` → `M2-05b`。
