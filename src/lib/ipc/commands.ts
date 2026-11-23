@@ -2,18 +2,32 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   AppError,
   AppInfo,
+  CreateNoteArgs,
   ErrorCode,
   HideQuickBarArgs,
   HotkeyStatus,
   HotkeyUpdateArgs,
+  IndexStatus,
   LibraryInfo,
   MainWindowArgs,
+  NavTreeSnapshot,
+  NoteDoc,
+  NoteSummary,
+  NoteUpdateMetaArgs,
+  NotesFilterArgs,
   QuickBarArgs,
+  ReadNoteArgs,
+  RelPathArgs,
+  RenameNoteArgs,
+  SearchQueryArgs,
+  SearchResponse,
   SetRootArgs,
   SettingsSnapshot,
   UiState,
   UiStateArgs,
   WindowState,
+  WriteNoteArgs,
+  WriteResult,
 } from '@/bindings/types';
 
 const ERROR_CODES = new Set<ErrorCode>([
@@ -101,4 +115,48 @@ export function windowOpenSettings(): Promise<WindowState> {
 
 export function hotkeyUpdate(args: HotkeyUpdateArgs): Promise<HotkeyStatus> {
   return invoke<HotkeyStatus>('hotkey_update', { args });
+}
+
+export function indexGetStatus(): Promise<IndexStatus> {
+  return invoke<IndexStatus>('index_get_status');
+}
+
+export function indexRebuild(): Promise<IndexStatus> {
+  return invoke<IndexStatus>('index_rebuild');
+}
+
+export function notesList(args: NotesFilterArgs): Promise<NoteSummary[]> {
+  return invoke<NoteSummary[]>('notes_list', { args });
+}
+
+export function notesGetTreeAndTags(): Promise<NavTreeSnapshot> {
+  return invoke<NavTreeSnapshot>('notes_get_tree_and_tags');
+}
+
+export function noteRead(args: ReadNoteArgs): Promise<NoteDoc> {
+  return invoke<NoteDoc>('note_read', { args });
+}
+
+export function noteCreate(args: CreateNoteArgs): Promise<NoteDoc> {
+  return invoke<NoteDoc>('note_create', { args });
+}
+
+export function noteWrite(args: WriteNoteArgs): Promise<WriteResult> {
+  return invoke<WriteResult>('note_write', { args });
+}
+
+export function noteUpdateMeta(args: NoteUpdateMetaArgs): Promise<NoteDoc> {
+  return invoke<NoteDoc>('note_update_meta', { args });
+}
+
+export function noteRename(args: RenameNoteArgs): Promise<NoteDoc> {
+  return invoke<NoteDoc>('note_rename', { args });
+}
+
+export function noteDelete(args: RelPathArgs): Promise<void> {
+  return invoke<void>('note_delete', { args });
+}
+
+export function searchNotesAndFiles(args: SearchQueryArgs): Promise<SearchResponse> {
+  return invoke<SearchResponse>('search_notes_and_files', { args });
 }

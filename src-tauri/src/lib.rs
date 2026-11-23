@@ -414,6 +414,17 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::window::window_hide_quick_bar,
             commands::window::window_open_settings,
             commands::window::hotkey_update,
+            commands::index::index_get_status,
+            commands::index::index_rebuild,
+            commands::notes::notes_list,
+            commands::notes::notes_get_tree_and_tags,
+            commands::notes::note_read,
+            commands::notes::note_create,
+            commands::notes::note_write,
+            commands::notes::note_update_meta,
+            commands::notes::note_rename,
+            commands::notes::note_delete,
+            commands::search::search_notes_and_files,
         ])
         .run(tauri::generate_context!())
 }

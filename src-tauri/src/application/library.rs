@@ -58,5 +58,7 @@ pub fn set_library_root(
     pm.with_db(|conn| set_library_meta(conn, "library_root", &resolved))?;
     pm.update_library_root_in_settings(&resolved)?;
 
+    crate::application::index::index_rebuild(pm, None)?;
+
     get_library_info(pm)
 }
