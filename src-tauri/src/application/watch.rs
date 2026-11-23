@@ -43,7 +43,7 @@ pub fn process_external_fs_path(
         return Ok(None);
     }
 
-    let abs_path_str = canonical_path.to_string_lossy().to_string();
+    let abs_path_str = root.join(&rel_path).to_string_lossy().to_string();
 
     if !canonical_path.exists() {
         let was_indexed = pm

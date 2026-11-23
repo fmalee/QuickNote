@@ -123,7 +123,10 @@ fn library_set_root_initializes_skeleton_and_updates_app_info() {
     )
     .expect("set_library_root must succeed");
 
-    let expected_root = library_dir.to_string_lossy().to_string();
+    let expected_root = fs::canonicalize(&library_dir)
+        .unwrap_or_else(|_| library_dir.clone())
+        .to_string_lossy()
+        .to_string();
     assert_eq!(configured.root.as_deref(), Some(expected_root.as_str()));
     assert!(library_dir.join("inbox.md").is_file());
     assert!(library_dir.join("assets").is_dir());

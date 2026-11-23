@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { QnBadge, QnBanner, QnButton } from '@/components';
 import QuickBarTargetPicker from './QuickBarTargetPicker.vue';
 import { useQuickBarStore } from './store';
@@ -18,6 +18,10 @@ function focusEditor(): void {
 
 onMounted(() => {
   focusEditor();
+});
+
+onUnmounted(() => {
+  store.dispose();
 });
 
 watch(

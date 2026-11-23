@@ -73,12 +73,15 @@ fn self_write_guard_pure_state_machine() {
 
     // Within 1500ms and same hash -> suppressed.
     assert!(guard.should_suppress_modify(path, "hash_v1", 1_500));
-    // Even slightly after 1500ms with unchanged disk hash -> still suppressed.
-    assert!(guard.should_suppress_modify(path, "hash_v1", 3_000));
-    // Different disk hash -> real external modification, not suppressed.
+    assert!(guard.should_suppress_modify(path, "hash_v1", 2_500));
+    // Different disk hash within window -> real external modification, not suppressed.
     assert!(!guard.should_suppress_modify(path, "hash_v2", 1_600));
     // Old record was removed when mismatch happened.
     assert!(!guard.should_suppress_modify(path, "hash_v1", 1_700));
+
+    // Past 1500ms window -> expired, no longer suppressed.
+    guard.record_write(path, "hash_v1", 1_000);
+    assert!(!guard.should_suppress_modify(path, "hash_v1", 2_501));
 
     guard.record_write(path, "hash_v3", 5_000);
     guard.clear_path(path);

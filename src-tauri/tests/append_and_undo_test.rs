@@ -201,7 +201,7 @@ fn note_append_preserves_missing_id_frontmatter_and_supports_undo() {
     assert!(after_raw.contains("测试不改写 frontmatter"));
 
     let undo_res = cm
-        .note_undo_last_append(&pm)
+        .note_undo_last_append(&pm, None)
         .expect("undo missing-id append");
     assert_eq!(undo_res.rel_path, "missing-id.md");
 
@@ -240,7 +240,8 @@ fn inbox_append_creates_today_heading_and_undo_reverts_entire_heading() {
     assert!(after_raw.contains("今日第一条速记"));
 
     // Undo reverts both the entry and the newly created today heading
-    cm.note_undo_last_append(&pm).expect("undo inbox append");
+    cm.note_undo_last_append(&pm, None)
+        .expect("undo inbox append");
     let restored_raw = fs::read_to_string(&inbox_path).expect("read inbox after undo");
     assert_eq!(restored_raw, before_raw);
 }
@@ -290,7 +291,7 @@ fn undo_rejects_modified_body_but_succeeds_after_meta_only_update() {
     .expect("external write note-a");
 
     let err = cm
-        .note_undo_last_append(&pm)
+        .note_undo_last_append(&pm, None)
         .expect_err("undo should fail when body changed");
     assert_eq!(err.code, ErrorCode::UndoUnavailable);
 
@@ -334,7 +335,7 @@ fn undo_rejects_modified_body_but_succeeds_after_meta_only_update() {
     )
     .expect("update meta only");
 
-    cm.note_undo_last_append(&pm)
+    cm.note_undo_last_append(&pm, None)
         .expect("undo should succeed when only meta changed");
 
     let after_undo_b = note_read(
@@ -373,7 +374,7 @@ fn large_document_over_5mb_disables_undo_snapshot() {
     assert!(!res.undo_available);
 
     let err = cm
-        .note_undo_last_append(&pm)
+        .note_undo_last_append(&pm, None)
         .expect_err("undo should be unavailable for >5MB doc");
     assert_eq!(err.code, ErrorCode::UndoUnavailable);
 }

@@ -87,8 +87,9 @@ impl SelfWriteGuard {
         &mut self,
         canonical_abs_path: &str,
         disk_body_hash: &str,
-        _now_ms: i64,
+        now_ms: i64,
     ) -> bool {
+        self.records.retain(|_, rec| now_ms <= rec.expires_at_ms);
         let Some(record) = self.records.get(canonical_abs_path) else {
             return false;
         };

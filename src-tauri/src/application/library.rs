@@ -54,7 +54,8 @@ pub fn set_library_root(
         ensure_library_skeleton(&expanded)?;
     }
 
-    let resolved = expanded.to_string_lossy().to_string();
+    let canonical = std::fs::canonicalize(&expanded).unwrap_or(expanded);
+    let resolved = canonical.to_string_lossy().to_string();
     pm.with_db(|conn| set_library_meta(conn, "library_root", &resolved))?;
     pm.update_library_root_in_settings(&resolved)?;
 

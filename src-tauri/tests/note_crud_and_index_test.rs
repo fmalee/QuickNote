@@ -67,7 +67,7 @@ fn setup_test_env() -> (TempDir, PathBuf, PersistenceManager) {
     copy_dir_recursive(&fixture_vault, &vault_dir);
 
     let pm = PersistenceManager::open(app_data).expect("open PersistenceManager");
-    set_library_root(
+    let info = set_library_root(
         &pm,
         SetRootArgs {
             root: vault_dir.to_string_lossy().to_string(),
@@ -76,7 +76,7 @@ fn setup_test_env() -> (TempDir, PathBuf, PersistenceManager) {
     )
     .expect("set_library_root");
 
-    (tmp, vault_dir, pm)
+    (tmp, PathBuf::from(info.root.expect("library root")), pm)
 }
 
 #[test]

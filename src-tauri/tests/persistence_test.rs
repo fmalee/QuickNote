@@ -245,9 +245,10 @@ fn current_library_root_respects_valid_settings_clear_and_falls_back_only_when_i
         },
     )
     .expect("set_library_root");
+    let expected_vault = fs::canonicalize(&vault_dir).unwrap_or_else(|_| vault_dir.clone());
     assert_eq!(
         info.root.as_deref(),
-        Some(vault_dir.to_string_lossy().as_ref())
+        Some(expected_vault.to_string_lossy().as_ref())
     );
 
     // User clears library_root in valid settings.yaml -> must return None (not stale SQLite value).
@@ -275,7 +276,7 @@ fn current_library_root_respects_valid_settings_clear_and_falls_back_only_when_i
             .current_library_root()
             .expect("fallback current_library_root")
             .as_deref(),
-        Some(vault_dir.to_string_lossy().as_ref())
+        Some(expected_vault.to_string_lossy().as_ref())
     );
 
     let _ = fs::remove_dir_all(&app_data_dir);
@@ -339,9 +340,11 @@ fn library_set_root_boundaries_and_broken_settings_protection() {
         },
     )
     .expect("set_library_root with create_if_missing=true");
+    let expected_created =
+        fs::canonicalize(&created_vault).unwrap_or_else(|_| created_vault.clone());
     assert_eq!(
         ok_info.root.as_deref(),
-        Some(created_vault.to_string_lossy().as_ref())
+        Some(expected_created.to_string_lossy().as_ref())
     );
     assert!(created_vault.join("inbox.md").is_file());
     assert!(created_vault.join("assets").is_dir());

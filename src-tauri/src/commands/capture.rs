@@ -30,8 +30,9 @@ pub fn note_append(
 
 #[tauri::command]
 pub fn note_undo_last_append(
+    app: AppHandle,
     pm: State<'_, Arc<PersistenceManager>>,
     cm: State<'_, Arc<CaptureManager>>,
 ) -> Result<UndoAppendResult, AppError> {
-    cm.note_undo_last_append(&pm)
+    cm.note_undo_last_append(&pm, Some(&app))
 }

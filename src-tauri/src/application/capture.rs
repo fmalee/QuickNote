@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
 use chrono::{Local, Utc};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::application::index::index_single_note;
 use crate::application::persistence::PersistenceManager;
@@ -18,6 +18,7 @@ use crate::domain::capture::{
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::note::{compose_note, compute_body_hash, parse_note, INBOX_REL_PATH};
 use crate::domain::ui_state::{LastActiveDocState, UiStatePatchKey};
+use crate::domain::watch::{ExternalChangeEvent, ExternalChangeKind};
 use crate::infra::fs::{atomic_write_str, map_io_error};
 use crate::infra::sqlite::list_all_indexed_notes;
 
@@ -254,6 +255,7 @@ impl CaptureManager {
     pub fn note_undo_last_append(
         &self,
         pm: &PersistenceManager,
+        app: Option<&AppHandle>,
     ) -> Result<UndoAppendResult, AppError> {
         let snapshot = {
             let mut guard = self.last_undo.lock().map_err(|_| {
@@ -304,6 +306,19 @@ impl CaptureManager {
         )?;
         let restored_body_hash = compute_body_hash(&snapshot.before_body);
         pm.record_self_write(&abs_path, &restored_body_hash);
+
+        if let Some(handle) = app {
+            let _ = handle.emit(
+                "fs:external-change",
+                &ExternalChangeEvent {
+                    abs_path: abs_path.to_string_lossy().to_string(),
+                    kind: ExternalChangeKind::Modified,
+                    new_body: Some(snapshot.before_body),
+                    new_body_hash: Some(restored_body_hash.clone()),
+                    new_meta: Some(parsed.meta),
+                },
+            );
+        }
 
         Ok(UndoAppendResult {
             rel_path: snapshot.rel_path,
