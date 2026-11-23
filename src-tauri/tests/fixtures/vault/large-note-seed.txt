@@ -1,0 +1,6 @@
+## 大体积样本分区
+
+这是一段用于动态生成超大笔记（>2MB 关诊断、>5MB 退纯文本、撤销快照 5MB 上限）的种子文本。
+测试运行时会将本段重复拼接写入临时库中的 large-note-6mb.md，避免把 6MB 二进制级样本提交进仓库。
+- 列表项 alpha beta gamma 混合 ASCII 与中文分词
+- [ ] 待办项 nginx.conf git-reset HEAD~1

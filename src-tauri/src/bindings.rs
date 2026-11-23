@@ -6,6 +6,12 @@ use specta_typescript::Typescript;
 use crate::domain::app::{ActivationPolicy, AppInfo};
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::hotkey::HotkeyUpdateArgs;
+use crate::domain::note::{
+    ConflictInfo, CreateNoteArgs, DirNode, IndexPhase, IndexStatus, NavTreeSnapshot, NoteDoc,
+    NoteMeta, NoteMetaPatch, NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs,
+    ReadNoteArgs, RelPathArgs, RenameNoteArgs, SearchItemKind, SearchQueryArgs, SearchResponse,
+    SearchResultItem, SearchSource, TagNode, WorkspaceSummary, WriteNoteArgs, WriteResult,
+};
 use crate::domain::settings::{
     EditorSettings, EditorTheme, EditorsSettings, ExternalAppConfig, HotkeySettings, InboxSettings,
     LibraryInfo, MainWindowSettings, PanelId, PanelsSettings, QuickBarSettings, SetRootArgs,
@@ -70,6 +76,31 @@ pub fn collect_types() -> Types {
         .register::<QuickBarArgs>()
         .register::<HideQuickBarArgs>()
         .register::<HotkeyUpdateArgs>()
+        .register::<NoteType>()
+        .register::<NoteMeta>()
+        .register::<NoteDoc>()
+        .register::<NoteSummary>()
+        .register::<ReadNoteArgs>()
+        .register::<CreateNoteArgs>()
+        .register::<WriteNoteArgs>()
+        .register::<WriteResult>()
+        .register::<ConflictInfo>()
+        .register::<NoteMetaPatch>()
+        .register::<NoteUpdateMetaArgs>()
+        .register::<RenameNoteArgs>()
+        .register::<RelPathArgs>()
+        .register::<NotesFilterArgs>()
+        .register::<DirNode>()
+        .register::<TagNode>()
+        .register::<WorkspaceSummary>()
+        .register::<NavTreeSnapshot>()
+        .register::<IndexPhase>()
+        .register::<IndexStatus>()
+        .register::<SearchItemKind>()
+        .register::<SearchSource>()
+        .register::<SearchResultItem>()
+        .register::<SearchQueryArgs>()
+        .register::<SearchResponse>()
 }
 
 /// Renders the full TypeScript bindings content deterministically.

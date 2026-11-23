@@ -21,6 +21,30 @@ export type AppInfo = {
 /**  Capture formatting mode (`C3.4`, `C6.3`). */
 export type CaptureMode = "list" | "todo" | "prose";
 
+/**  Structured conflict info serialized into `AppError.detail` on `ErrorCode::Conflict` (`C3.4`). */
+export type ConflictInfo = {
+	absPath: string,
+	currentBody: string,
+	currentBodyHash: string,
+	currentMtimeMs: number,
+};
+
+/**  Arguments for `note_create` (`C4.2`). */
+export type CreateNoteArgs = {
+	title: string,
+	dirRelPath: string,
+	templateName: string | null,
+	body: string | null,
+};
+
+/**  Directory tree node (`C3.4`). */
+export type DirNode = {
+	relPath: string,
+	name: string,
+	count: number,
+	children: DirNode[],
+};
+
 /**  Editor configuration section (`C6.2`). */
 export type EditorSettings = {
 	theme: EditorTheme,
@@ -94,6 +118,17 @@ export type InboxSettings = {
 	bloatThresholdLines: number,
 };
 
+/**  Index lifecycle phase (`C3.4`). */
+export type IndexPhase = "idle" | "scanning" | "indexing" | "error";
+
+/**  Index status returned by `index_get_status` / pushed via `index:status` (`C3.4`, `C4.3`). */
+export type IndexStatus = {
+	phase: IndexPhase,
+	notesCount: number,
+	ftsDegraded: boolean,
+	lastCompletedAt: number | null,
+};
+
 /**  Last active document tracking for Quick Bar target resolution (`C6.3`, `C8.1`). */
 export type LastActiveDocState = {
 	relPath: string,
@@ -132,6 +167,96 @@ export type MainWindowState = {
 /**  Left navigation active tab (`C6.3`). */
 export type NavTab = "inbox" | "projects" | "tags" | "recent" | "workspaces";
 
+/**  Navigation snapshot returned by `notes_get_tree_and_tags` (`C3.4`). */
+export type NavTreeSnapshot = {
+	inboxCount: number,
+	dirs: DirNode[],
+	tags: TagNode[],
+	workspaces: WorkspaceSummary[],
+};
+
+/**  Full document returned by `note_read` (`C3.4`). `body` never contains the YAML block. */
+export type NoteDoc = {
+	key: string,
+	relPath: string | null,
+	absPath: string,
+	isLibrary: boolean,
+	isInbox: boolean,
+	meta: NoteMeta,
+	body: string,
+	bodyHash: string,
+	mtimeMs: number,
+	sizeBytes: number,
+};
+
+/**  Strongly typed frontmatter metadata (`C3.4`, `D-0006`). */
+export type NoteMeta = {
+	id: string | null,
+	title: string,
+	docType: NoteType,
+	tags: string[],
+	project: string | null,
+	openDir: string | null,
+	codeWorkspace: string | null,
+	terminalDir: string | null,
+	created: string | null,
+	pinned: boolean,
+	archived: boolean,
+	metaError: string | null,
+};
+
+/**
+ *  Partial metadata patch for `note_update_meta` (`C3.4`).
+ * 
+ *  For `Option<Option<String>>` fields: absent = keep, `null` = remove key, value = set.
+ */
+export type NoteMetaPatch = {
+	title?: string | null,
+	docType?: NoteType | null,
+	tags?: string[] | null,
+	project?: string | null,
+	openDir?: string | null,
+	codeWorkspace?: string | null,
+	terminalDir?: string | null,
+	pinned?: boolean | null,
+	archived?: boolean | null,
+};
+
+/**  List row returned by `notes_list` (`C3.4`). */
+export type NoteSummary = {
+	key: string,
+	relPath: string | null,
+	absPath: string,
+	title: string,
+	docType: NoteType,
+	tags: string[],
+	project: string | null,
+	excerpt: string,
+	pinned: boolean,
+	archived: boolean,
+	isInbox: boolean,
+	mtimeMs: number,
+	metaError: string | null,
+};
+
+/**  Closed document type enum (`v4` §4.3). */
+export type NoteType = "note" | "doc" | "command-book" | "template";
+
+/**  Arguments for `note_update_meta` (`C3.4`). */
+export type NoteUpdateMetaArgs = {
+	absPath: string,
+	patch: NoteMetaPatch,
+};
+
+/**  List filter for `notes_list` (`C3.4`, `v4` §3.3). */
+export type NotesFilterArgs = {
+	tab: string,
+	dirRelPath: string | null,
+	tags: string[],
+	workspaceKey: string | null,
+	filterText: string | null,
+};
+
 /**  Right panel group state (`C6.3`). */
 export type PanelGroupUiState = {
 	visible: boolean,
@@ -165,6 +290,54 @@ export type QuickBarSettings = {
 	destroyAfterHiddenMinutes: number,
 	autoCreateMissingSection: boolean,
 };
+
+/**  Arguments for `note_read` (`C4.2`). */
+export type ReadNoteArgs = {
+	absPath: string,
+};
+
+/**  Arguments carrying a single library-relative path (`C4.2`). */
+export type RelPathArgs = {
+	relPath: string,
+};
+
+/**  Arguments for `note_rename` (`C4.2`). */
+export type RenameNoteArgs = {
+	relPath: string,
+	newRelPath: string,
+};
+
+/**  Search result kind (`C3.4`). */
+export type SearchItemKind = "note" | "file" | "dir" | "action";
+
+/**  Arguments for `search_notes_and_files` (`C4.2`). */
+export type SearchQueryArgs = {
+	query: string,
+	limit: number | null,
+	requestId: number,
+};
+
+/**  Search response echoing `request_id` for stale-response discarding (`C2.2`, `C3.4`). */
+export type SearchResponse = {
+	requestId: number,
+	items: SearchResultItem[],
+	truncated: boolean,
+};
+
+/**  One search result row (`C3.4`). */
+export type SearchResultItem = {
+	kind: SearchItemKind,
+	key: string,
+	title: string,
+	subtitle: string,
+	relPath: string | null,
+	absPath: string,
+	score: number,
+	source: SearchSource,
+};
+
+/**  Search result source (`C3.4`). */
+export type SearchSource = "library" | "recent" | "spotlight" | "path";
 
 /**  Arguments for `library_set_root` (`C4.2`). */
 export type SetRootArgs = {
@@ -218,6 +391,13 @@ export type TabsUiState = {
 	items: TabItemState[],
 	activeKey: string | null,
 	closedStack: string[],
+};
+
+/**  Hierarchical tag tree node (`C3.4`). */
+export type TagNode = {
+	tag: string,
+	count: number,
+	children: TagNode[],
 };
 
 /**  Embedded terminal panel configuration (`C6.2`). */
@@ -277,4 +457,26 @@ export type WorkspaceConfig = {
 	terminalDir: string | null,
 	defaultEditor: string,
 	defaultEntryDoc: string | null,
+};
+
+/**  Workspace summary for navigation (`C3.4`). */
+export type WorkspaceSummary = {
+	key: string,
+	name: string,
+	root: string,
+	openDir: string,
+};
+
+/**  Arguments for `note_write` (`C3.4`). */
+export type WriteNoteArgs = {
+	absPath: string,
+	body: string,
+	baseBodyHash: string,
+};
+
+/**  Result of `note_write`; `updated_meta` only set when a missing ULID was back-filled (`D-0006`). */
+export type WriteResult = {
+	bodyHash: string,
+	mtimeMs: number,
+	updatedMeta: NoteMeta | null,
 };

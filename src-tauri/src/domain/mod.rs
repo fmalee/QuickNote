@@ -1,7 +1,10 @@
 pub mod app;
 pub mod backup;
 pub mod error;
+pub mod frontmatter;
 pub mod hotkey;
+pub mod note;
 pub mod settings;
+pub mod tokenizer;
 pub mod ui_state;
 pub mod window;

@@ -8,15 +8,16 @@
 
 > 阶段目标：完成库扫描、CJK+ASCII 混合分词 FTS5、`meta + body` 分离读写与 YAML 最小补丁、Quick Bar `S1–S8` 目标真值表与分区追加/5 秒撤销（收口 `ToastAppendUndoPayload` 挂起债务）、`notify` 自身写入防回环与三态外部变更处理、两层主界面（导航树/标签树/收件箱 500 行提醒/多标签）+ CodeMirror 6 基础编辑器 + 右侧大纲面板，以及 Quick Bar 记录模式端到端闭环。
 
-M1 阶段共拆分为 5 张严格串行推进的任务卡（`M1-01 → M1-02 → M1-03 → M1-04 → M1-05`）：
+M1 阶段共拆分为 6 张轻量、严格串行推进的任务卡（`M1-01a → M1-01b → M1-02 → M1-03 → M1-04 → M1-05`）：
 
 | 序号 | 卡号与文件 | 核心主题 | 覆盖契约、IPC 命令与事件 | 人工点验 |
 | --- | --- | --- | --- | --- |
-| 1 | [M1-01-vault-fixtures-meta-body-and-fts.md](M1-01-vault-fixtures-meta-body-and-fts.md) | 共享 Fixture 库、`meta + body` 分离、YAML 最小补丁与混合 FTS5 索引引擎 | `C3.4`、`C4.2`–`C4.3`、`C5.1`–`C5.3`、`C6.4`、`C9.2`、`D-0006`、`D-0007`；`index_get_status`、`index_rebuild`、`notes_list`、`notes_get_tree_and_tags`、`note_read`、`note_create`、`note_write`、`note_update_meta`、`note_rename`、`note_delete`、`search_notes_and_files`；事件 `index:status` | 无 |
-| 2 | [M1-02-capture-truth-table-append-and-undo.md](M1-02-capture-truth-table-append-and-undo.md) | Quick Bar `S1–S8` 目标真值表、分区追加、5 秒撤销与 `ToastAppendUndoPayload` 收口 | `C3.4`、`C4.2`–`C4.3`、`C8.1`–`C8.3`、`D-0001`、`D-0006`、`D-0009`；`capture_resolve_target`、`note_append`、`note_undo_last_append`；事件 `toast:append-undo`（收口 `AppendResult` 绑定） | 无 |
-| 3 | [M1-03-notify-loop-guard-and-recovery.md](M1-03-notify-loop-guard-and-recovery.md) | `notify` 自身写入防回环、外部变更状态机与持久化辅助（`recovery/` & `quickbar-draft.json`） | `C4.3`、`C6.1`、`C8.4`、`C8.5`、`C9.2`、`D-0006`；事件 `fs:external-change`（`ExternalChangeEvent`）、中文 Slug 算法 | 无 |
-| 4 | [M1-04-main-workbench-navigation-tabs-cm6-and-outline.md](M1-04-main-workbench-navigation-tabs-cm6-and-outline.md) | 两层主界面（导航树/标签树/收件箱 500 行提醒/多标签）与 CM6 编辑器 + 右侧大纲面板 | `C1.2`、`C2.2`、`C6.2`、`C6.3`、`C7.1`、`C7.4`、`C8.4`、`C8.5`、`D-0006`、`D-0007`；消费笔记 CRUD、索引、重命名与 `fs:external-change` 三态 UI | **主工作台与外部变更点验** |
-| 5 | [M1-05-quickbar-capture-mode-closed-loop.md](M1-05-quickbar-capture-mode-closed-loop.md) | Quick Bar 记录模式完整闭环（`S1–S8` 顶部 Chip、`⌘T` 选目标、相关笔记改投、`⌘↵`/`⇧⌘↵` 与草稿恢复） | `C1.2`、`C2.2`、`C6.1`、`C6.3`、`C7.1`、`C7.2`、`C8.1`–`C8.3`、`C9.3`、`D-0001`–`D-0003`；消费 `capture_resolve_target`、`note_append`、`note_undo_last_append`、`search_notes_and_files` | **M1 端到端实机点验** |
+| 1 | [M1-01a-vault-fixtures-and-domain-note-fts.md](M1-01a-vault-fixtures-and-domain-note-fts.md) | 共享静态 Fixture 库、`domain` 纯算法（混合分词 / YAML 最小补丁 / `meta + body`）与绑定导出 | `C3.1`–`C3.4`、`C5.3`、`C6.4`、`C9.2`、`D-0006`、`D-0007`、`D-0009` | 无 |
+| 2 | [M1-01b-sqlite-fts-index-and-note-crud-commands.md](M1-01b-sqlite-fts-index-and-note-crud-commands.md) | SQLite FTS5 派生索引入库、笔记 CRUD 用例与 11 条 IPC 命令封装 | `C4.2`–`C4.3`、`C5.1`–`C5.3`、`C6.4`、`D-0006`、`D-0007`；`index_get_status`、`index_rebuild`、`notes_list`、`notes_get_tree_and_tags`、`note_read`、`note_create`、`note_write`、`note_update_meta`、`note_rename`、`note_delete`、`search_notes_and_files`；事件 `index:status` | 无 |
+| 3 | [M1-02-capture-truth-table-append-and-undo.md](M1-02-capture-truth-table-append-and-undo.md) | Quick Bar `S1–S8` 目标真值表、分区追加、5 秒撤销与 `ToastAppendUndoPayload` 收口 | `C3.4`、`C4.2`–`C4.3`、`C8.1`–`C8.3`、`D-0001`、`D-0006`、`D-0009`；`capture_resolve_target`、`note_append`、`note_undo_last_append`；事件 `toast:append-undo`（收口 `AppendResult` 绑定） | 无 |
+| 4 | [M1-03-notify-loop-guard-and-recovery.md](M1-03-notify-loop-guard-and-recovery.md) | `notify` 自身写入防回环、外部变更状态机与持久化辅助（`recovery/` & `quickbar-draft.json`） | `C4.3`、`C6.1`、`C8.4`、`C8.5`、`C9.2`、`D-0006`；事件 `fs:external-change`（`ExternalChangeEvent`）、中文 Slug 算法 | 无 |
+| 5 | [M1-04-main-workbench-navigation-tabs-cm6-and-outline.md](M1-04-main-workbench-navigation-tabs-cm6-and-outline.md) | 两层主界面（导航树/标签树/收件箱 500 行提醒/多标签）与 CM6 编辑器 + 右侧大纲面板 | `C1.2`、`C2.2`、`C6.2`、`C6.3`、`C7.1`、`C7.4`、`C8.4`、`C8.5`、`D-0006`、`D-0007`；消费笔记 CRUD、索引、重命名与 `fs:external-change` 三态 UI | **主工作台与外部变更点验** |
+| 6 | [M1-05-quickbar-capture-mode-closed-loop.md](M1-05-quickbar-capture-mode-closed-loop.md) | Quick Bar 记录模式完整闭环（`S1–S8` 顶部 Chip、`⌘T` 选目标、相关笔记改投、`⌘↵`/`⇧⌘↵` 与草稿恢复） | `C1.2`、`C2.2`、`C6.1`、`C6.3`、`C7.1`、`C7.2`、`C8.1`–`C8.3`、`C9.3`、`D-0001`–`D-0003`；消费 `capture_resolve_target`、`note_append`、`note_undo_last_append`、`search_notes_and_files` | **M1 端到端实机点验** |
 
 ---
 
@@ -31,9 +32,8 @@ M1 阶段共拆分为 5 张严格串行推进的任务卡（`M1-01 → M1-02 →
 
 ---
 
-## 3. 单卡施工规程（严格执行 `C10` 与 `AGENTS.md`）
+## 3. 单卡施工规程（严格执行 `C10` 与省流规矩）
 
-1. **一卡一干净会话（定向查阅）**：每张卡必须在全新 AI 会话中执行；开场完整阅读 [AGENTS.md](../../AGENTS.md) 与当前任务卡，并按卡内 `Cx.y` / `D-xxxx` / `§x.y` 编号**定向查阅** [engineering-contract.md](../engineering-contract.md)、[DECISIONS.md](../../DECISIONS.md) 与 [quicknote-design-v4.md](../quicknote-design-v4.md) 对应章节。
-2. **分支隔离与白名单**：从 `dev` 拉取对应功能分支（如 `feat/M1-01-vault-fixtures-meta-body-and-fts`），严守卡片文件白名单与 `C1.3` 共享串行文件声明。
+1. **一卡一干净会话（零大文档整篇读取）**：每张卡在独立会话中执行；开场**只读** [AGENTS.md](../../AGENTS.md) 与当期任务卡，任务卡已内联所需契约签名与边界，**除非遇到未定义冲突，禁止整篇读取 1150 行的 `quicknote-design-v4.md` 与 745 行的 `engineering-contract.md`**。
+2. **分支隔离与白名单**：从 `dev` 拉取对应功能分支，严守卡片文件白名单与 `C1.3` 共享串行文件声明。
 3. **收工门禁**：必须运行 `pnpm check:all`（`C9.1`）全部通过并按 `C10.2` 中文规范提交后，合并回 `dev` 并结束当前会话。
-4. **里程碑收官检查点**：`M1-01`–`M1-05` 全部合入 `dev` 后，执行 `git diff m0-baseline..dev` 增量独立只读审查（`C10.3`）与 `C9.3` 实机点验，通过后打标 `m1-baseline` 再拆分 M2 任务卡。
