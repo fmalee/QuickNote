@@ -1,3 +1,201 @@
-/* QuickNote --qn-* design tokens placeholder (implemented in M0-04 per C7.1) */
+/* QuickNote --qn-* Design Tokens & Base Styles (C7.1) */
+
 :root {
+  color-scheme: light;
+
+  /* 色彩 Token — 浅色主题（默认） */
+  --qn-bg-base: #ffffff;
+  --qn-bg-elevated: #ffffff;
+  --qn-bg-sidebar: #f5f5f7;
+  --qn-bg-hover: #eceef2;
+  --qn-bg-active: #e2e6ee;
+  --qn-bg-backdrop: rgba(15, 23, 42, 0.32);
+
+  --qn-border-subtle: #e5e7eb;
+  --qn-border-strong: #cbd5e1;
+
+  --qn-text-primary: #111827;
+  --qn-text-secondary: #4b5563;
+  --qn-text-muted: #6b7280;
+
+  --qn-accent: #2563eb;
+  --qn-accent-hover: #1d4ed8;
+  --qn-accent-soft: #eff6ff;
+  --qn-accent-contrast: #ffffff;
+
+  --qn-danger: #dc2626;
+  --qn-danger-soft: #fef2f2;
+  --qn-danger-border: #fecaca;
+
+  --qn-warning: #d97706;
+  --qn-warning-soft: #fffbeb;
+  --qn-warning-border: #fde68a;
+
+  --qn-success: #16a34a;
+  --qn-success-soft: #f0fdf4;
+  --qn-success-border: #bbf7d0;
+
+  /* 阴影 Token */
+  --qn-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --qn-shadow-md: 0 6px 18px rgba(15, 23, 42, 0.1), 0 1px 4px rgba(15, 23, 42, 0.06);
+  --qn-shadow-lg: 0 18px 40px rgba(15, 23, 42, 0.16), 0 4px 12px rgba(15, 23, 42, 0.08);
+
+  /* 排版与布局 Token */
+  --qn-font-sans:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  --qn-font-mono:
+    'SF Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+
+  --qn-text-xs: 11px;
+  --qn-text-sm: 12.5px;
+  --qn-text-base: 14px;
+  --qn-text-md: 16px;
+  --qn-text-lg: 20px;
+
+  --qn-space-1: 4px;
+  --qn-space-2: 8px;
+  --qn-space-3: 12px;
+  --qn-space-4: 16px;
+  --qn-space-5: 20px;
+  --qn-space-6: 24px;
+  --qn-space-7: 28px;
+  --qn-space-8: 32px;
+
+  --qn-radius-sm: 6px;
+  --qn-radius-md: 10px;
+  --qn-radius-lg: 14px;
+
+  --qn-editor-max-width: 900px;
+
+  /* 层级 Token */
+  --qn-z-base: 1;
+  --qn-z-drawer: 100;
+  --qn-z-popover: 200;
+  --qn-z-modal: 300;
+  --qn-z-toast: 400;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --qn-bg-base: #14161a;
+  --qn-bg-elevated: #1c1f26;
+  --qn-bg-sidebar: #181a20;
+  --qn-bg-hover: #252932;
+  --qn-bg-active: #2e3440;
+  --qn-bg-backdrop: rgba(0, 0, 0, 0.56);
+
+  --qn-border-subtle: #2a2f3a;
+  --qn-border-strong: #3d4454;
+
+  --qn-text-primary: #f3f4f6;
+  --qn-text-secondary: #cbd5e1;
+  --qn-text-muted: #94a3b8;
+
+  --qn-accent: #3b82f6;
+  --qn-accent-hover: #60a5fa;
+  --qn-accent-soft: rgba(59, 130, 246, 0.16);
+  --qn-accent-contrast: #ffffff;
+
+  --qn-danger: #f87171;
+  --qn-danger-soft: rgba(248, 113, 113, 0.14);
+  --qn-danger-border: rgba(248, 113, 113, 0.36);
+
+  --qn-warning: #fbbf24;
+  --qn-warning-soft: rgba(251, 191, 36, 0.14);
+  --qn-warning-border: rgba(251, 191, 36, 0.34);
+
+  --qn-success: #4ade80;
+  --qn-success-soft: rgba(74, 222, 128, 0.14);
+  --qn-success-border: rgba(74, 222, 128, 0.34);
+
+  --qn-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --qn-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.24);
+  --qn-shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.55), 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --qn-bg-base: #14161a;
+    --qn-bg-elevated: #1c1f26;
+    --qn-bg-sidebar: #181a20;
+    --qn-bg-hover: #252932;
+    --qn-bg-active: #2e3440;
+    --qn-bg-backdrop: rgba(0, 0, 0, 0.56);
+
+    --qn-border-subtle: #2a2f3a;
+    --qn-border-strong: #3d4454;
+
+    --qn-text-primary: #f3f4f6;
+    --qn-text-secondary: #cbd5e1;
+    --qn-text-muted: #94a3b8;
+
+    --qn-accent: #3b82f6;
+    --qn-accent-hover: #60a5fa;
+    --qn-accent-soft: rgba(59, 130, 246, 0.16);
+    --qn-accent-contrast: #ffffff;
+
+    --qn-danger: #f87171;
+    --qn-danger-soft: rgba(248, 113, 113, 0.14);
+    --qn-danger-border: rgba(248, 113, 113, 0.36);
+
+    --qn-warning: #fbbf24;
+    --qn-warning-soft: rgba(251, 191, 36, 0.14);
+    --qn-warning-border: rgba(251, 191, 36, 0.34);
+
+    --qn-success: #4ade80;
+    --qn-success-soft: rgba(74, 222, 128, 0.14);
+    --qn-success-border: rgba(74, 222, 128, 0.34);
+
+    --qn-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+    --qn-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.24);
+    --qn-shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.55), 0 6px 16px rgba(0, 0, 0, 0.35);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  font-family: var(--qn-font-sans);
+  font-size: var(--qn-text-base);
+  line-height: 1.5;
+  color: var(--qn-text-primary);
+  background-color: var(--qn-bg-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html[data-window='toast'],
+html[data-window='toast'] body,
+html[data-window='toast'] #app {
+  background-color: transparent;
+  overflow: hidden;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+code,
+kbd,
+pre {
+  font-family: var(--qn-font-mono);
 }
