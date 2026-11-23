@@ -13,7 +13,7 @@
 
 ## 硬规则
 
-- **分支与提交**：仅在 `dev` 派生的功能分支开发（`C10.1`），提交信息用中文写清「为什么」并附 `Contract:` 与 `Card:`（`C10.2`），禁止 `--no-verify`。
+- **分支与提交**：仅在 `dev` 派生的功能分支开发（`C10.1`），提交信息用中文写清「为什么」并附 `Contract:` 与 `Card:`（`C10.2`），禁止 `--no-verify`；**沙盒环境无 `.gnupg` 私钥访问权限，执行 `git commit` 或 `git merge` 时必须显式添加 `--no-gpg-sign` 参数（例如：`git commit --no-gpg-sign -m "feat: ..."`），严禁不带该参数直接提交**。
 - **单向分层**：Rust 严格遵循 `commands → application → domain`、`application / infra → domain`（`domain` 严禁依赖 `tauri`、`std::fs`、`rusqlite`）；前端严格遵循 `lib → components → features → app`，禁止跨 feature 深层导入，Vue 组件严禁直连 `@tauri-apps/api`（`C1.2`）。
 - **IPC 契约单一源**：所有 IPC 结构体仅在 Rust 定义并由 `export_bindings.rs` 导出至 `src/bindings/types.ts`（首行 `/* GENERATED — DO NOT EDIT. */`），禁止手改生成物；手写封装仅放 `src/lib/ipc/`（`C1.4`、`C3.1`、`C3.2`）。
 - **样式与质量**：UI 颜色、间距、圆角、字体与层级仅使用 `--qn-*` CSS Token，禁止硬编码色值与魔法 `z-index`（`C7.1`）；Rust 生产代码零 `unwrap()` / `expect()`，测试统一落位 `src-tauri/tests/**`（`C2.1`）。

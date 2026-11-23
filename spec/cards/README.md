@@ -18,7 +18,7 @@ M1 阶段共拆分为 7 张轻量、自包含、严格串行推进的任务卡�
 | 4 | [M1-03-notify-loop-guard-and-recovery.md](M1-03-notify-loop-guard-and-recovery.md) | `notify` 自身写入防回环、外部变更状态机与持久化辅助（`recovery/` & `quickbar-draft.json`） | `C4.3`、`C6.1`、`C8.4`、`C8.5`、`C9.2`、`D-0006`；事件 `fs:external-change`（`ExternalChangeEvent`）、中文 Slug 算法 | **已完成（`3d297b7`）** |
 | 5 | [M1-04a-main-navigation-list-and-tabs.md](M1-04a-main-navigation-list-and-tabs.md) | 主界面第一层（导航树/标签树/列表/重命名/收件箱 500 行膨胀提醒）与多标签状态栏 | `C1.2`、`C2.2`、`C6.2`、`C6.3`、`C7.1`、`D-0006`、`D-0007`；消费 `notes_get_tree_and_tags`、`notes_list`、`note_create`、`note_rename`、`note_delete` 与 `ui-state.json` 恢复 | **已完成（`7185486`）** |
 | 6 | [M1-04b-cm6-editor-autosave-conflict-and-outline.md](M1-04b-cm6-editor-autosave-conflict-and-outline.md) | CodeMirror 6 单实例多状态编辑器、600ms/2s 自动保存、三态外部变更横幅与右侧大纲面板 | `C1.2`、`C2.2`、`C7.1`、`C7.4`、`C8.4`、`C8.5`、`D-0006`；消费 `note_read`、`note_write` 与 `fs:external-change` 三态 UI | **已完成（`66bb613`）** |
-| 7 | [M1-05-quickbar-capture-mode-closed-loop.md](M1-05-quickbar-capture-mode-closed-loop.md) | Quick Bar 记录模式完整闭环（`S1–S8` 顶部 Chip、`⌘T` 选目标、相关笔记改投、`⌘↵`/`⇧⌘↵` 与草稿恢复） | `C1.2`、`C2.2`、`C6.1`、`C6.3`、`C7.1`、`C7.2`、`C8.1`–`C8.3`、`C9.3`、`D-0001`–`D-0003`；消费 `capture_resolve_target`、`note_append`、`note_undo_last_append`、`search_notes_and_files` | **M1 端到端实机点验** |
+| 7 | [M1-05-quickbar-capture-mode-closed-loop.md](M1-05-quickbar-capture-mode-closed-loop.md) | Quick Bar 记录模式完整闭环（`S1–S8` 顶部 Chip、`⌘T` 选目标、相关笔记改投、`⌘↵`/`⇧⌘↵` 与草稿恢复） | `C1.2`、`C2.2`、`C6.1`、`C6.3`、`C7.1`、`C7.2`、`C8.1`–`C8.3`、`C9.3`、`D-0001`–`D-0003`；消费 `capture_resolve_target`、`note_append`、`note_undo_last_append`、`search_notes_and_files` | **已完成（`3fea386`）** |
 
 ---
 
