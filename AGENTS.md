@@ -2,11 +2,13 @@
 
 每个新 AI 会话（含独立审查会话）动手前必读本文件。本文件只写硬规则与指针，契约正文不重复复制。
 
-## 动手前
+## 动手前与上下文省流铁律（必遵）
 
-1. 完整阅读 `spec/cards/` 中的当前任务卡（模板 `C12`），锁定目标范围与文件白名单。
-2. 按任务卡关联的 `Cx.y` / `D-xxxx` 编号**定向查阅** [spec/engineering-contract.md](spec/engineering-contract.md) 与 [DECISIONS.md](DECISIONS.md) 对应小节，无需通读全文（仅拆卡、变更契约或里程碑只读审查会话需通读全文）。
-3. 遇交互或边界细节疑问时，按任务卡 `§x.y` 指针查阅 [spec/quicknote-design-v4.md](spec/quicknote-design-v4.md) 对应章节。
+1. **只读自包含任务卡**：完整阅读 `spec/cards/` 中的当前任务卡（模板 `C12`），锁定目标范围与文件白名单。**每张任务卡已内联当期所需的全部函数签名、结构体定义、SQL 列名与边界规则**。
+2. **严禁整篇读取大文档与大样本**：
+   - **施工会话默认禁止读取** [spec/quicknote-design-v4.md](spec/quicknote-design-v4.md)（1150 行）、[spec/engineering-contract.md](spec/engineering-contract.md)（745 行）、[DECISIONS.md](DECISIONS.md) 以及 `src-tauri/tests/fixtures/vault/**` 下的大样本文件（仅主控拆卡、变更契约或里程碑只读审查会话可按需读取）。
+   - 若施工中极个别细节确需核对原契约，必须先用 `grep` / `ripgrep` 定位精确行号，再用 `read_file` 读取 **≤ 60 行**的局部片段，绝不整篇加载。
+3. **只读白名单相关的最小代码集**：仅读取当前任务卡「允许修改文件白名单」中将被修改的源码或其直接调用的接口文件（优先只读顶部 struct / `pub fn` 签名，不读无关模块与历史测试文件）。
 4. 遇契约未定义的技术选型按 `C11` 先记 `DECISIONS.md` 再写码；涉及产品行为取舍先询问用户。
 
 ## 硬规则

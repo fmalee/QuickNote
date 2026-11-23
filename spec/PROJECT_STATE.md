@@ -4,9 +4,11 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0 已正式收官（`m0-baseline`）；**M1（捕捉与笔记库核心闭环）** 已拆分为 6 张轻量任务卡（`M1-01a`、`M1-01b`、`M1-02`～`M1-05`）。
-- **当前分支现场**：工作区位于分支 `feat/M1-01-vault-fixtures-meta-body-and-fts`，其中 `M1-01a` 的 `src-tauri/tests/fixtures/vault/**` 与 `src-tauri/src/domain/{tokenizer,frontmatter,note}.rs` 已编写完成并通过 `cargo check` 与架构扫描，仅剩 `bindings.rs` 导出与 `domain` 测试即可收口 `M1-01a`。
-- **待执行**：收尾合入 `M1-01a` → `M1-01b` → `M1-02` → `M1-03` → `M1-04` → `M1-05` → M1 增量只读审查。
+- **当前阶段**：M0 已正式收官（`m0-baseline`）；正推进 **M1（捕捉与笔记库核心闭环，共 7 张轻量卡）**。
+- **已完成**：
+  - M0 全阶段（`m0-baseline`）。
+  - **`M1-01a`**（`9dbf2d3`：已合入 `dev`，完成 `src-tauri/tests/fixtures/vault/**` 共享测试样本、`domain/{tokenizer,frontmatter,note}.rs` 纯算法、`bindings.rs` 导出与 `domain_note_and_tokenizer_test.rs`）。
+- **待执行**：**`M1-01b`**（当前待施工） → `M1-02` → `M1-03` → `M1-04a` → `M1-04b` → `M1-05` → M1 增量只读审查。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -25,13 +27,13 @@
 - **`serde_yaml 0.9` 报错特性**：语法缩进错误能精准返回行列号；`deny_unknown_fields` 未知字段错误不带行列号，报错文案与测试断言须明确命中字段名而非强求行列号。
 - **macOS 原生桥接选型**：已在 `DECISIONS.md` `D-0011` 锁定 `cc` 编译 `src-tauri/src/infra/macos/bridge.m`（ObjC 静态桥接）。
 
-## 4. 协作与防膨胀规矩（含 Token 省流铁律）
+## 4. 协作与防膨胀规矩（含 Token 省流铁律，已写入 `AGENTS.md`）
 
-- **施工会话零大文档读取**：任务卡与施工提示词必须内联所需函数签名、结构体定义与边界要求；**禁止施工会话读取 `spec/quicknote-design-v4.md`（1150 行）和 `spec/engineering-contract.md`（745 行）**，只读 `AGENTS.md` + 当期任务卡 + 目标源码文件。
-- **单卡体量控制**：单张卡新增/修改生产代码控制在 ≤ 800 行以内，超过则拆分为 `a/b` 子卡。
+- **施工会话零大文档读取**：任务卡与施工提示词内联所需函数签名、结构体定义、SQL 列名与边界要求；**施工会话禁止读取 `spec/quicknote-design-v4.md`（1150 行）、`spec/engineering-contract.md`（745 行）、`DECISIONS.md` 及 `fixtures/vault/` 大样本文件**，只读 `AGENTS.md` + 当期任务卡 + 白名单目标源码。
+- **单卡体量控制**：单卡新增/修改生产代码控制在 ≤ 800 行，超过立即拆为 `a/b` 子卡（如 `M1-01a/b`、`M1-04a/b`）。
 - **增量审查防膨胀**：M1 起每张里程碑审查只看 `git diff <prev-tag>..dev` 增量与当期契约。
 
 ## 5. 下一步动作
 
-1. 在新会话使用极简省流提示词完成 `M1-01a` 剩余 15%（`bindings.rs` 注册 + `domain_note_and_tokenizer_test.rs` + `pnpm check:all`）并合入 `dev`。
-2. 随后进入 `M1-01b`。
+1. 在独立新会话中从 `dev` 拉出 `feat/M1-01b-sqlite-fts-index-and-note-crud` 执行 `M1-01b`。
+2. 完成后回到主控会话获取 `M1-02` 极简提示词。
