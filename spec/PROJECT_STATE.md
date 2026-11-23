@@ -4,19 +4,19 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0（`m0-baseline`）与 M1（`m1-baseline`）已正式收官；**M2（Markdown 完整编辑、模板与文档属性）** 已完成全部 6 张自包含轻量任务卡拆卡并提交至 `dev`，进入逐卡施工阶段。
+- **当前阶段**：M0（`m0-baseline`）与 M1（`m1-baseline`）已正式收官；**M2（Markdown 完整编辑、模板与文档属性）** 进行中，已完成 `M2-01`（`87f1a44`），下一张推进 **`M2-02`**。
 - **已完成**：
   - M0 全阶段（`m0-baseline`）。
   - M1 全阶段（`m1-baseline`：`M1-01a`–`M1-05` + M1 独立只读审查与 `fix/M1-audit` 实机点验收官）。
-  - M2 全阶段拆卡（`M2-01` → `M2-02` → `M2-03` → `M2-04` → `M2-05a` → `M2-05b`）。
-- **待执行**：从 `dev` 拉取功能分支按序推进 `M2-01` → `M2-02` → `M2-03` → `M2-04` → `M2-05a` → `M2-05b`，全卡合入后执行 M2 独立只读审查与实机点验。
+  - M2 已完成：`M2-01`（`87f1a44`：后端 `settings_update`、`note_save_image`、`inbox_extract_to_note`、B.3 模板对齐与渲染、`menu:action` 转发）。
+- **待执行**：按序推进 `M2-02` → `M2-03` → `M2-04` → `M2-05a` → `M2-05b`，全卡合入后执行 M2 独立只读审查与实机点验。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
 | 挂起项 | 来源 | 目标里程碑 | 处理要求 |
 | --- | --- | --- | --- |
 | `ToastAppendUndoPayload` 手写类型收口 | M0 审查 🟡#4 | **M1（已在 `M1-02` `b8d6018` 收口）** | 已随 `AppendResult` 收归 Rust 生成并接入 `src/lib/ipc/events.ts` |
-| 默认模板（`note/doc/command-book`）格式对齐 | M0 审查 🟢#4 | **M2（已排入 `M2-01`）** | `src-tauri/src/infra/fs.rs` 复用 `domain::template` 常量，与 `v4` 附录 B.3 逐字对齐 |
+| 默认模板（`note/doc/command-book`）格式对齐 | M0 审查 🟢#4 | **M2（已在 `M2-01` `87f1a44` 收口）** | 已在 `domain::template` 单源定义并与 `v4` 附录 B.3 逐字对齐 |
 | `SettingsErrorBanner` “打开 `settings.yaml` 修复”按钮 | M0 审查 🟢#4 | **M3** | 接入 `external_action_run`（`D-0008` / `v4` §4.7） |
 | `QuickBarView` 与 `bridge.m` 幂等双 `Esc` | M0 审查 🟢#4 | **保留现状** | 保持不动，避免破坏已实机通过的 Quick Bar 原生焦点与全屏行为 |
 
@@ -37,5 +37,5 @@
 
 ## 5. 下一步动作
 
-1. 开独立干净会话执行首张卡 `M2-01`（分支 `feat/M2-01-backend-m2-contracts`），完成后跑通 `pnpm check:all` 并合并回 `dev`。
-2. 依序串行推进 `M2-02` → `M2-03` → `M2-04` → `M2-05a` → `M2-05b`。
+1. 开独立干净会话执行 `M2-02`（分支 `feat/M2-02-action-registry-and-context-menu`），完成后跑通 `pnpm check:all` 并合并回 `dev`。
+2. 依序串行推进 `M2-03` → `M2-04` → `M2-05a` → `M2-05b`。
