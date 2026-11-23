@@ -17,9 +17,11 @@ import { SettingsErrorBanner, VisualBaselinePreview, useSettingsStore } from '@/
 import {
   ACTION_KEYBINDINGS_STORAGE_KEY,
   actionRegistry,
+  collectNativeMenuAccelerators,
   type ActionContext,
   type ActionScope,
 } from '@/lib/actions';
+import { appSetMenuAccelerators } from '@/lib/ipc/commands';
 import { onMenuAction, onToastAppendUndo, onWindowState, type UnlistenFn } from '@/lib/ipc/events';
 
 const onboardingStore = useOnboardingStore();
@@ -126,9 +128,20 @@ function handleWindowKeyDown(event: KeyboardEvent): void {
   actionRegistry.dispatchKeyEvent(event, buildActionContext());
 }
 
+async function syncNativeMenuAccelerators(): Promise<void> {
+  try {
+    await appSetMenuAccelerators({
+      entries: collectNativeMenuAccelerators(actionRegistry),
+    });
+  } catch {
+    // 非 Tauri 测试环境容错
+  }
+}
+
 function handleWindowStorage(event: StorageEvent): void {
   if (event.key === ACTION_KEYBINDINGS_STORAGE_KEY || event.key === null) {
     actionRegistry.syncFromStorage();
+    void syncNativeMenuAccelerators();
   }
 }
 
@@ -174,6 +187,7 @@ function ensureMainWindowActionBindings(): void {
     window.addEventListener('keydown', handleWindowKeyDown);
     window.addEventListener('storage', handleWindowStorage);
   }
+  void syncNativeMenuAccelerators();
 }
 
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {

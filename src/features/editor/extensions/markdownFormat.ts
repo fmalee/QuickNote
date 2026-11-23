@@ -225,7 +225,14 @@ function toggleLinePrefix(prefix: string, matchRe: RegExp): StateCommand {
       return false;
     }
 
-    dispatch(state.update({ changes, userEvent: 'input.format' }));
+    const changeSet = state.changes(changes);
+    dispatch(
+      state.update({
+        changes: changeSet,
+        selection: state.selection.map(changeSet, 1),
+        userEvent: 'input.format',
+      }),
+    );
     return true;
   };
 }
@@ -284,7 +291,14 @@ export function formatHeading(level: HeadingLevel): StateCommand {
       return false;
     }
 
-    dispatch(state.update({ changes, userEvent: 'input.format' }));
+    const changeSet = state.changes(changes);
+    dispatch(
+      state.update({
+        changes: changeSet,
+        selection: state.selection.map(changeSet, 1),
+        userEvent: 'input.format',
+      }),
+    );
     return true;
   };
 }

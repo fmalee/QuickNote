@@ -1,4 +1,5 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import type {
   AppendResult,
   ExternalChangeEvent,
@@ -8,6 +9,12 @@ import type {
 } from '@/bindings/types';
 
 export type { UnlistenFn };
+
+export interface WindowFileDropPayload {
+  paths: string[];
+  x: number;
+  y: number;
+}
 
 export function listenEvent<TPayload>(
   event: string,
@@ -44,4 +51,19 @@ export function onFsExternalChange(
 
 export function onMenuAction(handler: (actionId: string) => void): Promise<UnlistenFn> {
   return listenEvent<string>('menu:action', handler);
+}
+
+export async function onWindowFileDrop(
+  handler: (payload: WindowFileDropPayload) => void,
+): Promise<UnlistenFn> {
+  const webview = getCurrentWebview();
+  return webview.onDragDropEvent((event) => {
+    if (event.payload.type === 'drop') {
+      handler({
+        paths: event.payload.paths,
+        x: event.payload.position.x,
+        y: event.payload.position.y,
+      });
+    }
+  });
 }

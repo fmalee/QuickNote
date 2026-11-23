@@ -4,6 +4,7 @@ import type {
   NoteDoc,
   NoteSummary,
   NoteUpdateMetaArgs,
+  OpenExternalUrlArgs,
   ReadNoteArgs,
   SaveImageArgs,
   SavedImageResult,
@@ -13,6 +14,7 @@ import type {
   WriteResult,
 } from '@/bindings/types';
 import {
+  appOpenExternalUrl,
   inboxExtractToNote,
   isAppError,
   noteRead,
@@ -50,6 +52,10 @@ export function saveNoteImage(args: SaveImageArgs): Promise<SavedImageResult> {
   return noteSaveImage(args);
 }
 
+export function openExternalUrl(args: OpenExternalUrlArgs): Promise<void> {
+  return appOpenExternalUrl(args);
+}
+
 export function listTemplates(): Promise<NoteSummary[]> {
   return notesList({
     tab: 'templates',
@@ -84,14 +90,17 @@ export function subscribeFsExternalChange(
   return onFsExternalChange(handler);
 }
 
-export function extractEditorErrorMessage(error: unknown): string {
+export function extractEditorErrorMessage(
+  error: unknown,
+  fallback = '读取或恢复标签页失败',
+): string {
   if (isAppError(error)) {
     return error.detail ? `${error.message} (${error.detail})` : error.message;
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return '读取或恢复标签页失败';
+  return fallback;
 }
 
 export function isNoteNotFoundError(error: unknown): boolean {

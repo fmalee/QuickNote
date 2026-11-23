@@ -3,7 +3,7 @@ use std::path::Path;
 use specta::Types;
 use specta_typescript::Typescript;
 
-use crate::domain::app::{ActivationPolicy, AppInfo};
+use crate::domain::app::{ActivationPolicy, AppInfo, OpenExternalUrlArgs, SetMenuAcceleratorsArgs};
 use crate::domain::capture::{
     AppendNoteArgs, AppendResult, InboxExtractArgs, ResolvedTarget, TargetKind, TargetResolveInput,
     UndoAppendResult,
@@ -45,6 +45,8 @@ pub fn collect_types() -> Types {
     Types::default()
         .register::<ActivationPolicy>()
         .register::<AppInfo>()
+        .register::<OpenExternalUrlArgs>()
+        .register::<SetMenuAcceleratorsArgs>()
         .register::<ErrorCode>()
         .register::<AppError>()
         .register::<WindowMode>()

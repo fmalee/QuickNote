@@ -15,9 +15,14 @@ import {
 } from '@/components';
 import { useSettingsStore } from '@/features/settings';
 import { type ActionContext, actionRegistry } from '@/lib/actions';
-import { saveNoteImage } from './api';
+import { onWindowFileDrop, type UnlistenFn, type WindowFileDropPayload } from '@/lib/ipc/events';
+import { extractEditorErrorMessage, openExternalUrl, saveNoteImage } from './api';
 import { EDITOR_FORMAT_ACTION_IDS, executeEditorFormatAction } from './extensions/markdownFormat';
-import { extractImageFileFromDataTransfer, handleImageInsert } from './extensions/markdownImages';
+import {
+  extractImageFileFromDataTransfer,
+  handleImageInsert,
+  handleLocalImagePathsDrop,
+} from './extensions/markdownImages';
 import {
   createMarkdownIndentCommand,
   createMarkdownOutdentCommand,
@@ -75,6 +80,8 @@ const tabSizeCompartment = new Compartment();
 let view: EditorView | null = null;
 let currentTabKey: string | null = null;
 let suppressUpdate = false;
+let isUnmounted = false;
+let unlistenFileDrop: UnlistenFn | null = null;
 const actionDisposers: Array<() => void> = [];
 
 const editorSettings = computed(() => settingsStore.snapshot?.settings?.editor);
@@ -179,7 +186,11 @@ async function openLinkUrl(rawUrl: string): Promise<void> {
   }
 
   if (target.kind === 'external') {
-    window.open(target.url, '_blank', 'noopener,noreferrer');
+    try {
+      await openExternalUrl({ url: target.url });
+    } catch (error) {
+      showNotice('danger', extractEditorErrorMessage(error, '打开外部链接失败'));
+    }
     return;
   }
 
@@ -261,6 +272,23 @@ function resolveExternalImageConfirm(confirmed: boolean): void {
   resolver?.(confirmed);
 }
 
+function insertSnippetAtViewPos(
+  targetView: EditorView,
+  insertPos: number | null,
+  snippet: string,
+): void {
+  const docLen = targetView.state.doc.length;
+  const sel = targetView.state.selection.main;
+  const clampedPos = insertPos !== null ? Math.max(0, Math.min(insertPos, docLen)) : null;
+  const from = clampedPos !== null ? clampedPos : sel.from;
+  const to = clampedPos !== null ? clampedPos : sel.to;
+  targetView.dispatch({
+    changes: { from, to, insert: snippet },
+    selection: { anchor: from + snippet.length },
+  });
+  targetView.focus();
+}
+
 async function processImageFile(
   file: File,
   targetView: EditorView,
@@ -278,16 +306,38 @@ async function processImageFile(
     saveImage: saveNoteImage,
     confirmExternalSave: requestExternalImageConfirm,
     insertSnippet: (snippet) => {
-      const docLen = targetView.state.doc.length;
-      const sel = targetView.state.selection.main;
-      const clampedPos = insertPos !== null ? Math.max(0, Math.min(insertPos, docLen)) : null;
-      const from = clampedPos !== null ? clampedPos : sel.from;
-      const to = clampedPos !== null ? clampedPos : sel.to;
-      targetView.dispatch({
-        changes: { from, to, insert: snippet },
-        selection: { anchor: from + snippet.length },
-      });
-      targetView.focus();
+      insertSnippetAtViewPos(targetView, insertPos, snippet);
+    },
+    onError: (message) => {
+      showNotice('danger', message);
+    },
+  });
+}
+
+async function processDroppedImagePaths(payload: WindowFileDropPayload): Promise<void> {
+  const activeTab = editorTabsStore.activeTab;
+  if (!activeTab || !view || payload.paths.length === 0) {
+    return;
+  }
+  const targetView = view;
+  const dpr =
+    typeof window !== 'undefined' && window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
+  const clientX = payload.x / dpr;
+  const clientY = payload.y / dpr;
+  const rect = targetView.dom.getBoundingClientRect();
+  const insideEditor =
+    clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+  const insertPos = insideEditor ? targetView.posAtCoords({ x: clientX, y: clientY }) : null;
+  const isLibrary = activeTab.doc?.isLibrary ?? Boolean(activeTab.relPath);
+
+  await handleLocalImagePathsDrop({
+    paths: payload.paths,
+    isLibrary,
+    contextRelPath: activeTab.relPath,
+    saveImage: saveNoteImage,
+    confirmExternalSave: requestExternalImageConfirm,
+    insertSnippet: (snippet) => {
+      insertSnippetAtViewPos(targetView, insertPos, snippet);
     },
     onError: (message) => {
       showNotice('danger', message);
@@ -713,6 +763,7 @@ watch(
 );
 
 onMounted(() => {
+  isUnmounted = false;
   if (containerRef.value) {
     const initialTab = editorTabsStore.activeTab;
     const initialState = initialTab
@@ -747,9 +798,27 @@ onMounted(() => {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
   }
+  void onWindowFileDrop((payload) => {
+    void processDroppedImagePaths(payload);
+  })
+    .then((unlisten) => {
+      if (isUnmounted) {
+        unlisten();
+      } else {
+        unlistenFileDrop = unlisten;
+      }
+    })
+    .catch(() => {
+      // 非 Tauri 测试环境容错
+    });
 });
 
 onUnmounted(() => {
+  isUnmounted = true;
+  if (unlistenFileDrop) {
+    unlistenFileDrop();
+    unlistenFileDrop = null;
+  }
   while (actionDisposers.length > 0) {
     const dispose = actionDisposers.pop();
     dispose?.();

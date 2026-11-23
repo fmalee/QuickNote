@@ -18,6 +18,7 @@ import type {
   NoteSummary,
   NoteUpdateMetaArgs,
   NotesFilterArgs,
+  OpenExternalUrlArgs,
   QuickBarArgs,
   ReadNoteArgs,
   RelPathArgs,
@@ -27,6 +28,7 @@ import type {
   SavedImageResult,
   SearchQueryArgs,
   SearchResponse,
+  SetMenuAcceleratorsArgs,
   SetRootArgs,
   SettingsPatch,
   SettingsSnapshot,
@@ -80,6 +82,14 @@ export function isAppError(error: unknown): error is AppError {
 
 export function appGetInfo(): Promise<AppInfo> {
   return invoke<AppInfo>('app_get_info');
+}
+
+export function appOpenExternalUrl(args: OpenExternalUrlArgs): Promise<void> {
+  return invoke<void>('app_open_external_url', { args });
+}
+
+export function appSetMenuAccelerators(args: SetMenuAcceleratorsArgs): Promise<void> {
+  return invoke<void>('app_set_menu_accelerators', { args });
 }
 
 export function libraryGetInfo(): Promise<LibraryInfo> {

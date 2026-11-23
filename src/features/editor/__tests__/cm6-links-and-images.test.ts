@@ -13,6 +13,7 @@ import {
   parseLinkTarget,
   resolveHeadingAnchor,
 } from '../index';
+import { extractImageExtFromPath, handleLocalImagePathsDrop } from '../extensions/markdownImages';
 
 function createMarkdownState(doc: string): EditorState {
   return EditorState.create({
@@ -295,5 +296,75 @@ describe('图片粘贴与拖入落盘', () => {
     expect(ipcFail).toBe('error');
     expect(onError).toHaveBeenCalledWith('未配置笔记库');
     expect(insertSnippet).not.toHaveBeenCalled();
+  });
+
+  it('原生拖入本地图片路径：白名单扩展名过滤、sourcePath 落盘及库外二次确认', async () => {
+    for (const ext of ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico']) {
+      expect(extractImageExtFromPath(`/Users/demo/pic.${ext.toUpperCase()}`)).toBe(ext);
+    }
+    expect(extractImageExtFromPath('/Users/demo/doc.pdf')).toBeNull();
+
+    const saveImage = vi
+      .fn()
+      .mockResolvedValueOnce({ relPath: 'assets/2026-11/shot.png' })
+      .mockResolvedValueOnce({ relPath: 'assets/2026-11/cover.avif' });
+    const confirmExternalSave = vi.fn().mockResolvedValue(true);
+    const insertSnippet = vi.fn();
+    const onError = vi.fn();
+
+    const outcome = await handleLocalImagePathsDrop({
+      paths: ['/tmp/shot.png', '/tmp/readme.txt', '/tmp/cover.avif'],
+      isLibrary: true,
+      contextRelPath: 'notes/demo.md',
+      saveImage,
+      confirmExternalSave,
+      insertSnippet,
+      onError,
+    });
+
+    expect(outcome).toBe('inserted');
+    expect(confirmExternalSave).not.toHaveBeenCalled();
+    expect(saveImage).toHaveBeenNthCalledWith(1, {
+      sourcePath: '/tmp/shot.png',
+      bytesBase64: null,
+      ext: 'png',
+      contextRelPath: 'notes/demo.md',
+    });
+    expect(saveImage).toHaveBeenNthCalledWith(2, {
+      sourcePath: '/tmp/cover.avif',
+      bytesBase64: null,
+      ext: 'avif',
+      contextRelPath: 'notes/demo.md',
+    });
+    expect(insertSnippet).toHaveBeenCalledWith(
+      '![shot](assets/2026-11/shot.png)\n![cover](assets/2026-11/cover.avif)',
+    );
+    expect(onError).not.toHaveBeenCalled();
+
+    const nonImageOutcome = await handleLocalImagePathsDrop({
+      paths: ['/tmp/notes.md', '/tmp/archive.zip'],
+      isLibrary: false,
+      contextRelPath: null,
+      saveImage,
+      confirmExternalSave,
+      insertSnippet,
+      onError,
+    });
+    expect(nonImageOutcome).toBe('cancelled');
+    expect(confirmExternalSave).not.toHaveBeenCalled();
+
+    const cancelConfirm = vi.fn().mockResolvedValue(false);
+    const externalCancelled = await handleLocalImagePathsDrop({
+      paths: ['/tmp/ext.ico'],
+      isLibrary: false,
+      contextRelPath: null,
+      saveImage,
+      confirmExternalSave: cancelConfirm,
+      insertSnippet,
+      onError,
+    });
+    expect(externalCancelled).toBe('cancelled');
+    expect(cancelConfirm).toHaveBeenCalledTimes(1);
+    expect(saveImage).toHaveBeenCalledTimes(2);
   });
 });

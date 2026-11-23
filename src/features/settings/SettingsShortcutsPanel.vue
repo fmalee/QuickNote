@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, onUnmounted, ref } from 'vue';
 import { QnBadge, QnBanner, QnButton, QnInput, QnModalShell, QnPanelCard } from '@/components';
 import {
   actionRegistry,
+  collectNativeMenuAccelerators,
   formatKeyComboDisplay,
   keyboardEventToCombo,
   type ActionCategory,
   type ActionDef,
   type ShortcutConflict,
 } from '@/lib/actions';
+import { appSetMenuAccelerators } from '@/lib/ipc/commands';
 
 const searchQuery = ref('');
 const selectedCategory = ref<'all' | ActionCategory>('all');
@@ -61,11 +63,26 @@ function isOverridden(action: ActionDef): boolean {
   return actionRegistry.getEffectiveKeys(action.id) !== action.defaultKeys;
 }
 
-function stopRecording(): void {
+async function syncNativeMenuAccelerators(clear = false): Promise<void> {
+  try {
+    await appSetMenuAccelerators({
+      entries: collectNativeMenuAccelerators(actionRegistry, clear),
+    });
+  } catch {
+    // 非 Tauri 测试环境容错
+  }
+}
+
+function cleanupRecordingListener(): void {
   recordingActionId.value = null;
   if (typeof window !== 'undefined') {
     window.removeEventListener('keydown', handleRecordKeydown, true);
   }
+}
+
+function stopRecording(): void {
+  cleanupRecordingListener();
+  void syncNativeMenuAccelerators(false);
 }
 
 function handleRecordKeydown(event: KeyboardEvent): void {
@@ -116,23 +133,26 @@ function startRecording(actionId: string): void {
     stopRecording();
     return;
   }
-  stopRecording();
+  cleanupRecordingListener();
   recordingActionId.value = actionId;
   if (typeof window !== 'undefined') {
     window.addEventListener('keydown', handleRecordKeydown, true);
   }
+  void syncNativeMenuAccelerators(true);
 }
 
 function resetSingle(actionId: string): void {
   actionRegistry.resetKeyOverride(actionId);
   conflicts.value = [];
   registryVersion.value += 1;
+  void syncNativeMenuAccelerators(false);
 }
 
 function resetAll(): void {
   actionRegistry.resetAllOverrides();
   conflicts.value = [];
   registryVersion.value += 1;
+  void syncNativeMenuAccelerators(false);
 }
 
 function openExportModal(): void {
@@ -161,9 +181,14 @@ function applyImportJson(): void {
   conflicts.value = [];
   registryVersion.value += 1;
   jsonModalOpen.value = false;
+  void syncNativeMenuAccelerators(false);
 }
 
 onBeforeUnmount(() => {
+  cleanupRecordingListener();
+});
+
+onUnmounted(() => {
   stopRecording();
 });
 

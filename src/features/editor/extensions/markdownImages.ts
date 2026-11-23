@@ -9,9 +9,23 @@ const MIME_TO_EXT: Record<string, string> = {
   'image/webp': 'webp',
   'image/gif': 'gif',
   'image/svg+xml': 'svg',
+  'image/avif': 'avif',
+  'image/bmp': 'bmp',
+  'image/x-icon': 'ico',
+  'image/vnd.microsoft.icon': 'ico',
 };
 
-const ALLOWED_IMAGE_EXTS = new Set(['png', 'jpg', 'webp', 'gif', 'svg']);
+const ALLOWED_IMAGE_EXTS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'svg',
+  'avif',
+  'bmp',
+  'ico',
+]);
 
 /**
  * 从文件 MIME 类型或文件名后缀提取白名单图片扩展名。
@@ -33,6 +47,19 @@ export function extractImageExtFromFile(file: { name?: string; type?: string }):
   }
 
   return null;
+}
+
+/**
+ * 从本地文件路径提取白名单图片扩展名（与后端 `ALLOWED_IMAGE_EXTS` 对齐）。
+ */
+export function extractImageExtFromPath(filePath: string): string | null {
+  const baseName = filePath.trim().split(/[/\\]/).pop() ?? '';
+  const dotIdx = baseName.lastIndexOf('.');
+  if (dotIdx < 0 || dotIdx >= baseName.length - 1) {
+    return null;
+  }
+  const rawExt = baseName.slice(dotIdx + 1).toLowerCase();
+  return ALLOWED_IMAGE_EXTS.has(rawExt) ? rawExt : null;
 }
 
 /**
@@ -106,6 +133,95 @@ export function extractImageFileFromDataTransfer(
   return null;
 }
 
+export interface HandleLocalImagePathsDropOptions {
+  paths: string[];
+  isLibrary: boolean;
+  contextRelPath: string | null;
+  saveImage: (args: SaveImageArgs) => Promise<SavedImageResult>;
+  confirmExternalSave: () => Promise<boolean>;
+  insertSnippet: (snippet: string) => void;
+  onError: (message: string) => void;
+}
+
+function formatImageErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string' &&
+    (error as { message: string }).message.length > 0
+  ) {
+    return (error as { message: string }).message;
+  }
+  return '保存图片失败，请确认已配置笔记库';
+}
+
+/**
+ * 处理原生拖入的本地图片路径列表：过滤合法扩展名、库外确认、按路径落盘并插入 Markdown 引用。
+ */
+export async function handleLocalImagePathsDrop(
+  options: HandleLocalImagePathsDropOptions,
+): Promise<ImageInsertOutcome> {
+  const {
+    paths,
+    isLibrary,
+    contextRelPath,
+    saveImage,
+    confirmExternalSave,
+    insertSnippet,
+    onError,
+  } = options;
+
+  const validItems: Array<{ filePath: string; ext: string; alt: string }> = [];
+  for (const rawPath of paths) {
+    const filePath = rawPath.trim();
+    if (!filePath) {
+      continue;
+    }
+    const ext = extractImageExtFromPath(filePath);
+    if (!ext) {
+      continue;
+    }
+    const baseName = (filePath.split(/[/\\]/).pop() ?? '').replace(/\.[^.]+$/, '');
+    validItems.push({ filePath, ext, alt: baseName || 'image' });
+  }
+
+  if (validItems.length === 0) {
+    return 'cancelled';
+  }
+
+  if (!isLibrary) {
+    const confirmed = await confirmExternalSave();
+    if (!confirmed) {
+      return 'cancelled';
+    }
+  }
+
+  const snippets: string[] = [];
+  for (const item of validItems) {
+    try {
+      const result = await saveImage({
+        sourcePath: item.filePath,
+        bytesBase64: null,
+        ext: item.ext,
+        contextRelPath: isLibrary ? contextRelPath : null,
+      });
+      snippets.push(buildMarkdownImageSnippet(result.relPath, item.alt));
+    } catch (error) {
+      onError(formatImageErrorMessage(error));
+    }
+  }
+
+  if (snippets.length > 0) {
+    insertSnippet(snippets.join('\n'));
+    return 'inserted';
+  }
+  return 'error';
+}
+
 /**
  * 统一处理图片粘贴/拖入：校验格式与体积、库外二次确认、调用后端落盘并插入 Markdown 引用。
  */
@@ -124,7 +240,7 @@ export async function handleImageInsert(
 
   const ext = extractImageExtFromFile(file);
   if (!ext) {
-    onError('不支持的图片格式，仅支持 PNG、JPG、WebP、GIF 与 SVG');
+    onError('不支持的图片格式，仅支持 PNG、JPG、JPEG、GIF、WebP、SVG、AVIF、BMP 与 ICO');
     return 'error';
   }
 
@@ -154,9 +270,7 @@ export async function handleImageInsert(
     insertSnippet(snippet);
     return 'inserted';
   } catch (error) {
-    const message =
-      error instanceof Error && error.message ? error.message : '保存图片失败，请确认已配置笔记库';
-    onError(message);
+    onError(formatImageErrorMessage(error));
     return 'error';
   }
 }

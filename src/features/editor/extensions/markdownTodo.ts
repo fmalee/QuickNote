@@ -219,8 +219,10 @@ export const toggleTodoCommand: StateCommand = ({ state, dispatch }) => {
     return false;
   }
 
+  const changeSet = state.changes(changes);
   const tr = state.update({
-    changes,
+    changes: changeSet,
+    selection: state.selection.map(changeSet, 1),
     userEvent: 'input.todo',
   });
   dispatch(tr);

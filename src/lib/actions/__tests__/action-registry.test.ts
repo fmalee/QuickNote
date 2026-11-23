@@ -7,6 +7,7 @@ import {
   keyboardEventToCombo,
   normalizeKeyCombo,
   registerDefaultActionCatalog,
+  scopesCanConflict,
   type ActionContext,
 } from '../index';
 
@@ -298,6 +299,42 @@ describe('ActionRegistry 作用域优先级、显式吞键与冲突矩阵', () =
     const crossScopeResult = registry.setKeyOverride('quickbar.mode.open', 'cmd+b');
     expect(crossScopeResult).toEqual({ ok: true });
     expect(registry.getEffectiveKeys('quickbar.mode.open')).toBe('cmd+b');
+
+    // 主窗口共现作用域（main-window 与 editor/list）以及 global 必须命中冲突检测
+    expect(scopesCanConflict('main-window', 'editor')).toBe(true);
+    expect(scopesCanConflict('editor', 'main-window')).toBe(true);
+    expect(scopesCanConflict('main-window', 'list')).toBe(true);
+    expect(scopesCanConflict('global', 'editor')).toBe(true);
+    expect(scopesCanConflict('quickbar', 'editor')).toBe(false);
+    expect(scopesCanConflict('terminal', 'editor')).toBe(false);
+    expect(scopesCanConflict('editor', 'list')).toBe(false);
+
+    const mainWindowConflict = registry.setKeyOverride('window.newNote', 'cmd+b');
+    expect(mainWindowConflict).toEqual({
+      ok: false,
+      conflicts: [
+        {
+          actionId: 'editor.bold',
+          title: '加粗',
+          scope: 'editor',
+          keys: 'cmd+b',
+        },
+      ],
+    });
+    expect(registry.getEffectiveKeys('window.newNote')).toBe('cmd+n');
+
+    const editorConflictWithMain = registry.setKeyOverride('editor.bold', 'cmd+s');
+    expect(editorConflictWithMain).toEqual({
+      ok: false,
+      conflicts: [
+        {
+          actionId: 'window.save',
+          title: '保存当前笔记',
+          scope: 'main-window',
+          keys: 'cmd+s',
+        },
+      ],
+    });
   });
 
   it('5. 覆写持久化、跨实例 syncFromStorage、重置与 JSON 导入导出校验', () => {

@@ -9,6 +9,7 @@ use quicknote_lib::application::notes::{
     MAX_IMAGE_BYTES,
 };
 use quicknote_lib::application::persistence::PersistenceManager;
+use quicknote_lib::domain::app::{normalize_combo_to_tauri_accelerator, validate_external_url};
 use quicknote_lib::domain::capture::InboxExtractArgs;
 use quicknote_lib::domain::error::ErrorCode;
 use quicknote_lib::domain::note::{
@@ -472,4 +473,67 @@ fn notes_get_tree_and_tags_excludes_template_tags() {
         .expect("work tag node");
     assert_eq!(work_node.children.len(), 1);
     assert_eq!(work_node.children[0].tag, "work/review");
+}
+
+#[test]
+fn validate_external_url_allows_safe_schemes_and_rejects_dangerous_inputs() {
+    assert_eq!(
+        validate_external_url("  https://example.com/docs?a=1  ").expect("https"),
+        "https://example.com/docs?a=1"
+    );
+    assert_eq!(
+        validate_external_url("HTTP://localhost:3000").expect("http"),
+        "HTTP://localhost:3000"
+    );
+    assert_eq!(
+        validate_external_url("mailto:user@example.com").expect("mailto"),
+        "mailto:user@example.com"
+    );
+
+    for bad in [
+        "",
+        "   ",
+        "-a",
+        "-https://example.com",
+        "https://example.com\nopen",
+        "https://example.com\r\n",
+        "https://example.com\0",
+        "file:///etc/passwd",
+        "javascript:alert(1)",
+        "data:text/html,<script>",
+    ] {
+        let err = validate_external_url(bad).expect_err("must reject unsafe external url");
+        assert_eq!(err.code, ErrorCode::ValidationError);
+    }
+}
+
+#[test]
+fn normalize_combo_to_tauri_accelerator_maps_standard_and_modifier_combos() {
+    assert_eq!(
+        normalize_combo_to_tauri_accelerator("cmd+b").as_deref(),
+        Some("CmdOrCtrl+B")
+    );
+    assert_eq!(
+        normalize_combo_to_tauri_accelerator("alt+cmd+c").as_deref(),
+        Some("Alt+CmdOrCtrl+C")
+    );
+    assert_eq!(
+        normalize_combo_to_tauri_accelerator("alt+cmd+1").as_deref(),
+        Some("Alt+CmdOrCtrl+1")
+    );
+    assert_eq!(
+        normalize_combo_to_tauri_accelerator("ctrl+cmd+o").as_deref(),
+        Some("Ctrl+CmdOrCtrl+O")
+    );
+    assert_eq!(
+        normalize_combo_to_tauri_accelerator("shift+cmd+t").as_deref(),
+        Some("Shift+CmdOrCtrl+T")
+    );
+    assert_eq!(
+        normalize_combo_to_tauri_accelerator("ctrl+alt+shift+cmd+space").as_deref(),
+        Some("Ctrl+Alt+Shift+CmdOrCtrl+Space")
+    );
+    assert_eq!(normalize_combo_to_tauri_accelerator(""), None);
+    assert_eq!(normalize_combo_to_tauri_accelerator("cmd"), None);
+    assert_eq!(normalize_combo_to_tauri_accelerator("cmd+a+b"), None);
 }

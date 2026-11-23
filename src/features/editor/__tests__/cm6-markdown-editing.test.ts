@@ -156,15 +156,22 @@ describe('CM6 行首待办 Widget 与待办命令', () => {
     );
   });
 
-  it('2. toggleTodoCommand 三态循环：任务 -> - [ ] 任务 -> - [x] 任务 -> 任务', () => {
+  it('2. toggleTodoCommand 三态循环：任务 -> - [ ] 任务 -> - [x] 任务 -> 任务，且空行插标记后光标落在 - [ ] 之后', () => {
+    const emptyStep = runCmd('', { anchor: 0 }, toggleTodoCommand);
+    expect(emptyStep.doc).toBe('- [ ] ');
+    expect(emptyStep.anchor).toBe(6);
+
     const step1 = runCmd('任务', { anchor: 2 }, toggleTodoCommand);
     expect(step1.doc).toBe('- [ ] 任务');
+    expect(step1.anchor).toBe(8);
 
     const step2 = runCmd(step1.doc, { anchor: 8 }, toggleTodoCommand);
     expect(step2.doc).toBe('- [x] 任务');
+    expect(step2.anchor).toBe(8);
 
     const step3 = runCmd(step2.doc, { anchor: 8 }, toggleTodoCommand);
     expect(step3.doc).toBe('任务');
+    expect(step3.anchor).toBe(2);
   });
 
   it('3. todoEnterCommand 非空待办续写与空待办清除', () => {
@@ -256,8 +263,14 @@ describe('CM6 全套 Markdown 格式命令', () => {
     expect(imgEmpty.doc).toBe('![]()');
     expect(imgEmpty.anchor).toBe(2);
 
+    const bulletEmpty = runCmd('', { anchor: 0 }, formatBulletList);
+    expect(bulletEmpty.doc).toBe('- ');
+    expect(bulletEmpty.anchor).toBe(2);
+
     const bulletOn = runCmd('a\nb', { anchor: 0, head: 3 }, formatBulletList);
     expect(bulletOn.doc).toBe('- a\n- b');
+    expect(bulletOn.anchor).toBe(2);
+    expect(bulletOn.head).toBe(7);
     const bulletOff = runCmd(
       bulletOn.doc,
       { anchor: 0, head: bulletOn.doc.length },
@@ -265,15 +278,26 @@ describe('CM6 全套 Markdown 格式命令', () => {
     );
     expect(bulletOff.doc).toBe('a\nb');
 
+    const quoteEmpty = runCmd('', { anchor: 0 }, formatBlockquote);
+    expect(quoteEmpty.doc).toBe('> ');
+    expect(quoteEmpty.anchor).toBe(2);
+
     const quoteOn = runCmd('a\nb', { anchor: 0, head: 3 }, formatBlockquote);
     expect(quoteOn.doc).toBe('> a\n> b');
 
+    const h2Empty = runCmd('', { anchor: 0 }, formatHeading(2));
+    expect(h2Empty.doc).toBe('## ');
+    expect(h2Empty.anchor).toBe(3);
+
     const h2 = runCmd('标题', { anchor: 0 }, formatHeading(2));
     expect(h2.doc).toBe('## 标题');
-    const h4 = runCmd(h2.doc, { anchor: 0 }, formatHeading(4));
+    expect(h2.anchor).toBe(3);
+    const h4 = runCmd(h2.doc, { anchor: h2.anchor }, formatHeading(4));
     expect(h4.doc).toBe('#### 标题');
-    const hOff = runCmd(h4.doc, { anchor: 0 }, formatHeading(4));
+    expect(h4.anchor).toBe(5);
+    const hOff = runCmd(h4.doc, { anchor: h4.anchor }, formatHeading(4));
     expect(hOff.doc).toBe('标题');
+    expect(hOff.anchor).toBe(0);
   });
 
   it('7. 异步图片插入坐标夹取至文档长度范围内，防止越界 dispatch 抛错', () => {

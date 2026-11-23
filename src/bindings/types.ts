@@ -339,6 +339,11 @@ export type NotesFilterArgs = {
 	filterText: string | null,
 };
 
+/**  IPC arguments for `app_open_external_url` (`C2.1`, `C2.3`). */
+export type OpenExternalUrlArgs = {
+	url: string,
+};
+
 /**  Right panel group state (`C6.3`). */
 export type PanelGroupUiState = {
 	visible: boolean,
@@ -480,6 +485,11 @@ export type SearchResultItem = {
 
 /**  Search result source (`C3.4`). */
 export type SearchSource = "library" | "recent" | "spotlight" | "path";
+
+/**  IPC arguments for `app_set_menu_accelerators` (`M2-QA`). */
+export type SetMenuAcceleratorsArgs = {
+	entries: { [key in string]: string | null },
+};
 
 /**  Arguments for `library_set_root` (`C4.2`). */
 export type SetRootArgs = {

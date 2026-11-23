@@ -24,6 +24,73 @@ export const SCOPE_PRIORITY: readonly ActionScope[] = [
   'global',
 ];
 
+export const NATIVE_MENU_ACTION_IDS = [
+  'window.newNote',
+  'editor.bold',
+  'editor.italic',
+  'editor.codeBlock',
+  'editor.table',
+  'editor.toggleTodo',
+  'editor.link',
+  'editor.image',
+  'editor.bulletList',
+  'editor.blockquote',
+  'editor.heading1',
+  'editor.heading2',
+  'editor.heading3',
+  'editor.heading4',
+  'editor.heading5',
+  'editor.heading6',
+  'panel.toggle.outline',
+  'panel.collapseGroup',
+] as const;
+
+const FIXED_NATIVE_MENU_ACCELERATORS: Readonly<Record<string, string>> = {
+  menu_settings: 'cmd+,',
+  menu_quick_open: 'cmd+k',
+  menu_command_book: 'shift+cmd+k',
+  menu_view_terminal: 'ctrl+cmd+t',
+};
+
+/**
+ * 收集需要同步至 macOS 原生菜单栏的 accelerator 映射表；
+ * `clear=true` 时全部置 `null`（用于设置页录制快捷键防抢键）。
+ */
+export function collectNativeMenuAccelerators(
+  registry: ActionRegistry,
+  clear = false,
+): Record<string, string | null> {
+  const entries: Record<string, string | null> = {};
+  for (const id of NATIVE_MENU_ACTION_IDS) {
+    entries[id] = clear ? null : registry.getEffectiveKeys(id);
+  }
+  for (const [id, combo] of Object.entries(FIXED_NATIVE_MENU_ACCELERATORS)) {
+    entries[id] = clear ? null : combo;
+  }
+  return entries;
+}
+
+/**
+ * 判断两个作用域是否可能同时处于活跃状态并产生快捷键冲突。
+ */
+export function scopesCanConflict(a: ActionScope, b: ActionScope): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (a === 'global' || b === 'global') {
+    return true;
+  }
+  if (
+    (a === 'editor' && b === 'main-window') ||
+    (a === 'main-window' && b === 'editor') ||
+    (a === 'list' && b === 'main-window') ||
+    (a === 'main-window' && b === 'list')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 const SCOPE_RANK: Record<ActionScope, number> = {
   modal: 0,
   quickbar: 1,
@@ -179,7 +246,7 @@ export function createActionRegistry(options?: ActionRegistryOptions): ActionReg
 
     const conflicts: ShortcutConflict[] = [];
     for (const other of actions.values()) {
-      if (other.id === actionId || other.scope !== target.scope) {
+      if (other.id === actionId || !scopesCanConflict(other.scope, target.scope)) {
         continue;
       }
       if (getEffectiveKeysWithMap(other.id, map) === normalized) {
