@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import type {
+  AppendResult,
   ExternalChangeEvent,
   NoteDoc,
   NoteMeta,
@@ -119,6 +120,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
   let persistTimer: ReturnType<typeof setTimeout> | null = null;
   let scrollSeq = 0;
   let unlistenExternalChange: UnlistenFn | null = null;
+  let lastQuickBarAppendedRelPath: string | null = null;
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const maxWaitTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -951,6 +953,83 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
   }
 
+  async function syncAppendedNote(
+    relPath: string,
+    options: { openIfMissing?: boolean; jumpToEnd?: boolean } = {},
+  ): Promise<void> {
+    const openIfMissing = options.openIfMissing ?? false;
+    const jumpToEnd = options.jumpToEnd ?? true;
+    const existing = tabs.value.find((tab) => tab.relPath === relPath);
+
+    if (existing) {
+      if (!existing.isDirty && !existing.isMissing) {
+        try {
+          const doc = await readNote({ absPath: existing.absPath });
+          applyDocToTab(existing, doc);
+          if (jumpToEnd) {
+            existing.cursorPos = doc.body.length;
+          }
+          existing.syncSeq += 1;
+          if (openIfMissing) {
+            activeKey.value = existing.key;
+          }
+          if (jumpToEnd && activeKey.value === existing.key) {
+            const totalLines = Math.max(1, doc.body.split('\n').length);
+            requestScrollToLine(totalLines, doc.body.length);
+          }
+          recordLastActiveDoc(doc);
+        } catch (error) {
+          errorMessage.value = extractEditorErrorMessage(error);
+        }
+      } else if (openIfMissing) {
+        activeKey.value = existing.key;
+      }
+      return;
+    }
+
+    if (!openIfMissing) {
+      return;
+    }
+
+    const opened = await openNote(relPath, { preview: false });
+    if (opened?.doc && jumpToEnd) {
+      opened.cursorPos = opened.doc.body.length;
+      opened.syncSeq += 1;
+      const totalLines = Math.max(1, opened.doc.body.split('\n').length);
+      requestScrollToLine(totalLines, opened.doc.body.length);
+    }
+  }
+
+  async function handleQuickBarAppendEvent(appendResult: AppendResult): Promise<void> {
+    lastQuickBarAppendedRelPath = appendResult.relPath;
+    notifyNotesRefresh();
+    await syncAppendedNote(appendResult.relPath, {
+      openIfMissing: false,
+      jumpToEnd: true,
+    });
+  }
+
+  async function handleMainWindowShown(): Promise<void> {
+    try {
+      const uiState = await fetchUiState();
+      const targetRelPath = lastQuickBarAppendedRelPath ?? uiState.lastActiveDoc?.relPath ?? null;
+      if (!targetRelPath) {
+        return;
+      }
+      const shouldSync =
+        lastQuickBarAppendedRelPath !== null || activeTab.value?.relPath !== targetRelPath;
+      if (shouldSync) {
+        await syncAppendedNote(targetRelPath, {
+          openIfMissing: true,
+          jumpToEnd: true,
+        });
+      }
+      lastQuickBarAppendedRelPath = null;
+    } catch {
+      // 非 Tauri 测试环境或无 uiState 时容错
+    }
+  }
+
   function dispose(): void {
     if (persistTimer !== null) {
       clearTimeout(persistTimer);
@@ -1006,6 +1085,9 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     reopenLastClosedTab,
     handleNoteRenamed,
     handleNoteDeleted,
+    syncAppendedNote,
+    handleQuickBarAppendEvent,
+    handleMainWindowShown,
     restoreTabsFromUiState,
     dispose,
   };

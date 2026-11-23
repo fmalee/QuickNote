@@ -12,6 +12,7 @@ import { NotesSidebar, useNotesStore } from '@/features/notes';
 import { OnboardingView, useOnboardingStore } from '@/features/onboarding';
 import { OutlinePanel, usePanelsStore } from '@/features/panels';
 import { SettingsErrorBanner, VisualBaselinePreview, useSettingsStore } from '@/features/settings';
+import { onToastAppendUndo, onWindowState, type UnlistenFn } from '@/lib/ipc/events';
 
 const onboardingStore = useOnboardingStore();
 const settingsStore = useSettingsStore();
@@ -20,6 +21,28 @@ const editorTabsStore = useEditorTabsStore();
 const panelsStore = usePanelsStore();
 
 const baselinePreviewOpen = ref(false);
+let unlistenToastAppendUndo: UnlistenFn | null = null;
+let unlistenMainWindowState: UnlistenFn | null = null;
+let crossWindowListenersBound = false;
+
+async function ensureCrossWindowListeners(): Promise<void> {
+  if (crossWindowListenersBound) {
+    return;
+  }
+  crossWindowListenersBound = true;
+  try {
+    unlistenToastAppendUndo = await onToastAppendUndo((appendResult) => {
+      void editorTabsStore.handleQuickBarAppendEvent(appendResult);
+    });
+    unlistenMainWindowState = await onWindowState((winState) => {
+      if (winState.windowId === 'main' && winState.visible) {
+        void panelsStore.initialize().then(() => editorTabsStore.handleMainWindowShown());
+      }
+    });
+  } catch {
+    // 非 Tauri 测试环境容错
+  }
+}
 
 const saveStatusLabel = computed<string>(() => {
   const tab = editorTabsStore.activeTab;
@@ -56,6 +79,7 @@ watch(
         notesStore.initialize(),
         editorTabsStore.restoreTabsFromUiState(),
         panelsStore.initialize(),
+        ensureCrossWindowListeners(),
       ]);
     }
   },
@@ -63,6 +87,15 @@ watch(
 );
 
 onUnmounted(() => {
+  if (unlistenToastAppendUndo) {
+    unlistenToastAppendUndo();
+    unlistenToastAppendUndo = null;
+  }
+  if (unlistenMainWindowState) {
+    unlistenMainWindowState();
+    unlistenMainWindowState = null;
+  }
+  crossWindowListenersBound = false;
   notesStore.dispose();
   editorTabsStore.dispose();
   panelsStore.dispose();

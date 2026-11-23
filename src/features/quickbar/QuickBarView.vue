@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue';
 import { QnBadge, QnBanner, QnButton } from '@/components';
+import QuickBarTargetPicker from './QuickBarTargetPicker.vue';
 import { useQuickBarStore } from './store';
 
 const store = useQuickBarStore();
 const editorRef = ref<HTMLTextAreaElement | null>(null);
 
 function focusEditor(): void {
-  if (store.isUnconfigured) {
+  if (store.isUnconfigured || store.mode !== 'capture' || store.targetPickerOpen) {
     return;
   }
   void nextTick(() => {
@@ -20,9 +21,9 @@ onMounted(() => {
 });
 
 watch(
-  () => [store.focusTick, store.isUnconfigured] as const,
-  ([, unconfigured]) => {
-    if (!unconfigured) {
+  () => [store.focusTick, store.isUnconfigured, store.mode, store.targetPickerOpen] as const,
+  ([, unconfigured, currentMode, pickerOpen]) => {
+    if (!unconfigured && currentMode === 'capture' && !pickerOpen) {
       focusEditor();
     }
   },
@@ -31,7 +32,61 @@ watch(
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     event.preventDefault();
-    void store.hide('esc');
+    void store.handleEscape();
+    return;
+  }
+
+  if (!event.metaKey || store.isUnconfigured) {
+    return;
+  }
+
+  const lowerKey = event.key.toLowerCase();
+
+  if (lowerKey === 'k') {
+    event.preventDefault();
+    store.mode = event.shiftKey ? 'command' : 'open';
+    return;
+  }
+
+  if (lowerKey === 't') {
+    event.preventDefault();
+    store.toggleTargetPicker();
+    return;
+  }
+
+  if (event.key === '1') {
+    event.preventDefault();
+    store.setCaptureMode('list');
+    return;
+  }
+
+  if (event.key === '2') {
+    event.preventDefault();
+    store.setCaptureMode('todo');
+    return;
+  }
+
+  if (event.key === '3') {
+    event.preventDefault();
+    store.setCaptureMode('prose');
+    return;
+  }
+
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    store.cycleRelatedTarget('next');
+    return;
+  }
+
+  if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    store.cycleRelatedTarget('prev');
+    return;
+  }
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    void store.submitAppend(event.shiftKey);
   }
 }
 </script>
@@ -64,12 +119,44 @@ function handleKeydown(event: KeyboardEvent): void {
       </div>
 
       <div class="qn-quickbar__header-right">
-        <QnBadge :tone="store.isUnconfigured ? 'warning' : 'neutral'">
-          {{ store.isUnconfigured ? '未选库 · S1' : '收件箱 · inbox.md' }}
+        <button
+          v-if="!store.isUnconfigured"
+          type="button"
+          class="qn-quickbar__chip-btn"
+          data-testid="quickbar-target-chip"
+          @click="store.toggleTargetPicker()"
+        >
+          <QnBadge :tone="store.targetChipTone">
+            {{ store.targetChipLabel }}
+          </QnBadge>
+        </button>
+        <QnBadge v-else tone="warning" data-testid="quickbar-target-chip">
+          {{ store.targetChipLabel }}
         </QnBadge>
-        <QnButton variant="ghost" size="sm" @click="store.hide('esc')">Esc</QnButton>
+
+        <button
+          v-if="store.explicitTarget && !store.isUnconfigured"
+          type="button"
+          class="qn-quickbar__clear-target"
+          data-testid="quickbar-clear-explicit"
+          @click="store.clearExplicitTarget()"
+        >
+          × 恢复默认
+        </button>
+
+        <span
+          v-if="store.sectionHintText"
+          class="qn-quickbar__section-hint"
+          data-testid="quickbar-section-hint"
+        >
+          {{ store.sectionHintText }}
+        </span>
+
+        <QnButton variant="ghost" size="sm" @click="store.handleEscape()">Esc</QnButton>
       </div>
     </header>
+
+    <QuickBarTargetPicker />
 
     <div v-if="store.settingsStatus && !store.settingsStatus.valid" class="qn-quickbar__banner">
       <QnBanner tone="danger" title="settings.yaml 解析异常">
@@ -80,6 +167,12 @@ function handleKeydown(event: KeyboardEvent): void {
           第 {{ store.settingsStatus.errorColumn }} 列：
         </span>
         {{ store.settingsStatus.errorMessage ?? '配置存在语法错误，已回退安全默认配置。' }}
+      </QnBanner>
+    </div>
+
+    <div v-if="store.errorMessage" class="qn-quickbar__banner">
+      <QnBanner tone="danger" title="追加失败">
+        {{ store.errorMessage }}
       </QnBanner>
     </div>
 
@@ -96,18 +189,117 @@ function handleKeydown(event: KeyboardEvent): void {
       </div>
     </div>
 
+    <div v-else-if="store.mode !== 'capture'" class="qn-quickbar__placeholder">
+      <div class="qn-quickbar__s1-card">
+        <QnBadge tone="neutral" size="md">
+          {{ store.mode === 'open' ? '快速打开模式 (⌘K)' : '命令面板模式 (⌘⇧K)' }}
+        </QnBadge>
+        <p class="qn-quickbar__s1-desc">
+          该模式将在 M3 阶段接入完整检索与命令执行。按 Esc 可退回记录模式。
+        </p>
+        <QnButton variant="secondary" size="sm" @click="store.mode = 'capture'">
+          返回记录模式 (Esc)
+        </QnButton>
+      </div>
+    </div>
+
     <div v-else class="qn-quickbar__body">
       <textarea
         ref="editorRef"
         v-model="store.draft"
         class="qn-quickbar__editor"
         autofocus
-        placeholder="输入要快速记录的想法、待办或片段…（M1 阶段接入真实追加写入）"
+        placeholder="输入要快速记录的想法、待办或片段…（⌘1 列表 / ⌘2 待办 / ⌘3 正文，⌘T 选目标）"
       />
+
+      <div
+        v-if="store.relatedNotes.length > 0"
+        class="qn-quickbar__related"
+        data-testid="quickbar-related-list"
+      >
+        <span class="qn-quickbar__related-label">相关笔记 (⌘↑/⌘↓ 改投):</span>
+        <div class="qn-quickbar__related-items">
+          <button
+            v-for="(item, idx) in store.relatedNotes"
+            :key="item.key"
+            type="button"
+            :class="[
+              'qn-quickbar__related-item',
+              { 'qn-quickbar__related-item--active': store.selectedRelatedIndex === idx },
+            ]"
+            :data-testid="`quickbar-related-item-${idx}`"
+            @click="store.selectRelatedNote(store.selectedRelatedIndex === idx ? -1 : idx)"
+          >
+            {{ item.title }}
+          </button>
+        </div>
+      </div>
+
       <footer class="qn-quickbar__footer">
-        <span class="qn-quickbar__hint">默认目标：收件箱（M0 窗口骨架）</span>
+        <div class="qn-quickbar__capture-modes">
+          <button
+            type="button"
+            :class="[
+              'qn-quickbar__capture-btn',
+              { 'qn-quickbar__capture-btn--active': store.captureMode === 'list' },
+            ]"
+            data-testid="capture-mode-list"
+            @click="store.setCaptureMode('list')"
+          >
+            列表 ⌘1
+          </button>
+          <button
+            type="button"
+            :class="[
+              'qn-quickbar__capture-btn',
+              { 'qn-quickbar__capture-btn--active': store.captureMode === 'todo' },
+            ]"
+            data-testid="capture-mode-todo"
+            @click="store.setCaptureMode('todo')"
+          >
+            待办 ⌘2
+          </button>
+          <button
+            type="button"
+            :class="[
+              'qn-quickbar__capture-btn',
+              { 'qn-quickbar__capture-btn--active': store.captureMode === 'prose' },
+            ]"
+            data-testid="capture-mode-prose"
+            @click="store.setCaptureMode('prose')"
+          >
+            正文 ⌘3
+          </button>
+        </div>
+
         <div class="qn-quickbar__footer-actions">
-          <QnButton variant="primary" size="sm" :disabled="true"> 追加 ⌘↵（M1 启用） </QnButton>
+          <QnButton
+            v-if="store.draft.length > 0"
+            variant="ghost"
+            size="sm"
+            data-testid="quickbar-clear-draft"
+            @click="store.clearDraft()"
+          >
+            清空
+          </QnButton>
+          <QnButton
+            variant="secondary"
+            size="sm"
+            :disabled="!store.canSubmit"
+            data-testid="quickbar-submit-open"
+            @click="store.submitAppend(true)"
+          >
+            追加并打开 ⇧⌘↵
+          </QnButton>
+          <QnButton
+            variant="primary"
+            size="sm"
+            :disabled="!store.canSubmit"
+            data-testid="quickbar-submit-append"
+            @click="store.submitAppend(false)"
+          >
+            追加 ⌘↵
+          </QnButton>
         </div>
       </footer>
     </div>
@@ -116,6 +308,7 @@ function handleKeydown(event: KeyboardEvent): void {
 
 <style scoped>
 .qn-quickbar {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -169,11 +362,38 @@ function handleKeydown(event: KeyboardEvent): void {
   gap: var(--qn-space-2);
 }
 
+.qn-quickbar__chip-btn {
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.qn-quickbar__clear-target {
+  padding: var(--qn-space-1) var(--qn-space-2);
+  border: none;
+  border-radius: var(--qn-radius-sm);
+  background-color: var(--qn-bg-hover);
+  color: var(--qn-text-secondary);
+  font-size: var(--qn-text-xs);
+  cursor: pointer;
+}
+
+.qn-quickbar__clear-target:hover {
+  color: var(--qn-text-primary);
+}
+
+.qn-quickbar__section-hint {
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-muted);
+}
+
 .qn-quickbar__banner {
   padding: var(--qn-space-2) var(--qn-space-4) 0;
 }
 
-.qn-quickbar__s1 {
+.qn-quickbar__s1,
+.qn-quickbar__placeholder {
   flex: 1;
   display: flex;
   align-items: center;
@@ -226,18 +446,85 @@ function handleKeydown(event: KeyboardEvent): void {
   outline: none;
 }
 
+.qn-quickbar__related {
+  display: flex;
+  align-items: center;
+  gap: var(--qn-space-2);
+  padding: var(--qn-space-2) var(--qn-space-4);
+  border-top: 1px solid var(--qn-border-subtle);
+  background-color: var(--qn-bg-base);
+  overflow-x: auto;
+}
+
+.qn-quickbar__related-label {
+  flex-shrink: 0;
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-muted);
+}
+
+.qn-quickbar__related-items {
+  display: flex;
+  align-items: center;
+  gap: var(--qn-space-1);
+}
+
+.qn-quickbar__related-item {
+  padding: var(--qn-space-1) var(--qn-space-2);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qn-radius-sm);
+  background-color: var(--qn-bg-sidebar);
+  color: var(--qn-text-secondary);
+  font-size: var(--qn-text-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.qn-quickbar__related-item:hover {
+  background-color: var(--qn-bg-hover);
+  color: var(--qn-text-primary);
+}
+
+.qn-quickbar__related-item--active {
+  border-color: var(--qn-accent);
+  background-color: var(--qn-bg-active);
+  color: var(--qn-text-primary);
+}
+
 .qn-quickbar__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--qn-space-2);
   padding: var(--qn-space-2) var(--qn-space-4);
   border-top: 1px solid var(--qn-border-subtle);
   background-color: var(--qn-bg-sidebar);
 }
 
-.qn-quickbar__hint {
+.qn-quickbar__capture-modes {
+  display: flex;
+  align-items: center;
+  gap: var(--qn-space-1);
+}
+
+.qn-quickbar__capture-btn {
+  padding: var(--qn-space-1) var(--qn-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--qn-radius-sm);
+  background: transparent;
+  color: var(--qn-text-secondary);
   font-size: var(--qn-text-xs);
-  color: var(--qn-text-muted);
+  cursor: pointer;
+}
+
+.qn-quickbar__capture-btn:hover {
+  background-color: var(--qn-bg-hover);
+  color: var(--qn-text-primary);
+}
+
+.qn-quickbar__capture-btn--active {
+  border-color: var(--qn-border-default);
+  background-color: var(--qn-bg-active);
+  color: var(--qn-text-primary);
 }
 
 .qn-quickbar__footer-actions {

@@ -89,16 +89,20 @@ export const usePanelsStore = defineStore('panels', () => {
     }).catch(() => undefined);
   }
 
+  function applyPanelGroupState(nextGroup: PanelGroupUiState): void {
+    panelGroup.value = {
+      visible: nextGroup.visible,
+      activeId: nextGroup.activeId || 'outline',
+      width: Math.max(MIN_PANEL_WIDTH, nextGroup.width || DEFAULT_PANEL_WIDTH),
+      collapsed: nextGroup.collapsed,
+    };
+  }
+
   async function initialize(): Promise<void> {
     try {
       const uiState = await uiStateGet();
       if (uiState.panelGroup) {
-        panelGroup.value = {
-          visible: uiState.panelGroup.visible,
-          activeId: uiState.panelGroup.activeId || 'outline',
-          width: Math.max(MIN_PANEL_WIDTH, uiState.panelGroup.width || DEFAULT_PANEL_WIDTH),
-          collapsed: uiState.panelGroup.collapsed,
-        };
+        applyPanelGroupState(uiState.panelGroup);
       }
     } catch {
       // 容错：回退默认面板状态
@@ -143,6 +147,7 @@ export const usePanelsStore = defineStore('panels', () => {
     outlineItems,
     activeHeadingIndex,
     isOutlineVisible,
+    applyPanelGroupState,
     initialize,
     toggleOutlinePanel,
     toggleCollapseAll,
