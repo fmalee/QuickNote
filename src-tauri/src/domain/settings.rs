@@ -304,6 +304,364 @@ pub struct SettingsSnapshot {
     pub status: SettingsLoadStatus,
 }
 
+/// Partial patch for `HotkeySettings` (`C3.4`, `C4.2`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct HotkeySettingsPatch {
+    #[serde(default)]
+    pub quick_bar: Option<String>,
+    #[serde(default)]
+    pub quick_bar_backup: Option<String>,
+}
+
+/// Partial patch for `QuickBarSettings` (`C3.4`, `C4.2`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickBarSettingsPatch {
+    #[serde(default)]
+    pub default_target: Option<String>,
+    #[serde(default)]
+    pub last_active_ttl_hours: Option<u32>,
+    #[serde(default)]
+    pub destroy_after_hidden_minutes: Option<u32>,
+    #[serde(default)]
+    pub auto_create_missing_section: Option<bool>,
+}
+
+/// Partial patch for `MainWindowSettings` (`C3.4`, `C4.2`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MainWindowSettingsPatch {
+    #[serde(default)]
+    pub mode: Option<WindowMode>,
+    #[serde(default)]
+    pub auxiliary_width_percent: Option<u8>,
+}
+
+/// Partial patch for `EditorSettings` (`C3.4`, `C4.2`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorSettingsPatch {
+    #[serde(default)]
+    pub theme: Option<EditorTheme>,
+    #[serde(default)]
+    pub font_size: Option<u16>,
+    #[serde(default)]
+    #[specta(type = Option<specta_typescript::Number>)]
+    pub line_height: Option<f64>,
+    #[serde(default)]
+    pub max_width: Option<u32>,
+    #[serde(default)]
+    pub tab_size_prose: Option<u8>,
+    #[serde(default)]
+    pub tab_size_code: Option<u8>,
+    #[serde(default)]
+    pub auto_save_debounce_ms: Option<u32>,
+    #[serde(default)]
+    pub auto_save_max_wait_ms: Option<u32>,
+    #[serde(default)]
+    pub single_click_link: Option<bool>,
+}
+
+/// Partial patch for `TerminalPanelSettings` (`C3.4`, `C4.2`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalPanelSettingsPatch {
+    #[serde(default)]
+    pub visible_by_default: Option<bool>,
+    #[serde(default)]
+    pub width: Option<u32>,
+    #[serde(default)]
+    pub shell: Option<String>,
+    #[serde(default)]
+    pub idle_recycle_minutes: Option<u32>,
+    #[serde(default)]
+    pub max_concurrent_sessions: Option<u32>,
+}
+
+/// Partial patch for `PanelsSettings` (`C3.4`, `C4.2`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PanelsSettingsPatch {
+    #[serde(default)]
+    pub default: Option<PanelId>,
+    #[serde(default)]
+    pub width: Option<u32>,
+    #[serde(default)]
+    pub terminal: Option<TerminalPanelSettingsPatch>,
+}
+
+/// Partial patch for `InboxSettings` (`C3.4`, `C4.2`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxSettingsPatch {
+    #[serde(default)]
+    pub bloat_threshold_lines: Option<u32>,
+}
+
+/// Partial patch for `ExternalAppConfig` (`C3.4`, `C4.2`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalAppConfigPatch {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub bundle_id: Option<String>,
+}
+
+/// Partial patch for `EditorsSettings` (`C3.4`, `C4.2`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorsSettingsPatch {
+    #[serde(default)]
+    pub vscode: Option<ExternalAppConfigPatch>,
+    #[serde(default)]
+    pub sublime: Option<ExternalAppConfigPatch>,
+}
+
+/// Partial settings update payload for `settings_update` (`C3.4`, `C4.2`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsPatch {
+    #[serde(default)]
+    pub library_root: Option<String>,
+    #[serde(default)]
+    pub hotkey: Option<HotkeySettingsPatch>,
+    #[serde(default)]
+    pub quick_bar: Option<QuickBarSettingsPatch>,
+    #[serde(default)]
+    pub main_window: Option<MainWindowSettingsPatch>,
+    #[serde(default)]
+    pub editor: Option<EditorSettingsPatch>,
+    #[serde(default)]
+    pub panels: Option<PanelsSettingsPatch>,
+    #[serde(default)]
+    pub inbox: Option<InboxSettingsPatch>,
+    #[serde(default)]
+    pub terminal: Option<ExternalAppConfigPatch>,
+    #[serde(default)]
+    pub editors: Option<EditorsSettingsPatch>,
+    #[serde(default)]
+    pub search_roots: Option<Vec<String>>,
+    #[serde(default)]
+    pub workspaces: Option<BTreeMap<String, WorkspaceConfig>>,
+}
+
+fn apply_external_app_patch(target: &mut ExternalAppConfig, patch: &ExternalAppConfigPatch) {
+    if let Some(ref name) = patch.name {
+        target.name = name.clone();
+    }
+    if let Some(ref bundle_id) = patch.bundle_id {
+        target.bundle_id = bundle_id.clone();
+    }
+}
+
+/// Pure merge and validation of `SettingsPatch` onto `base` (`C6.2`, `C4.2`).
+pub fn apply_settings_patch(base: &Settings, patch: &SettingsPatch) -> Result<Settings, AppError> {
+    let mut next = base.clone();
+
+    if let Some(ref root) = patch.library_root {
+        next.library_root = Some(root.clone());
+    }
+
+    if let Some(ref hk) = patch.hotkey {
+        if let Some(ref qb) = hk.quick_bar {
+            next.hotkey.quick_bar = qb.clone();
+        }
+        if let Some(ref qbb) = hk.quick_bar_backup {
+            next.hotkey.quick_bar_backup = qbb.clone();
+        }
+    }
+
+    if let Some(ref qb) = patch.quick_bar {
+        if let Some(ref dt) = qb.default_target {
+            next.quick_bar.default_target = dt.clone();
+        }
+        if let Some(ttl) = qb.last_active_ttl_hours {
+            next.quick_bar.last_active_ttl_hours = ttl;
+        }
+        if let Some(d) = qb.destroy_after_hidden_minutes {
+            next.quick_bar.destroy_after_hidden_minutes = d;
+        }
+        if let Some(auto) = qb.auto_create_missing_section {
+            next.quick_bar.auto_create_missing_section = auto;
+        }
+    }
+
+    if let Some(ref mw) = patch.main_window {
+        if let Some(mode) = mw.mode {
+            next.main_window.mode = mode;
+        }
+        if let Some(pct) = mw.auxiliary_width_percent {
+            next.main_window.auxiliary_width_percent = pct;
+        }
+    }
+
+    if let Some(ref ed) = patch.editor {
+        if let Some(theme) = ed.theme {
+            next.editor.theme = theme;
+        }
+        if let Some(fs) = ed.font_size {
+            next.editor.font_size = fs;
+        }
+        if let Some(lh) = ed.line_height {
+            next.editor.line_height = lh;
+        }
+        if let Some(mw) = ed.max_width {
+            next.editor.max_width = mw;
+        }
+        if let Some(tp) = ed.tab_size_prose {
+            next.editor.tab_size_prose = tp;
+        }
+        if let Some(tc) = ed.tab_size_code {
+            next.editor.tab_size_code = tc;
+        }
+        if let Some(deb) = ed.auto_save_debounce_ms {
+            next.editor.auto_save_debounce_ms = deb;
+        }
+        if let Some(max_w) = ed.auto_save_max_wait_ms {
+            next.editor.auto_save_max_wait_ms = max_w;
+        }
+        if let Some(scl) = ed.single_click_link {
+            next.editor.single_click_link = scl;
+        }
+    }
+
+    if let Some(ref panels) = patch.panels {
+        if let Some(def) = panels.default {
+            next.panels.default = def;
+        }
+        if let Some(w) = panels.width {
+            next.panels.width = w;
+        }
+        if let Some(ref term) = panels.terminal {
+            if let Some(v) = term.visible_by_default {
+                next.panels.terminal.visible_by_default = v;
+            }
+            if let Some(w) = term.width {
+                next.panels.terminal.width = w;
+            }
+            if let Some(ref sh) = term.shell {
+                next.panels.terminal.shell = sh.clone();
+            }
+            if let Some(idle) = term.idle_recycle_minutes {
+                next.panels.terminal.idle_recycle_minutes = idle;
+            }
+            if let Some(max_s) = term.max_concurrent_sessions {
+                next.panels.terminal.max_concurrent_sessions = max_s;
+            }
+        }
+    }
+
+    if let Some(ref inbox) = patch.inbox {
+        if let Some(th) = inbox.bloat_threshold_lines {
+            next.inbox.bloat_threshold_lines = th;
+        }
+    }
+
+    if let Some(ref term) = patch.terminal {
+        apply_external_app_patch(&mut next.terminal, term);
+    }
+
+    if let Some(ref eds) = patch.editors {
+        if let Some(ref vsc) = eds.vscode {
+            apply_external_app_patch(&mut next.editors.vscode, vsc);
+        }
+        if let Some(ref sub) = eds.sublime {
+            apply_external_app_patch(&mut next.editors.sublime, sub);
+        }
+    }
+
+    if let Some(ref roots) = patch.search_roots {
+        next.search_roots = roots.clone();
+    }
+
+    if let Some(ref ws) = patch.workspaces {
+        next.workspaces = ws.clone();
+    }
+
+    validate_settings(&next)?;
+    Ok(next)
+}
+
+fn validate_settings(s: &Settings) -> Result<(), AppError> {
+    if !(10..=32).contains(&s.editor.font_size) {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "editor.fontSize must be between 10 and 32",
+        ));
+    }
+    if !s.editor.line_height.is_finite() || !(1.0..=3.0).contains(&s.editor.line_height) {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "editor.lineHeight must be between 1.0 and 3.0",
+        ));
+    }
+    if !(1..=8).contains(&s.editor.tab_size_prose) {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "editor.tabSizeProse must be between 1 and 8",
+        ));
+    }
+    if !(1..=8).contains(&s.editor.tab_size_code) {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "editor.tabSizeCode must be between 1 and 8",
+        ));
+    }
+    if !(100..=60_000).contains(&s.editor.auto_save_debounce_ms) {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "editor.autoSaveDebounceMs must be between 100 and 60000",
+        ));
+    }
+    if s.editor.auto_save_max_wait_ms < s.editor.auto_save_debounce_ms
+        || s.editor.auto_save_max_wait_ms > 120_000
+    {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "editor.autoSaveMaxWaitMs must be >= autoSaveDebounceMs and <= 120000",
+        ));
+    }
+    if s.inbox.bloat_threshold_lines < 10 {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "inbox.bloatThresholdLines must be >= 10",
+        ));
+    }
+    if !(20..=80).contains(&s.main_window.auxiliary_width_percent) {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "mainWindow.auxiliaryWidthPercent must be between 20 and 80",
+        ));
+    }
+    if s.panels.width < 220 {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "panels.width must be >= 220",
+        ));
+    }
+    if s.panels.terminal.width < 220 {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "panels.terminal.width must be >= 220",
+        ));
+    }
+    if !(1..=10).contains(&s.panels.terminal.max_concurrent_sessions) {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "panels.terminal.maxConcurrentSessions must be between 1 and 10",
+        ));
+    }
+    if s.quick_bar.last_active_ttl_hours < 1 {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "quickBar.lastActiveTtlHours must be >= 1",
+        ));
+    }
+    Ok(())
+}
+
 // --- YAML disk representation (`snake_case`, `deny_unknown_fields`, `C6.2`) ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

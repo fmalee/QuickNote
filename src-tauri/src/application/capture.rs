@@ -8,15 +8,18 @@ use chrono::{Local, Utc};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::application::index::index_single_note;
+use crate::application::notes::note_create;
 use crate::application::persistence::PersistenceManager;
 use crate::application::window::WindowManager;
 use crate::domain::capture::{
-    append_to_body, apply_doc_section_hints, resolve_target, AppendNoteArgs, AppendResult,
-    ResolveDocCandidate, ResolveTargetContext, ResolvedTarget, TargetKind, TargetResolveInput,
-    UndoAppendResult,
+    append_to_body, apply_doc_section_hints, extract_body_lines, resolve_target, AppendNoteArgs,
+    AppendResult, InboxExtractArgs, ResolveDocCandidate, ResolveTargetContext, ResolvedTarget,
+    TargetKind, TargetResolveInput, UndoAppendResult,
 };
 use crate::domain::error::{AppError, ErrorCode};
-use crate::domain::note::{compose_note, compute_body_hash, parse_note, INBOX_REL_PATH};
+use crate::domain::note::{
+    compose_note, compute_body_hash, parse_note, CreateNoteArgs, NoteDoc, INBOX_REL_PATH,
+};
 use crate::domain::ui_state::{LastActiveDocState, UiStatePatchKey};
 use crate::domain::watch::{ExternalChangeEvent, ExternalChangeKind};
 use crate::infra::fs::{atomic_write_str, map_io_error};
@@ -373,4 +376,51 @@ fn file_mtime_and_size(path: &Path) -> Result<(i64, u64), AppError> {
         .map(|d| d.as_millis() as i64)
         .unwrap_or_else(|| Utc::now().timestamp_millis());
     Ok((mtime_ms, meta.len()))
+}
+
+/// Extracts `[from_line, to_line]` from `inbox.md` into a new note, only mutating `inbox.md` after creation succeeds (`C3.4`, `C4.2`, `v4` §4.11).
+pub fn inbox_extract_to_note(
+    pm: &PersistenceManager,
+    args: InboxExtractArgs,
+) -> Result<NoteDoc, AppError> {
+    let root = require_library_root(pm)?;
+    let inbox_abs = root.join(INBOX_REL_PATH);
+    if !inbox_abs.is_file() {
+        return Err(AppError::with_detail(
+            ErrorCode::NotFound,
+            "inbox.md not found",
+            inbox_abs.to_string_lossy().to_string(),
+        ));
+    }
+
+    let raw_inbox =
+        fs::read_to_string(&inbox_abs).map_err(|e| map_io_error(e, "Failed to read inbox.md"))?;
+    let parsed_inbox = parse_note(&raw_inbox, "inbox");
+    let (extracted, remaining_body) =
+        extract_body_lines(&parsed_inbox.body, args.from_line, args.to_line)?;
+
+    // Data-loss prevention: create target note first; if this fails, inbox.md remains untouched.
+    let created_doc = note_create(
+        pm,
+        CreateNoteArgs {
+            title: args.new_title,
+            dir_rel_path: args.target_dir_rel_path,
+            template_name: Some(args.template_name),
+            body: Some(extracted),
+        },
+    )?;
+
+    let new_inbox_raw = compose_note(parsed_inbox.block.as_deref(), &remaining_body);
+    atomic_write_str(&inbox_abs, &new_inbox_raw)?;
+    let (mtime_ms, size_bytes) = file_mtime_and_size(&inbox_abs)?;
+    index_single_note(
+        pm,
+        INBOX_REL_PATH,
+        &new_inbox_raw,
+        mtime_ms,
+        size_bytes as i64,
+    )?;
+    pm.record_self_write(&inbox_abs, &compute_body_hash(&remaining_body));
+
+    Ok(created_doc)
 }

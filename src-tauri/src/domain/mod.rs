@@ -7,6 +7,7 @@ pub mod hotkey;
 pub mod markdown;
 pub mod note;
 pub mod settings;
+pub mod template;
 pub mod tokenizer;
 pub mod ui_state;
 pub mod watch;

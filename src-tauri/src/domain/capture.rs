@@ -77,6 +77,17 @@ pub struct UndoAppendResult {
     pub mtime_ms: i64,
 }
 
+/// Arguments for `inbox_extract_to_note` (`C3.4`, `C4.2`, `v4` §4.11).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxExtractArgs {
+    pub from_line: u32,
+    pub to_line: u32,
+    pub new_title: String,
+    pub target_dir_rel_path: String,
+    pub template_name: String,
+}
+
 /// Pure candidate metadata for `resolve_target` without filesystem dependencies (`C1.2`, `C8.1`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolveDocCandidate {
@@ -680,4 +691,56 @@ fn append_at_eof(lines: &mut Vec<String>, formatted: Vec<String>, blank_line_bef
         lines.push(String::new());
     }
     lines.extend(formatted);
+}
+
+/// Extracts a 1-based closed line range `[from_line, to_line]` from `body`, returning `(extracted, remaining)`.
+pub fn extract_body_lines(
+    body: &str,
+    from_line: u32,
+    to_line: u32,
+) -> Result<(String, String), AppError> {
+    let lines: Vec<&str> = body.lines().collect();
+    let total_lines = lines.len() as u32;
+    if from_line < 1 || from_line > to_line || to_line > total_lines {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "Invalid line range for extraction",
+        ));
+    }
+
+    let start = (from_line - 1) as usize;
+    let end = to_line as usize;
+    let extracted_raw = lines[start..end].join("\n");
+    if extracted_raw.trim().is_empty() {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "Extracted content cannot be empty",
+        ));
+    }
+    let extracted = format!("{}\n", extracted_raw.trim_end_matches('\n'));
+
+    let mut before: Vec<&str> = lines[..start].to_vec();
+    let mut after: Vec<&str> = lines[end..].to_vec();
+
+    while before.last().is_some_and(|l| l.trim().is_empty()) {
+        before.pop();
+    }
+    while after.first().is_some_and(|l| l.trim().is_empty()) {
+        after.remove(0);
+    }
+
+    let mut remaining_lines: Vec<&str> = Vec::with_capacity(before.len() + after.len() + 1);
+    remaining_lines.extend(before);
+    if !remaining_lines.is_empty() && !after.is_empty() {
+        remaining_lines.push("");
+    }
+    remaining_lines.extend(after);
+
+    let remaining = if remaining_lines.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", remaining_lines.join("\n"))
+    };
+
+    Ok((extracted, remaining))
 }

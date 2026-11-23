@@ -14,15 +14,18 @@ use crate::domain::frontmatter::{
     apply_yaml_patch, build_frontmatter_block, render_yaml_string, replace_frontmatter_yaml,
     YamlPatchOp, YamlPatchValue,
 };
+use crate::domain::markdown::{decode_base64_image, normalize_image_ext};
 use crate::domain::note::{
     compose_note, compute_body_hash, count_list_items, format_ulid, meta_patch_ops, parse_note,
     tag_matches, ConflictInfo, CreateNoteArgs, DirNode, NavTreeSnapshot, NoteDoc, NoteMeta,
     NoteMetaPatch, NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs,
-    RelPathArgs, RenameNoteArgs, SearchItemKind, SearchQueryArgs, SearchResponse, SearchResultItem,
-    SearchSource, TagNode, WorkspaceSummary, WriteNoteArgs, WriteResult, INBOX_REL_PATH,
+    RelPathArgs, RenameNoteArgs, SaveImageArgs, SavedImageResult, SearchItemKind, SearchQueryArgs,
+    SearchResponse, SearchResultItem, SearchSource, TagNode, WorkspaceSummary, WriteNoteArgs,
+    WriteResult, INBOX_REL_PATH,
 };
+use crate::domain::template::{builtin_template, render_template, TemplateVars};
 use crate::domain::tokenizer::build_fts_query;
-use crate::infra::fs::{atomic_write_str, map_io_error, prune_backups};
+use crate::infra::fs::{atomic_write_bytes, atomic_write_str, map_io_error, prune_backups};
 use crate::infra::sqlite::{
     delete_note_index_by_rel_path, get_note_key_by_rel_path, list_all_indexed_notes,
     search_notes_fts,
@@ -123,10 +126,12 @@ pub fn notes_list(
     let mut out = Vec::new();
     for row in rows {
         let doc_type = NoteType::parse(&row.doc_type).unwrap_or(NoteType::Note);
+        let is_template = doc_type == NoteType::Template || row.rel_path.starts_with("_templates/");
         let tab_match = match args.tab.as_str() {
             "inbox" => row.is_inbox,
+            "templates" => row.rel_path.starts_with("_templates/"),
             "projects" => {
-                if doc_type == NoteType::Template {
+                if is_template {
                     false
                 } else if let Some(ref prefix) = dir_prefix {
                     row.rel_path.starts_with(prefix)
@@ -135,7 +140,9 @@ pub fn notes_list(
                 }
             }
             "tags" => {
-                if args.tags.is_empty() {
+                if is_template {
+                    false
+                } else if args.tags.is_empty() {
                     true
                 } else {
                     args.tags
@@ -143,12 +150,18 @@ pub fn notes_list(
                         .all(|filter_tag| row.tags.iter().any(|t| tag_matches(t, filter_tag)))
                 }
             }
-            "recent" => doc_type != NoteType::Template,
-            "workspaces" => match args.workspace_key.as_deref() {
-                Some(ws) => row.project.as_deref() == Some(ws),
-                None => false,
-            },
-            _ => doc_type != NoteType::Template,
+            "recent" => !is_template,
+            "workspaces" => {
+                if is_template {
+                    false
+                } else {
+                    match args.workspace_key.as_deref() {
+                        Some(ws) => row.project.as_deref() == Some(ws),
+                        None => false,
+                    }
+                }
+            }
+            _ => !is_template,
         };
 
         if !tab_match {
@@ -405,17 +418,30 @@ pub fn note_create(pm: &PersistenceManager, args: CreateNoteArgs) -> Result<Note
         ));
     }
 
+    let raw_template = resolve_template_raw(&root, args.template_name.as_deref())?;
     let id = generate_ulid();
-    let created = Local::now().to_rfc3339();
-    let yaml = format!(
-        "id: {}\ntitle: {}\ntype: note\ntags: []\ncreated: {}\n",
-        render_yaml_string(&id),
-        render_yaml_string(title),
-        render_yaml_string(&created),
+    let now = Local::now();
+    let date = now.format("%Y-%m-%d").to_string();
+    let time = now.format("%H:%M:%S").to_string();
+    let rendered = render_template(
+        &raw_template,
+        &TemplateVars {
+            id: &id,
+            title,
+            date: &date,
+            time: &time,
+        },
     );
-    let block = build_frontmatter_block(&yaml);
-    let body = args.body.unwrap_or_else(|| format!("# {title}\n"));
-    let content = compose_note(Some(&block), &body);
+
+    let content = match args.body.as_deref() {
+        Some(extra) if !extra.trim().is_empty() => {
+            let trimmed_tpl = rendered.trim_end_matches('\n');
+            let trimmed_extra = extra.trim_start_matches('\n').trim_end_matches('\n');
+            format!("{trimmed_tpl}\n\n{trimmed_extra}\n")
+        }
+        _ if rendered.ends_with('\n') => rendered,
+        _ => format!("{rendered}\n"),
+    };
 
     atomic_write_str(&abs_path, &content)?;
     let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
@@ -433,6 +459,42 @@ pub fn note_create(pm: &PersistenceManager, args: CreateNoteArgs) -> Result<Note
             abs_path: abs_path.to_string_lossy().to_string(),
         },
     )
+}
+
+fn resolve_template_raw(root: &Path, template_name: Option<&str>) -> Result<String, AppError> {
+    let clean_name = match template_name.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(raw) => {
+            let stripped = raw.strip_suffix(".md").unwrap_or(raw);
+            if stripped.is_empty()
+                || stripped.contains('/')
+                || stripped.contains('\\')
+                || stripped.contains("..")
+            {
+                return Err(AppError::new(
+                    ErrorCode::ValidationError,
+                    "Invalid template name",
+                ));
+            }
+            stripped
+        }
+        None => "note",
+    };
+
+    let custom_path = root.join("_templates").join(format!("{clean_name}.md"));
+    if custom_path.is_file() {
+        return fs::read_to_string(&custom_path)
+            .map_err(|e| map_io_error(e, "Failed to read template file"));
+    }
+
+    if let Some(builtin) = builtin_template(clean_name) {
+        return Ok(builtin.to_string());
+    }
+
+    Err(AppError::with_detail(
+        ErrorCode::NotFound,
+        "Template not found",
+        clean_name.to_string(),
+    ))
 }
 
 /// Writes `body` with optimistic concurrency check (`base_body_hash`) and ULID back-fill (`D-0006`).
@@ -561,6 +623,12 @@ pub fn note_update_meta(
             )
         })?;
         replace_frontmatter_yaml(&raw, &patched_yaml)
+    } else if parsed.block.is_none() {
+        // File has no frontmatter yet (not broken YAML): synthesize minimal frontmatter without backing up.
+        let merged_meta = merge_meta_with_patch(parsed.meta, &args.patch);
+        let minimal_yaml = build_minimal_yaml(&merged_meta);
+        let block = build_frontmatter_block(&minimal_yaml);
+        compose_note(Some(&block), &parsed.body)
     } else {
         // Broken YAML: back up original file to $APP_DATA_DIR/backups/ first.
         let backups_dir = pm.backups_dir();
@@ -650,12 +718,21 @@ fn build_minimal_yaml(meta: &NoteMeta) -> String {
     if let Some(ref p) = meta.project {
         lines.push(format!("project: {}", render_yaml_string(p)));
     }
-    if meta.pinned {
-        lines.push("pinned: true".to_string());
+    if let Some(ref open_dir) = meta.open_dir {
+        lines.push(format!("open_dir: {}", render_yaml_string(open_dir)));
     }
-    if meta.archived {
-        lines.push("archived: true".to_string());
+    if let Some(ref cw) = meta.code_workspace {
+        lines.push(format!("code_workspace: {}", render_yaml_string(cw)));
     }
+    if let Some(ref td) = meta.terminal_dir {
+        lines.push(format!("terminal_dir: {}", render_yaml_string(td)));
+    }
+    if let Some(ref created) = meta.created {
+        let escaped = created.replace('\\', "\\\\").replace('"', "\\\"");
+        lines.push(format!("created: \"{escaped}\""));
+    }
+    lines.push(format!("pinned: {}", meta.pinned));
+    lines.push(format!("archived: {}", meta.archived));
     lines.join("\n") + "\n"
 }
 
@@ -799,4 +876,70 @@ pub fn search_notes_and_files(
         items,
         truncated,
     })
+}
+
+/// Maximum allowed image payload size (20 MiB) for `note_save_image` (`v4` §5.6.3).
+pub const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
+
+/// Saves an image from base64 or a local source path into `assets/YYYY-MM/` (`C4.2`, `v4` §5.6.3).
+pub fn note_save_image(
+    pm: &PersistenceManager,
+    args: SaveImageArgs,
+) -> Result<SavedImageResult, AppError> {
+    let root = require_library_root(pm)?;
+    let ext = normalize_image_ext(&args.ext)?;
+
+    let bytes = if let Some(b64) = args
+        .bytes_base64
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+    {
+        decode_base64_image(b64, MAX_IMAGE_BYTES)?
+    } else if let Some(src) = args
+        .source_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let src_path = PathBuf::from(src);
+        if !src_path.is_file() {
+            return Err(AppError::with_detail(
+                ErrorCode::NotFound,
+                "Source image file not found",
+                src.to_string(),
+            ));
+        }
+        let meta = fs::metadata(&src_path).map_err(|e| map_io_error(e, "Failed to stat image"))?;
+        if meta.len() > MAX_IMAGE_BYTES as u64 {
+            return Err(AppError::new(
+                ErrorCode::ValidationError,
+                "Image file exceeds maximum allowed size",
+            ));
+        }
+        let data = fs::read(&src_path).map_err(|e| map_io_error(e, "Failed to read image file"))?;
+        if data.len() > MAX_IMAGE_BYTES {
+            return Err(AppError::new(
+                ErrorCode::ValidationError,
+                "Image file exceeds maximum allowed size",
+            ));
+        }
+        data
+    } else {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "Either bytesBase64 or sourcePath must be provided",
+        ));
+    };
+
+    let now = Local::now();
+    let ym = now.format("%Y-%m").to_string();
+    let ts = now.format("%Y%m%d-%H%M%S").to_string();
+    let ulid = generate_ulid().to_ascii_lowercase();
+    let short_ulid = ulid.get(ulid.len().saturating_sub(8)..).unwrap_or(&ulid);
+    let rel_path = format!("assets/{ym}/{ts}-{short_ulid}.{ext}");
+    let abs_path = root.join(&rel_path);
+
+    atomic_write_bytes(&abs_path, &bytes)?;
+
+    Ok(SavedImageResult { rel_path })
 }

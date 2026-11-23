@@ -11,7 +11,8 @@ use crate::domain::backup::format_backup_filename;
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::note::compute_body_hash;
 use crate::domain::settings::{
-    parse_settings_yaml, serialize_settings_yaml, Settings, SettingsLoadStatus, SettingsSnapshot,
+    apply_settings_patch, parse_settings_yaml, serialize_settings_yaml, Settings,
+    SettingsLoadStatus, SettingsPatch, SettingsSnapshot,
 };
 use crate::domain::ui_state::{UiState, UiStatePatchKey};
 use crate::domain::watch::{QuickBarDraft, RecoverySnapshot, SelfWriteGuard};
@@ -332,6 +333,65 @@ impl PersistenceManager {
             .map_err(|_| AppError::new(ErrorCode::InternalError, "Settings status lock poisoned"))?
             .clone();
         Ok(SettingsSnapshot { settings, status })
+    }
+
+    /// Applies a partial `SettingsPatch`, validates, and atomically persists `settings.yaml` (`C4.2`, `D-0008`).
+    /// Never overwrites `settings.yaml` when the on-disk file is currently invalid (`D-0008`).
+    pub fn settings_update(&self, patch: SettingsPatch) -> Result<SettingsSnapshot, AppError> {
+        let status_valid = self
+            .settings_status
+            .read()
+            .map_err(|_| AppError::new(ErrorCode::InternalError, "Settings status lock poisoned"))?
+            .valid;
+        if !status_valid {
+            return Err(AppError::new(
+                ErrorCode::SettingsParseError,
+                "settings.yaml 当前存在语法错误，已只读保护，请修复后再修改设置",
+            ));
+        }
+
+        let current = self
+            .settings
+            .read()
+            .map_err(|_| AppError::new(ErrorCode::InternalError, "Settings lock poisoned"))?
+            .clone();
+        let next = apply_settings_patch(&current, &patch)?;
+        let yaml = serialize_settings_yaml(&next)?;
+        atomic_write_str(&self.settings_path(), &yaml)?;
+
+        let next_status = SettingsLoadStatus {
+            valid: true,
+            active_source: "file".to_string(),
+            error_line: None,
+            error_column: None,
+            error_message: None,
+        };
+
+        {
+            let mut guard = self
+                .settings
+                .write()
+                .map_err(|_| AppError::new(ErrorCode::InternalError, "Settings lock poisoned"))?;
+            *guard = next.clone();
+        }
+        {
+            let mut last_guard = self
+                .last_valid_settings
+                .write()
+                .map_err(|_| AppError::new(ErrorCode::InternalError, "Last valid lock poisoned"))?;
+            *last_guard = Some(next.clone());
+        }
+        {
+            let mut status_guard = self.settings_status.write().map_err(|_| {
+                AppError::new(ErrorCode::InternalError, "Settings status lock poisoned")
+            })?;
+            *status_guard = next_status.clone();
+        }
+
+        Ok(SettingsSnapshot {
+            settings: next,
+            status: next_status,
+        })
     }
 
     /// Re-reads `settings.yaml` from disk in read-only mode; never overwrites invalid files (`D-0008`).

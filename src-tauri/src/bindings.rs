@@ -5,21 +5,25 @@ use specta_typescript::Typescript;
 
 use crate::domain::app::{ActivationPolicy, AppInfo};
 use crate::domain::capture::{
-    AppendNoteArgs, AppendResult, ResolvedTarget, TargetKind, TargetResolveInput, UndoAppendResult,
+    AppendNoteArgs, AppendResult, InboxExtractArgs, ResolvedTarget, TargetKind, TargetResolveInput,
+    UndoAppendResult,
 };
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::hotkey::HotkeyUpdateArgs;
 use crate::domain::note::{
     ConflictInfo, CreateNoteArgs, DirNode, IndexPhase, IndexStatus, NavTreeSnapshot, NoteDoc,
     NoteMeta, NoteMetaPatch, NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs,
-    ReadNoteArgs, RelPathArgs, RenameNoteArgs, SearchItemKind, SearchQueryArgs, SearchResponse,
-    SearchResultItem, SearchSource, TagNode, WorkspaceSummary, WriteNoteArgs, WriteResult,
+    ReadNoteArgs, RelPathArgs, RenameNoteArgs, SaveImageArgs, SavedImageResult, SearchItemKind,
+    SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode, WorkspaceSummary,
+    WriteNoteArgs, WriteResult,
 };
 use crate::domain::settings::{
-    EditorSettings, EditorTheme, EditorsSettings, ExternalAppConfig, HotkeySettings, InboxSettings,
-    LibraryInfo, MainWindowSettings, PanelId, PanelsSettings, QuickBarSettings, SetRootArgs,
-    Settings, SettingsLoadStatus, SettingsSnapshot, TerminalPanelSettings, WindowMode,
-    WorkspaceConfig,
+    EditorSettings, EditorSettingsPatch, EditorTheme, EditorsSettings, EditorsSettingsPatch,
+    ExternalAppConfig, ExternalAppConfigPatch, HotkeySettings, HotkeySettingsPatch, InboxSettings,
+    InboxSettingsPatch, LibraryInfo, MainWindowSettings, MainWindowSettingsPatch, PanelId,
+    PanelsSettings, PanelsSettingsPatch, QuickBarSettings, QuickBarSettingsPatch, SetRootArgs,
+    Settings, SettingsLoadStatus, SettingsPatch, SettingsSnapshot, TerminalPanelSettings,
+    TerminalPanelSettingsPatch, WindowMode, WorkspaceConfig,
 };
 use crate::domain::ui_state::{
     CaptureMode, FiltersUiState, HotkeySelfCheck, HotkeyStatus, LastActiveDocState,
@@ -61,6 +65,16 @@ pub fn collect_types() -> Types {
         .register::<Settings>()
         .register::<SettingsLoadStatus>()
         .register::<SettingsSnapshot>()
+        .register::<HotkeySettingsPatch>()
+        .register::<QuickBarSettingsPatch>()
+        .register::<MainWindowSettingsPatch>()
+        .register::<EditorSettingsPatch>()
+        .register::<TerminalPanelSettingsPatch>()
+        .register::<PanelsSettingsPatch>()
+        .register::<InboxSettingsPatch>()
+        .register::<ExternalAppConfigPatch>()
+        .register::<EditorsSettingsPatch>()
+        .register::<SettingsPatch>()
         .register::<CaptureMode>()
         .register::<NavTab>()
         .register::<HotkeySelfCheck>()
@@ -90,6 +104,8 @@ pub fn collect_types() -> Types {
         .register::<CreateNoteArgs>()
         .register::<WriteNoteArgs>()
         .register::<WriteResult>()
+        .register::<SaveImageArgs>()
+        .register::<SavedImageResult>()
         .register::<ConflictInfo>()
         .register::<NoteMetaPatch>()
         .register::<NoteUpdateMetaArgs>()
@@ -113,6 +129,7 @@ pub fn collect_types() -> Types {
         .register::<AppendNoteArgs>()
         .register::<AppendResult>()
         .register::<UndoAppendResult>()
+        .register::<InboxExtractArgs>()
         .register::<ExternalChangeKind>()
         .register::<ExternalChangeEvent>()
         .register::<QuickBarDraft>()

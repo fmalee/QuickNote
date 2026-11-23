@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::tokenizer::is_cjk;
 
 /// Parsed ATX heading entry for outline navigation (`C8.4`).
@@ -173,4 +174,125 @@ fn parse_atx_heading(trimmed: &str) -> Option<(u8, &str)> {
     }
 
     Some((hashes as u8, content))
+}
+
+const ALLOWED_IMAGE_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico",
+];
+
+/// Normalizes and validates an image file extension (`v4` §5.6.3).
+pub fn normalize_image_ext(raw_ext: &str) -> Result<String, AppError> {
+    let cleaned = raw_ext.trim().trim_start_matches('.').to_ascii_lowercase();
+    if ALLOWED_IMAGE_EXTS.contains(&cleaned.as_str()) {
+        Ok(cleaned)
+    } else {
+        Err(AppError::with_detail(
+            ErrorCode::ValidationError,
+            "Unsupported image extension",
+            cleaned,
+        ))
+    }
+}
+
+fn base64_val(b: u8) -> Option<u8> {
+    match b {
+        b'A'..=b'Z' => Some(b - b'A'),
+        b'a'..=b'z' => Some(b - b'a' + 26),
+        b'0'..=b'9' => Some(b - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    }
+}
+
+/// Strictly decodes a base64 image payload (with optional `data:image/...;base64,` prefix) per RFC 4648.
+pub fn decode_base64_image(raw: &str, max_bytes: usize) -> Result<Vec<u8>, AppError> {
+    let trimmed = raw.trim();
+    let payload = if let Some(rest) = trimmed.strip_prefix("data:") {
+        let Some(idx) = rest.find(";base64,") else {
+            return Err(AppError::new(
+                ErrorCode::ValidationError,
+                "Invalid image data URI",
+            ));
+        };
+        &rest[idx + ";base64,".len()..]
+    } else {
+        trimmed
+    };
+
+    let clean: Vec<u8> = payload
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace())
+        .collect();
+
+    if clean.is_empty() || !clean.len().is_multiple_of(4) {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "Invalid base64 image payload length",
+        ));
+    }
+
+    let chunks = clean.len() / 4;
+    let estimated_max = chunks.saturating_mul(3);
+    if estimated_max > max_bytes.saturating_add(2) {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "Image payload exceeds maximum allowed size",
+        ));
+    }
+
+    let mut out = Vec::with_capacity(estimated_max);
+    let (chunks_slice, _) = clean.as_chunks::<4>();
+    for (chunk_idx, chunk) in chunks_slice.iter().enumerate() {
+        let is_last = chunk_idx + 1 == chunks;
+        let a = base64_val(chunk[0])
+            .ok_or_else(|| AppError::new(ErrorCode::ValidationError, "Invalid base64 character"))?;
+        let b = base64_val(chunk[1])
+            .ok_or_else(|| AppError::new(ErrorCode::ValidationError, "Invalid base64 character"))?;
+
+        match (chunk[2], chunk[3]) {
+            (b'=', b'=') => {
+                if !is_last {
+                    return Err(AppError::new(
+                        ErrorCode::ValidationError,
+                        "Invalid base64 padding position",
+                    ));
+                }
+                out.push((a << 2) | (b >> 4));
+            }
+            (c_byte, b'=') => {
+                if !is_last {
+                    return Err(AppError::new(
+                        ErrorCode::ValidationError,
+                        "Invalid base64 padding position",
+                    ));
+                }
+                let c = base64_val(c_byte).ok_or_else(|| {
+                    AppError::new(ErrorCode::ValidationError, "Invalid base64 character")
+                })?;
+                out.push((a << 2) | (b >> 4));
+                out.push((b << 4) | (c >> 2));
+            }
+            (c_byte, d_byte) => {
+                let c = base64_val(c_byte).ok_or_else(|| {
+                    AppError::new(ErrorCode::ValidationError, "Invalid base64 character")
+                })?;
+                let d = base64_val(d_byte).ok_or_else(|| {
+                    AppError::new(ErrorCode::ValidationError, "Invalid base64 character")
+                })?;
+                out.push((a << 2) | (b >> 4));
+                out.push((b << 4) | (c >> 2));
+                out.push((c << 6) | d);
+            }
+        }
+    }
+
+    if out.is_empty() || out.len() > max_bytes {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "Image payload exceeds maximum allowed size",
+        ));
+    }
+
+    Ok(out)
 }

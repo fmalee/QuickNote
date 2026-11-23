@@ -772,3 +772,20 @@ fn sha256(data: &[u8]) -> [u8; 32] {
     }
     out
 }
+
+/// Arguments for `note_save_image` (`C4.2`, `v4` §5.6.3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveImageArgs {
+    pub source_path: Option<String>,
+    pub bytes_base64: Option<String>,
+    pub ext: String,
+    pub context_rel_path: Option<String>,
+}
+
+/// Result returned by `note_save_image` (`C4.2`, `v4` §5.6.3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedImageResult {
+    pub rel_path: String,
+}

@@ -77,6 +77,19 @@ export type EditorSettings = {
 	singleClickLink: boolean,
 };
 
+/**  Partial patch for `EditorSettings` (`C3.4`, `C4.2`). */
+export type EditorSettingsPatch = {
+	theme?: EditorTheme | null,
+	fontSize?: number | null,
+	lineHeight?: number | null,
+	maxWidth?: number | null,
+	tabSizeProse?: number | null,
+	tabSizeCode?: number | null,
+	autoSaveDebounceMs?: number | null,
+	autoSaveMaxWaitMs?: number | null,
+	singleClickLink?: boolean | null,
+};
+
 /**  Editor color theme preference (`C6.2`). */
 export type EditorTheme = "system" | "light" | "dark";
 
@@ -86,6 +99,12 @@ export type EditorsSettings = {
 	sublime: ExternalAppConfig,
 };
 
+/**  Partial patch for `EditorsSettings` (`C3.4`, `C4.2`). */
+export type EditorsSettingsPatch = {
+	vscode?: ExternalAppConfigPatch | null,
+	sublime?: ExternalAppConfigPatch | null,
+};
+
 /**  Unified application error code for all Tauri IPC responses (`C3.3`). */
 export type ErrorCode = "validationError" | "libraryNotConfigured" | "notFound" | "permissionDenied" | "conflict" | "undoUnavailable" | "invalidFrontmatter" | "settingsParseError" | "externalAppMissing" | "workspaceDirMissing" | "terminalLimitReached" | "terminalSpawnFailed" | "internalError";
 
@@ -93,6 +112,12 @@ export type ErrorCode = "validationError" | "libraryNotConfigured" | "notFound" 
 export type ExternalAppConfig = {
 	name: string,
 	bundleId: string,
+};
+
+/**  Partial patch for `ExternalAppConfig` (`C3.4`, `C4.2`). */
+export type ExternalAppConfigPatch = {
+	name?: string | null,
+	bundleId?: string | null,
 };
 
 /**  Payload for `"fs:external-change"` events (`C4.3`, `C8.5`). */
@@ -132,6 +157,12 @@ export type HotkeySettings = {
 	quickBarBackup: string,
 };
 
+/**  Partial patch for `HotkeySettings` (`C3.4`, `C4.2`). */
+export type HotkeySettingsPatch = {
+	quickBar?: string | null,
+	quickBarBackup?: string | null,
+};
+
 /**  Global hotkey registration state (`C3.4`, `C6.3`). */
 export type HotkeyStatus = {
 	combo: string,
@@ -144,9 +175,23 @@ export type HotkeyUpdateArgs = {
 	combo: string,
 };
 
+/**  Arguments for `inbox_extract_to_note` (`C3.4`, `C4.2`, `v4` §4.11). */
+export type InboxExtractArgs = {
+	fromLine: number,
+	toLine: number,
+	newTitle: string,
+	targetDirRelPath: string,
+	templateName: string,
+};
+
 /**  Inbox configuration section (`C6.2`). */
 export type InboxSettings = {
 	bloatThresholdLines: number,
+};
+
+/**  Partial patch for `InboxSettings` (`C3.4`, `C4.2`). */
+export type InboxSettingsPatch = {
+	bloatThresholdLines?: number | null,
 };
 
 /**  Index lifecycle phase (`C3.4`). */
@@ -183,6 +228,12 @@ export type MainWindowArgs = {
 export type MainWindowSettings = {
 	mode: WindowMode,
 	auxiliaryWidthPercent: number,
+};
+
+/**  Partial patch for `MainWindowSettings` (`C3.4`, `C4.2`). */
+export type MainWindowSettingsPatch = {
+	mode?: WindowMode | null,
+	auxiliaryWidthPercent?: number | null,
 };
 
 /**  Main window geometry and mode state (`C6.3`). */
@@ -306,6 +357,13 @@ export type PanelsSettings = {
 	terminal: TerminalPanelSettings,
 };
 
+/**  Partial patch for `PanelsSettings` (`C3.4`, `C4.2`). */
+export type PanelsSettingsPatch = {
+	default?: PanelId | null,
+	width?: number | null,
+	terminal?: TerminalPanelSettingsPatch | null,
+};
+
 /**  Arguments for `window_show_quick_bar` (`C4.2`). */
 export type QuickBarArgs = {
 	mode: QuickBarMode | null,
@@ -329,6 +387,14 @@ export type QuickBarSettings = {
 	lastActiveTtlHours: number,
 	destroyAfterHiddenMinutes: number,
 	autoCreateMissingSection: boolean,
+};
+
+/**  Partial patch for `QuickBarSettings` (`C3.4`, `C4.2`). */
+export type QuickBarSettingsPatch = {
+	defaultTarget?: string | null,
+	lastActiveTtlHours?: number | null,
+	destroyAfterHiddenMinutes?: number | null,
+	autoCreateMissingSection?: boolean | null,
 };
 
 /**  Arguments for `note_read` (`C4.2`). */
@@ -368,6 +434,19 @@ export type ResolvedTarget = {
 	isCrossWorkspaceFallback: boolean,
 	recommendedMode: CaptureMode,
 	chipLabel: string,
+};
+
+/**  Arguments for `note_save_image` (`C4.2`, `v4` §5.6.3). */
+export type SaveImageArgs = {
+	sourcePath: string | null,
+	bytesBase64: string | null,
+	ext: string,
+	contextRelPath: string | null,
+};
+
+/**  Result returned by `note_save_image` (`C4.2`, `v4` §5.6.3). */
+export type SavedImageResult = {
+	relPath: string,
 };
 
 /**  Search result kind (`C3.4`). */
@@ -432,6 +511,21 @@ export type SettingsLoadStatus = {
 	errorMessage: string | null,
 };
 
+/**  Partial settings update payload for `settings_update` (`C3.4`, `C4.2`). */
+export type SettingsPatch = {
+	libraryRoot?: string | null,
+	hotkey?: HotkeySettingsPatch | null,
+	quickBar?: QuickBarSettingsPatch | null,
+	mainWindow?: MainWindowSettingsPatch | null,
+	editor?: EditorSettingsPatch | null,
+	panels?: PanelsSettingsPatch | null,
+	inbox?: InboxSettingsPatch | null,
+	terminal?: ExternalAppConfigPatch | null,
+	editors?: EditorsSettingsPatch | null,
+	searchRoots?: string[] | null,
+	workspaces?: { [key in string]: WorkspaceConfig } | null,
+};
+
 /**  Combined settings and load-status payload returned by `settings_get` (`C4.2`). */
 export type SettingsSnapshot = {
 	settings: Settings,
@@ -481,6 +575,15 @@ export type TerminalPanelSettings = {
 	shell: string,
 	idleRecycleMinutes: number,
 	maxConcurrentSessions: number,
+};
+
+/**  Partial patch for `TerminalPanelSettings` (`C3.4`, `C4.2`). */
+export type TerminalPanelSettingsPatch = {
+	visibleByDefault?: boolean | null,
+	width?: number | null,
+	shell?: string | null,
+	idleRecycleMinutes?: number | null,
+	maxConcurrentSessions?: number | null,
 };
 
 /**  Complete persisted UI state (`C6.3`). */

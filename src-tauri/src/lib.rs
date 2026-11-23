@@ -97,6 +97,11 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         .build()?;
 
     let file_submenu = SubmenuBuilder::new(app, "文件")
+        .item(
+            &MenuItemBuilder::with_id("window.newNote", "新建笔记")
+                .accelerator("CmdOrCtrl+N")
+                .build(app)?,
+        )
         .item(&MenuItemBuilder::with_id("menu_quick_bar", "快速捕捉").build(app)?)
         .item(
             &MenuItemBuilder::with_id("menu_quick_open", "快速打开…")
@@ -128,25 +133,86 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
 
     let format_submenu = SubmenuBuilder::new(app, "格式")
         .item(
-            &MenuItemBuilder::with_id("menu_fmt_bold", "加粗")
+            &MenuItemBuilder::with_id("editor.bold", "加粗")
                 .accelerator("CmdOrCtrl+B")
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("menu_fmt_italic", "斜体")
+            &MenuItemBuilder::with_id("editor.italic", "斜体")
                 .accelerator("CmdOrCtrl+I")
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("menu_fmt_code", "代码块")
+            &MenuItemBuilder::with_id("editor.codeBlock", "代码块")
                 .accelerator("Alt+CmdOrCtrl+C")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.table", "表格")
+                .accelerator("Alt+CmdOrCtrl+T")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.toggleTodo", "切换待办")
+                .accelerator("CmdOrCtrl+Shift+L")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.link", "插入链接")
+                .accelerator("Alt+CmdOrCtrl+L")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.image", "插入图片")
+                .accelerator("Alt+CmdOrCtrl+I")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.bulletList", "无序列表")
+                .accelerator("CmdOrCtrl+Shift+8")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.blockquote", "引用块")
+                .accelerator("CmdOrCtrl+Shift+.")
+                .build(app)?,
+        )
+        .separator()
+        .item(
+            &MenuItemBuilder::with_id("editor.heading1", "标题 1")
+                .accelerator("CmdOrCtrl+1")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.heading2", "标题 2")
+                .accelerator("CmdOrCtrl+2")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.heading3", "标题 3")
+                .accelerator("CmdOrCtrl+3")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.heading4", "标题 4")
+                .accelerator("CmdOrCtrl+4")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.heading5", "标题 5")
+                .accelerator("CmdOrCtrl+5")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.heading6", "标题 6")
+                .accelerator("CmdOrCtrl+6")
                 .build(app)?,
         )
         .build()?;
 
     let view_submenu = SubmenuBuilder::new(app, "视图")
         .item(
-            &MenuItemBuilder::with_id("menu_view_outline", "大纲面板")
+            &MenuItemBuilder::with_id("panel.toggle.outline", "大纲面板")
                 .accelerator("Ctrl+CmdOrCtrl+O")
                 .build(app)?,
         )
@@ -155,6 +221,7 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
                 .accelerator("Ctrl+CmdOrCtrl+T")
                 .build(app)?,
         )
+        .item(&MenuItemBuilder::with_id("panel.collapseGroup", "折叠/展开右侧面板").build(app)?)
         .separator()
         .item(&PredefinedMenuItem::fullscreen(app, Some("进入/退出全屏"))?)
         .build()?;
@@ -253,6 +320,28 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
             }
             "tray_quit" => {
                 app_handle.exit(0);
+            }
+            "window.newNote"
+            | "editor.bold"
+            | "editor.italic"
+            | "editor.codeBlock"
+            | "editor.table"
+            | "editor.toggleTodo"
+            | "editor.link"
+            | "editor.image"
+            | "editor.bulletList"
+            | "editor.blockquote"
+            | "editor.heading1"
+            | "editor.heading2"
+            | "editor.heading3"
+            | "editor.heading4"
+            | "editor.heading5"
+            | "editor.heading6"
+            | "panel.toggle.outline"
+            | "panel.collapseGroup" => {
+                if let Err(err) = app_handle.emit("menu:action", menu_id) {
+                    eprintln!("[menu] emit menu:action failed: {err}");
+                }
             }
             _ => {}
         }
@@ -437,6 +526,7 @@ pub fn run() -> Result<(), tauri::Error> {
         .invoke_handler(tauri::generate_handler![
             commands::app::app_get_info,
             commands::settings::settings_get,
+            commands::settings::settings_update,
             commands::settings::ui_state_get,
             commands::settings::ui_state_set,
             commands::library::library_get_info,
@@ -457,10 +547,12 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::notes::note_update_meta,
             commands::notes::note_rename,
             commands::notes::note_delete,
+            commands::notes::note_save_image,
             commands::search::search_notes_and_files,
             commands::capture::capture_resolve_target,
             commands::capture::note_append,
             commands::capture::note_undo_last_append,
+            commands::capture::inbox_extract_to_note,
         ])
         .run(tauri::generate_context!())
 }

@@ -4,14 +4,15 @@ use tauri::State;
 
 use crate::application::notes::{
     note_create as create_uc, note_delete as delete_uc, note_read as read_uc,
-    note_rename as rename_uc, note_update_meta as update_meta_uc, note_write as write_uc,
-    notes_get_tree_and_tags as tree_uc, notes_list as list_uc,
+    note_rename as rename_uc, note_save_image as save_image_uc, note_update_meta as update_meta_uc,
+    note_write as write_uc, notes_get_tree_and_tags as tree_uc, notes_list as list_uc,
 };
 use crate::application::persistence::PersistenceManager;
 use crate::domain::error::AppError;
 use crate::domain::note::{
     CreateNoteArgs, NavTreeSnapshot, NoteDoc, NoteSummary, NoteUpdateMetaArgs, NotesFilterArgs,
-    ReadNoteArgs, RelPathArgs, RenameNoteArgs, WriteNoteArgs, WriteResult,
+    ReadNoteArgs, RelPathArgs, RenameNoteArgs, SaveImageArgs, SavedImageResult, WriteNoteArgs,
+    WriteResult,
 };
 
 #[tauri::command]
@@ -75,4 +76,12 @@ pub fn note_delete(
     args: RelPathArgs,
 ) -> Result<(), AppError> {
     delete_uc(&pm, args)
+}
+
+#[tauri::command]
+pub fn note_save_image(
+    pm: State<'_, Arc<PersistenceManager>>,
+    args: SaveImageArgs,
+) -> Result<SavedImageResult, AppError> {
+    save_image_uc(&pm, args)
 }

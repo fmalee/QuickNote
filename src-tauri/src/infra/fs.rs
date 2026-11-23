@@ -6,6 +6,9 @@ use std::time::UNIX_EPOCH;
 
 use crate::domain::backup::{select_backups_to_prune, BackupEntry};
 use crate::domain::error::{AppError, ErrorCode};
+use crate::domain::template::{
+    DEFAULT_TEMPLATE_COMMAND_BOOK, DEFAULT_TEMPLATE_DOC, DEFAULT_TEMPLATE_NOTE,
+};
 
 static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -153,20 +156,17 @@ pub fn ensure_library_skeleton(root: &Path) -> Result<(), AppError> {
 
     let note_tpl = templates_dir.join("note.md");
     if !note_tpl.exists() {
-        let content = "---\nid: \"{{id}}\"\ntitle: \"{{title}}\"\ntype: note\ntags: []\ncreated: \"{{date}}T{{time}}\"\n---\n\n# {{title}}\n\n## 想法\n\n## 待办\n";
-        atomic_write_str(&note_tpl, content)?;
+        atomic_write_str(&note_tpl, DEFAULT_TEMPLATE_NOTE)?;
     }
 
     let doc_tpl = templates_dir.join("doc.md");
     if !doc_tpl.exists() {
-        let content = "---\nid: \"{{id}}\"\ntitle: \"{{title}}\"\ntype: doc\ntags: []\ncreated: \"{{date}}T{{time}}\"\n---\n\n# {{title}}\n\n## 背景\n\n## 想法\n\n## 待办\n";
-        atomic_write_str(&doc_tpl, content)?;
+        atomic_write_str(&doc_tpl, DEFAULT_TEMPLATE_DOC)?;
     }
 
     let cmd_tpl = templates_dir.join("command-book.md");
     if !cmd_tpl.exists() {
-        let content = "---\nid: \"{{id}}\"\ntitle: \"{{title}}\"\ntype: command-book\ntags: []\ncreated: \"{{date}}T{{time}}\"\n---\n\n# {{title}}\n\n## 常用命令\n\n### 示例命令\n\n```bash\necho \"hello\"\n```\n";
-        atomic_write_str(&cmd_tpl, content)?;
+        atomic_write_str(&cmd_tpl, DEFAULT_TEMPLATE_COMMAND_BOOK)?;
     }
 
     Ok(())

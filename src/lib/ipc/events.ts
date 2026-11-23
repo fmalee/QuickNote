@@ -41,3 +41,7 @@ export function onFsExternalChange(
 ): Promise<UnlistenFn> {
   return listenEvent<ExternalChangeEvent>('fs:external-change', handler);
 }
+
+export function onMenuAction(handler: (actionId: string) => void): Promise<UnlistenFn> {
+  return listenEvent<string>('menu:action', handler);
+}

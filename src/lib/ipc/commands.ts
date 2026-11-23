@@ -9,6 +9,7 @@ import type {
   HideQuickBarArgs,
   HotkeyStatus,
   HotkeyUpdateArgs,
+  InboxExtractArgs,
   IndexStatus,
   LibraryInfo,
   MainWindowArgs,
@@ -22,9 +23,12 @@ import type {
   RelPathArgs,
   RenameNoteArgs,
   ResolvedTarget,
+  SaveImageArgs,
+  SavedImageResult,
   SearchQueryArgs,
   SearchResponse,
   SetRootArgs,
+  SettingsPatch,
   SettingsSnapshot,
   TargetResolveInput,
   UiState,
@@ -88,6 +92,10 @@ export function librarySetRoot(args: SetRootArgs): Promise<LibraryInfo> {
 
 export function settingsGet(): Promise<SettingsSnapshot> {
   return invoke<SettingsSnapshot>('settings_get');
+}
+
+export function settingsUpdate(args: SettingsPatch): Promise<SettingsSnapshot> {
+  return invoke<SettingsSnapshot>('settings_update', { args });
 }
 
 export function uiStateGet(): Promise<UiState> {
@@ -162,6 +170,10 @@ export function noteDelete(args: RelPathArgs): Promise<void> {
   return invoke<void>('note_delete', { args });
 }
 
+export function noteSaveImage(args: SaveImageArgs): Promise<SavedImageResult> {
+  return invoke<SavedImageResult>('note_save_image', { args });
+}
+
 export function searchNotesAndFiles(args: SearchQueryArgs): Promise<SearchResponse> {
   return invoke<SearchResponse>('search_notes_and_files', { args });
 }
@@ -176,4 +188,8 @@ export function noteAppend(args: AppendNoteArgs): Promise<AppendResult> {
 
 export function noteUndoLastAppend(): Promise<UndoAppendResult> {
   return invoke<UndoAppendResult>('note_undo_last_append');
+}
+
+export function inboxExtractToNote(args: InboxExtractArgs): Promise<NoteDoc> {
+  return invoke<NoteDoc>('inbox_extract_to_note', { args });
 }

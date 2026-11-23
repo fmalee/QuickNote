@@ -192,20 +192,34 @@ pub fn build_note_index_record(
         .unwrap_or("untitled");
     let mut parsed = parse_note(raw, stem);
 
-    if rel_path.starts_with("_templates/") && parsed.meta.doc_type == NoteType::Note {
+    let is_template = rel_path.starts_with("_templates/");
+    if is_template {
         parsed.meta.doc_type = NoteType::Template;
+        parsed.meta.id = None;
+        parsed.meta.meta_error = None;
+        if parsed.meta.title.trim().is_empty() || parsed.meta.title.contains("{{") {
+            parsed.meta.title = stem.to_string();
+        }
     }
 
-    if let Some(dup_msg) = duplicate_id_error {
-        parsed.meta.meta_error = Some(match parsed.meta.meta_error {
-            Some(existing) if !existing.is_empty() => format!("{existing}; {dup_msg}"),
-            _ => dup_msg.to_string(),
-        });
+    if !is_template {
+        if let Some(dup_msg) = duplicate_id_error {
+            parsed.meta.meta_error = Some(match parsed.meta.meta_error {
+                Some(existing) if !existing.is_empty() => format!("{existing}; {dup_msg}"),
+                _ => dup_msg.to_string(),
+            });
+        }
     }
 
-    let key = key_override.unwrap_or_else(|| match &parsed.meta.id {
-        Some(id) if !id.is_empty() => id.clone(),
-        _ => format!("path:{rel_path}"),
+    let key = key_override.unwrap_or_else(|| {
+        if is_template {
+            format!("path:{rel_path}")
+        } else {
+            match &parsed.meta.id {
+                Some(id) if !id.is_empty() => id.clone(),
+                _ => format!("path:{rel_path}"),
+            }
+        }
     });
 
     let frontmatter_json = serde_json::to_string(&parsed.meta).unwrap_or_else(|_| "{}".to_string());
