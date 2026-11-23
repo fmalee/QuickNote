@@ -1,23 +1,62 @@
 <script setup lang="ts">
-import { onUnmounted, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { QnBadge, QnBanner, QnButton, QnModalShell } from '@/components';
-import { EditorTabBar, InboxBloatBanner, useEditorTabsStore } from '@/features/editor';
+import {
+  EditorConflictBanner,
+  EditorTabBar,
+  InboxBloatBanner,
+  MarkdownEditor,
+  useEditorTabsStore,
+} from '@/features/editor';
 import { NotesSidebar, useNotesStore } from '@/features/notes';
 import { OnboardingView, useOnboardingStore } from '@/features/onboarding';
+import { OutlinePanel, usePanelsStore } from '@/features/panels';
 import { SettingsErrorBanner, VisualBaselinePreview, useSettingsStore } from '@/features/settings';
 
 const onboardingStore = useOnboardingStore();
 const settingsStore = useSettingsStore();
 const notesStore = useNotesStore();
 const editorTabsStore = useEditorTabsStore();
+const panelsStore = usePanelsStore();
 
 const baselinePreviewOpen = ref(false);
+
+const saveStatusLabel = computed<string>(() => {
+  const tab = editorTabsStore.activeTab;
+  if (!tab) {
+    return '就绪';
+  }
+  switch (tab.saveStatus) {
+    case 'saved':
+      return '已保存';
+    case 'dirty':
+      return '未保存';
+    case 'saving':
+      return '保存中…';
+    case 'conflict':
+      return '存在冲突';
+    case 'deleted':
+      return '磁盘文件已丢失';
+    case 'external-synced':
+      return '已同步外部修改';
+    case 'error':
+      return '保存失败';
+    default:
+      return '就绪';
+  }
+});
+
+const charCount = computed<number>(() => editorTabsStore.activeTab?.draftBody.length ?? 0);
 
 watch(
   () => onboardingStore.libraryInfo?.root ?? null,
   (nextRoot) => {
     if (nextRoot) {
-      void Promise.all([notesStore.initialize(), editorTabsStore.restoreTabsFromUiState()]);
+      void Promise.all([
+        notesStore.initialize(),
+        editorTabsStore.restoreTabsFromUiState(),
+        panelsStore.initialize(),
+      ]);
     }
   },
   { immediate: true },
@@ -26,6 +65,7 @@ watch(
 onUnmounted(() => {
   notesStore.dispose();
   editorTabsStore.dispose();
+  panelsStore.dispose();
 });
 </script>
 
@@ -63,6 +103,7 @@ onUnmounted(() => {
         <section class="qn-main-shell__editor-col">
           <EditorTabBar />
           <InboxBloatBanner />
+          <EditorConflictBanner />
 
           <div class="qn-main-shell__workspace">
             <div class="qn-main-shell__editor-stage">
@@ -116,9 +157,7 @@ onUnmounted(() => {
                 </header>
 
                 <div class="qn-main-shell__body-stage" data-testid="editor-body-stage">
-                  <pre class="qn-main-shell__body-preview">{{
-                    editorTabsStore.activeDoc.body
-                  }}</pre>
+                  <MarkdownEditor />
                 </div>
               </div>
 
@@ -126,16 +165,22 @@ onUnmounted(() => {
                 <p class="qn-main-shell__placeholder-text">从左侧选择或新建一篇笔记。</p>
               </div>
             </div>
-            <aside class="qn-main-shell__right-panel">
-              <div class="qn-main-shell__panel-header">大纲 / 右侧面板组</div>
-              <p class="qn-main-shell__placeholder-text">M1-04b 阶段接入大纲与关联面板。</p>
-            </aside>
+            <OutlinePanel />
           </div>
         </section>
       </div>
 
-      <footer class="qn-main-shell__statusbar">
-        <span>库状态：已连接</span>
+      <footer class="qn-main-shell__statusbar" data-testid="workbench-statusbar">
+        <div class="qn-main-shell__status-left">
+          <span data-testid="statusbar-save-status">{{ saveStatusLabel }}</span>
+          <span v-if="editorTabsStore.activeTab" data-testid="statusbar-char-count">
+            {{ charCount }} 字
+          </span>
+          <span v-if="editorTabsStore.activeTab" data-testid="statusbar-cursor">
+            Ln {{ editorTabsStore.activeTab.cursorLine }}, Col
+            {{ editorTabsStore.activeTab.cursorCol }}
+          </span>
+        </div>
         <span>热键：{{ settingsStore.hotkeyStatus?.combo ?? 'ctrl+alt+space' }}</span>
       </footer>
     </div>
@@ -320,6 +365,12 @@ onUnmounted(() => {
   background-color: var(--qn-bg-sidebar);
   font-size: var(--qn-text-xs);
   color: var(--qn-text-muted);
+}
+
+.qn-main-shell__status-left {
+  display: flex;
+  align-items: center;
+  gap: var(--qn-space-3);
 }
 
 .qn-main-shell__baseline-scroll {

@@ -268,6 +268,10 @@ export const useNotesStore = defineStore('notes', () => {
     }
   }
 
+  async function refreshAll(): Promise<void> {
+    await Promise.all([loadTreeAndTags(), loadNotesList()]);
+  }
+
   async function initialize(): Promise<void> {
     try {
       const uiState = await fetchUiState();
@@ -323,6 +327,7 @@ export const useNotesStore = defineStore('notes', () => {
     errorMessage,
     loadTreeAndTags,
     loadNotesList,
+    refreshAll,
     setFilterText,
     setActiveTab,
     selectDir,

@@ -61,7 +61,7 @@ onUnmounted(() => {
           {
             'qn-tabbar__item--active': tab.key === tabsStore.activeKey,
             'qn-tabbar__item--preview': tab.isPreview,
-            'qn-tabbar__item--missing': tab.isMissing,
+            'qn-tabbar__item--missing': tab.isMissing || tab.conflictState?.kind === 'deleted',
           },
         ]"
         :title="tab.absPath || tab.relPath || undefined"
@@ -71,6 +71,8 @@ onUnmounted(() => {
       >
         <span class="qn-tabbar__title">{{ getTabTitle(tab) }}</span>
         <QnBadge v-if="tab.isMissing" tone="danger">失联</QnBadge>
+        <QnBadge v-else-if="tab.conflictState?.kind === 'deleted'" tone="danger">已删除</QnBadge>
+        <QnBadge v-else-if="tab.conflictState?.kind === 'modified'" tone="warning">冲突</QnBadge>
         <span v-else-if="tab.isDirty" class="qn-tabbar__dirty" aria-label="未保存" />
         <button
           type="button"
