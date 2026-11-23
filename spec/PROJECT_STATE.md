@@ -4,12 +4,12 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0（`m0-baseline`）与 M1（`m1-baseline`）已正式收官；**M2（Markdown 完整编辑、模板与文档属性）** 全 6 卡与 `fix/M2-audit`（`be79e07`）均已合入 `dev`，进入 **M2 实机点验与 `m2-baseline` 打标收官**。
+- **当前阶段**：M0（`m0-baseline`）、M1（`m1-baseline`）与 **M2（`m2-baseline`：Markdown 完整编辑、模板与文档属性）** 均已正式收官，准备进入 **M3（快速打开、外部协作、完整命令库与面板组）**。
 - **已完成**：
   - M0 全阶段（`m0-baseline`）。
   - M1 全阶段（`m1-baseline`：`M1-01a`–`M1-05` + M1 独立只读审查与 `fix/M1-audit` 实机点验收官）。
-  - M2 全 6 卡（`M2-01`–`M2-05b`）+ M2 独立只读审查 + `fix/M2-audit`（`be79e07`，3 🔴 + 4 🟡 全量收口）。
-- **待执行**：执行 M2 实机点验清单，确认无异常后打 `m2-baseline` 标签并启动 M3 拆卡。
+  - M2 全阶段（`m2-baseline`：`M2-01`–`M2-05b` + M2 独立只读审查 + `fix/M2-audit` `be79e07` + `fix/M2-qa` `4d33f0d` 实机点验收官）。
+- **待执行**：启动 **M3（快速打开、外部协作、完整命令库与面板组）** 阶段自包含轻量任务卡拆分并逐卡推进。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -29,6 +29,7 @@
 - **`serde_yaml 0.9` 报错特性**：语法缩进错误能精准返回行列号；`deny_unknown_fields` 未知字段错误不带行列号，报错文案与测试断言须明确命中字段名而非强求行列号。
 - **macOS `Option` 快捷键识别**：macOS 按 `⌥⌘C`/`⌥⌘1` 等组合键时 `KeyboardEvent.key` 会变成特殊字符，前端统一动作注册表（`M2-02`）与录制器（`M2-03`）须优先基于 `event.code` 归一化。
 - **模板文件 YAML 占位符**：`v4` B.3 模板含裸 `id: {{id}}` / `title: {{title}}`，索引 `_templates/` 时强制按 `NoteType::Template` 归类并不计入 `meta_error` / 重复 `id`（`M2-01`）。
+- **macOS Tauri 2 外链、文件拖放与菜单快捷键**：`WKWebView` 静默拦截 `window.open`，外链（`http/https/mailto`）走参数化 Rust `app_open_external_url`（`open`）；Finder/截图拖入文件走 `getCurrentWebview().onDragDropEvent`（`onWindowFileDrop`）；原生菜单快捷键通过 `app_set_menu_accelerators` 与 `actionRegistry` 实时同步且在快捷键录制态临时挂起防抢键。
 
 ## 4. 协作与防膨胀规矩（含 Token 省流铁律，已写入 `AGENTS.md`）
 
@@ -38,5 +39,5 @@
 
 ## 5. 下一步动作
 
-1. 运行 `pnpm tauri dev` 按 M2 实机点验清单完成人工核验。
-2. 点验通过后打 `m2-baseline` 基线标签，并启动 **M3（快速打开、外部协作、完整命令库与面板组）** 拆卡。
+1. 新开主控会话基于 `m2-baseline` 与 M3 挂起债务（`SettingsErrorBanner` 打开 `settings.yaml` 接入 `external_action_run`），拆分 **M3（快速打开、外部协作、完整命令库与面板组）** 自包含轻量任务卡。
+2. 从 `dev` 拉出 `M3-01` 分支并依卡逐个推进。

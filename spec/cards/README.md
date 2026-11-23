@@ -4,9 +4,9 @@
 
 ---
 
-## 1. M2 阶段任务卡（Markdown 完整编辑、模板与文档属性 · 当前阶段）
+## 1. M2 阶段任务卡（已收官 · 基线标签 `m2-baseline`）
 
-> 阶段目标：补全 M2 后端 3 条 IPC 命令（`settings_update`、`note_save_image`、`inbox_extract_to_note`）并收口 `fs.rs` 默认模板与 `v4` 附录 B.3 对齐债务；落地前端统一动作注册表（`C7.2`/`C7.3` 作用域优先级、`when` 放行、终端 `⌥⌘C` 显式吞键）、右键菜单与原生系统菜单同源桥接；升级设置窗口双向绑定与快捷键录制/冲突检测；实现文档头内联编辑 + `[属性]` Popover（含外部无 frontmatter 二次确认）、模板系统（`_templates/` + `⌘N` + Quick Bar `⌥⌘↵`）与收件箱“移到新笔记…”；以及 CM6 全套 Markdown 增强（上下文 Tab 缩进、行首 `Decoration.widget` 待办复选框、全套格式动作、语法树链接与 `C8.4` 中文 Slug 锚点跳转、图片粘贴/拖入落盘 `assets/YYYY-MM/`）。
+> 阶段目标：补全 M2 后端 3 条 IPC 命令（`settings_update`、`note_save_image`、`inbox_extract_to_note`）并收口 `fs.rs` 默认模板与 `v4` 附录 B.3 对齐债务；落地前端统一动作注册表（`C7.2`/`C7.3` 作用域优先级、`when` 放行、终端 `⌥⌘C` 显式吞键）、右键菜单与原生系统菜单同源桥接；升级设置窗口双向绑定与快捷键录制/冲突检测；实现文档头内联编辑 + `[属性]` Popover（含外部无 frontmatter 二次确认）、模板系统（`_templates/` + `⌘N` + Quick Bar `⌥⌘↵`）与收件箱“移到新笔记…”；以及 CM6 全套 Markdown 增强（上下文 Tab 缩进、行首 `Decoration.widget` 待办复选框、全套格式动作、语法树链接与 `C8.4` 中文 Slug 锚点跳转、图片粘贴/拖入落盘 `assets/YYYY-MM/`）。全部 6 卡及 `fix/M2-audit`（`be79e07`）、`fix/M2-qa`（`4d33f0d`）实机点验均已收官。
 
 M2 阶段共拆分为 6 张轻量、自包含、严格串行推进的任务卡（`M2-01 → M2-02 → M2-03 → M2-04 → M2-05a → M2-05b`）：
 
