@@ -5,6 +5,7 @@ import { CommandBookPalette, useCommandPalette } from '@/features/commands';
 import {
   DocHeaderBar,
   EditorConflictBanner,
+  EditorMergeView,
   EditorTabBar,
   EXTERNAL_ACTION_SPECS,
   InboxBloatBanner,
@@ -589,7 +590,13 @@ onUnmounted(() => {
                 <DocHeaderBar />
 
                 <div class="qn-main-shell__body-stage" data-testid="editor-body-stage">
-                  <MarkdownEditor />
+                  <EditorMergeView
+                    v-if="
+                      editorTabsStore.activeTab?.conflictState?.kind === 'modified' &&
+                      editorTabsStore.activeTab.conflictState.mergeMode
+                    "
+                  />
+                  <MarkdownEditor v-else />
                 </div>
               </div>
 

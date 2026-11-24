@@ -44,6 +44,9 @@ export type EditorConflictState =
       diskBodyHash: string;
       diskMeta: NoteMeta | null;
       bannerDismissed?: boolean;
+      mergeMode?: boolean;
+      mergeSaving?: boolean;
+      mergeError?: string | null;
     }
   | {
       kind: 'deleted';
@@ -717,11 +720,23 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           notifyNotesRefresh();
         } else {
           clearAutoSaveTimers(tab.key);
+          const inMergeMode =
+            tab.conflictState?.kind === 'modified' && Boolean(tab.conflictState.mergeMode);
           tab.conflictState = {
             kind: 'modified',
             diskBody: event.newBody ?? '',
             diskBodyHash: event.newBodyHash ?? '',
             diskMeta: event.newMeta,
+            ...(inMergeMode
+              ? {
+                  bannerDismissed: false,
+                  mergeMode: true,
+                  mergeSaving:
+                    tab.conflictState?.kind === 'modified' ? tab.conflictState.mergeSaving : false,
+                  mergeError:
+                    tab.conflictState?.kind === 'modified' ? tab.conflictState.mergeError : null,
+                }
+              : {}),
           };
           tab.saveStatus = 'conflict';
         }
@@ -773,6 +788,123 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       ...tab.conflictState,
       bannerDismissed: true,
     };
+  }
+
+  function enterConflictMerge(key: string): void {
+    const tab = tabs.value.find((item) => item.key === key);
+    if (!tab || tab.conflictState?.kind !== 'modified') {
+      return;
+    }
+    clearAutoSaveTimers(tab.key);
+    tab.conflictState = {
+      ...tab.conflictState,
+      bannerDismissed: false,
+      mergeMode: true,
+      mergeSaving: false,
+      mergeError: null,
+    };
+  }
+
+  function cancelConflictMerge(key: string): void {
+    const tab = tabs.value.find((item) => item.key === key);
+    if (!tab || tab.conflictState?.kind !== 'modified') {
+      return;
+    }
+    tab.conflictState = {
+      ...tab.conflictState,
+      bannerDismissed: false,
+      mergeMode: false,
+      mergeSaving: false,
+      mergeError: null,
+    };
+    tab.syncSeq += 1;
+  }
+
+  function updateMergeDraftBody(key: string, nextBody: string): void {
+    const tab = tabs.value.find((item) => item.key === key);
+    if (!tab) {
+      return;
+    }
+    tab.draftBody = nextBody;
+    tab.isDirty = true;
+  }
+
+  async function commitConflictMerge(key: string, mergedBody: string): Promise<boolean> {
+    const tab = tabs.value.find((item) => item.key === key);
+    if (!tab || !tab.doc || tab.conflictState?.kind !== 'modified') {
+      return false;
+    }
+    if (tab.conflictState.mergeSaving) {
+      return false;
+    }
+
+    const diskHash = tab.conflictState.diskBodyHash;
+    tab.draftBody = mergedBody;
+    tab.conflictState = {
+      ...tab.conflictState,
+      mergeSaving: true,
+      mergeError: null,
+    };
+
+    try {
+      const res = await writeNote({
+        absPath: tab.absPath,
+        body: mergedBody,
+        baseBodyHash: diskHash,
+      });
+
+      tab.doc.body = mergedBody;
+      tab.draftBody = mergedBody;
+      tab.baseBodyHash = res.bodyHash;
+      tab.doc.bodyHash = res.bodyHash;
+      tab.doc.mtimeMs = res.mtimeMs;
+
+      if (res.updatedMeta !== null) {
+        tab.doc.meta = res.updatedMeta;
+        if (tab.key.startsWith('path:') && res.updatedMeta.id) {
+          const oldKey = tab.key;
+          const newKey = res.updatedMeta.id;
+          tab.key = newKey;
+          tab.doc.key = newKey;
+          if (activeKey.value === oldKey) {
+            activeKey.value = newKey;
+          }
+          migrateTimerKeys(oldKey, newKey);
+          persistTabsDebounced();
+        }
+        notifyNotesRefresh();
+      }
+
+      tab.conflictState = null;
+      tab.isDirty = false;
+      tab.saveStatus = 'saved';
+      tab.syncSeq += 1;
+      return true;
+    } catch (error) {
+      if (isConflictError(error)) {
+        const info = parseConflictInfo(error);
+        const currentConflict = tab.conflictState;
+        if (currentConflict?.kind === 'modified') {
+          tab.conflictState = {
+            ...currentConflict,
+            diskBody: info?.currentBody ?? currentConflict.diskBody,
+            diskBodyHash: info?.currentBodyHash ?? currentConflict.diskBodyHash,
+            mergeSaving: false,
+            mergeError: '合并保存期间磁盘又有新修改，已刷新左栏基线，请复核后再次完成合并',
+          };
+        }
+        return false;
+      }
+      const msg = extractEditorErrorMessage(error);
+      if (tab.conflictState?.kind === 'modified') {
+        tab.conflictState = {
+          ...tab.conflictState,
+          mergeSaving: false,
+          mergeError: msg,
+        };
+      }
+      return false;
+    }
   }
 
   async function restoreDeletedTabToDisk(key: string): Promise<boolean> {
@@ -1283,6 +1415,10 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     resolveConflictReload,
     resolveConflictOverwrite,
     dismissConflictBanner,
+    enterConflictMerge,
+    cancelConflictMerge,
+    updateMergeDraftBody,
+    commitConflictMerge,
     restoreDeletedTabToDisk,
     ensureExternalChangeListener,
     closeTab,

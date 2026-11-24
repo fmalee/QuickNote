@@ -10,7 +10,8 @@ const activeTab = computed(() => editorTabsStore.activeTab);
 const showModifiedBanner = computed(
   () =>
     activeTab.value?.conflictState?.kind === 'modified' &&
-    !activeTab.value.conflictState.bannerDismissed,
+    !activeTab.value.conflictState.bannerDismissed &&
+    !activeTab.value.conflictState.mergeMode,
 );
 
 const showDeletedBanner = computed(() => activeTab.value?.conflictState?.kind === 'deleted');
@@ -36,6 +37,14 @@ const showDeletedBanner = computed(() => activeTab.value?.conflictState?.kind ==
           @click="void editorTabsStore.resolveConflictOverwrite(activeTab.key)"
         >
           备份并覆盖磁盘
+        </QnButton>
+        <QnButton
+          size="sm"
+          variant="secondary"
+          data-testid="conflict-merge-btn"
+          @click="editorTabsStore.enterConflictMerge(activeTab.key)"
+        >
+          并排对比
         </QnButton>
         <QnButton
           size="sm"
