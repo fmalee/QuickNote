@@ -180,6 +180,10 @@ async function handleExternalMenuSelect(id: string): Promise<void> {
   await externalActions.executeAction(id, { pinned: doc.value?.meta.pinned });
 }
 
+async function handleQuickPinExternal(): Promise<void> {
+  await externalActions.executeAction('external.pin', { pinned: doc.value?.meta.pinned });
+}
+
 async function confirmExternalFrontmatter(): Promise<void> {
   const currentDoc = doc.value;
   const action = pendingAction.value;
@@ -219,6 +223,25 @@ function cancelExternalFrontmatter(): void {
       />
 
       <div class="qn-doc-header__controls">
+        <QnBadge
+          v-if="!doc.isLibrary"
+          tone="accent"
+          size="sm"
+          data-testid="doc-header-external-badge"
+        >
+          外部
+        </QnBadge>
+
+        <QnButton
+          v-if="!doc.isLibrary"
+          variant="ghost"
+          size="sm"
+          data-testid="doc-header-pin-external-btn"
+          @click="handleQuickPinExternal"
+        >
+          {{ doc.meta.pinned ? '取消固定' : '固定常用' }}
+        </QnButton>
+
         <select
           :value="doc.meta.docType"
           class="qn-doc-header__type-select"

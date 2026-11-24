@@ -7,16 +7,19 @@ import type {
   NotesFilterArgs,
   RelPathArgs,
   RenameNoteArgs,
+  SearchResultItem,
   UiState,
   UiStatePatchKey,
 } from '@/bindings/types';
 import {
+  externalActionRun,
   isAppError,
   noteCreate,
   noteDelete,
   noteRename,
   notesGetTreeAndTags,
   notesList,
+  searchNotesAndFiles,
   uiStateGet,
   uiStateSet,
 } from '@/lib/ipc/commands';
@@ -62,6 +65,31 @@ export function patchUiState(key: UiStatePatchKey, value: unknown): Promise<UiSt
 
 export function subscribeIndexStatus(handler: (status: IndexStatus) => void): Promise<UnlistenFn> {
   return onIndexStatus(handler);
+}
+
+export async function fetchPinnedExternalFiles(): Promise<SearchResultItem[]> {
+  const res = await searchNotesAndFiles({
+    query: '',
+    limit: 50,
+    requestId: Date.now(),
+  });
+  return res.items.filter((item) => item.source === 'recent');
+}
+
+export function togglePinExternalFileByPath(absPath: string): Promise<void> {
+  return externalActionRun({
+    id: 'external.pin',
+    absPath,
+    dirPath: null,
+  });
+}
+
+export function revealExternalFileByPath(absPath: string): Promise<void> {
+  return externalActionRun({
+    id: 'external.reveal',
+    absPath,
+    dirPath: null,
+  });
 }
 
 export function extractNotesErrorMessage(error: unknown): string {

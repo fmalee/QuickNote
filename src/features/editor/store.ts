@@ -418,6 +418,20 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
   }
 
+  async function openNoteByAbsPath(
+    absPath: string,
+    options: OpenNoteOptions & { line?: number | null } = {},
+  ): Promise<EditorTab | null> {
+    const opened = await openNote(absPath, {
+      ...options,
+      absPath,
+    });
+    if (opened && options.line != null && options.line > 0) {
+      requestScrollToLine(options.line, 0);
+    }
+    return opened;
+  }
+
   async function activateTab(key: string): Promise<void> {
     const target = tabs.value.find((tab) => tab.key === key);
     if (!target) {
@@ -1228,6 +1242,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     autoSaveMaxWaitMs,
     isInboxBloated,
     openNote,
+    openNoteByAbsPath,
     activateTab,
     activateTabByIndex,
     promoteTabToPinned,

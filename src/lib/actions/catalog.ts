@@ -145,6 +145,22 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     scope: 'main-window',
     run: noopAction,
   },
+  {
+    id: 'window.quickOpen',
+    title: '快速打开…',
+    category: 'window',
+    defaultKeys: 'cmd+k',
+    scope: 'main-window',
+    run: noopAction,
+  },
+  {
+    id: 'window.commandBook',
+    title: '打开命令面板',
+    category: 'window',
+    defaultKeys: 'cmd+shift+k',
+    scope: 'main-window',
+    run: noopAction,
+  },
 
   // editor.*
   {

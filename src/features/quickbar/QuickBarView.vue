@@ -1,13 +1,47 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { QnBadge, QnBanner, QnButton } from '@/components';
-import { ACTION_KEYBINDINGS_STORAGE_KEY, actionRegistry } from '@/lib/actions';
+import { QuickOpenPalette, useQuickOpen } from '@/features/quickopen';
+import {
+  ACTION_KEYBINDINGS_STORAGE_KEY,
+  actionRegistry,
+  formatKeyComboDisplay,
+} from '@/lib/actions';
 import QuickBarTargetPicker from './QuickBarTargetPicker.vue';
 import { useQuickBarStore } from './store';
 
 const store = useQuickBarStore();
 const editorRef = ref<HTMLTextAreaElement | null>(null);
+const quickOpenFocusTick = ref(0);
 const actionDisposers: Array<() => void> = [];
+
+const quickOpenEngine = useQuickOpen({
+  getActionItems: () =>
+    actionRegistry
+      .getAll()
+      .filter((action) => action.scope === 'quickbar' || action.scope === 'global')
+      .map((action) => ({
+        id: action.id,
+        title: action.title,
+        subtitle: action.id,
+        shortcutLabel: formatKeyComboDisplay(actionRegistry.getEffectiveKeys(action.id)),
+      })),
+  onOpenItem: async (item, openMode) => {
+    if (!item.absPath) {
+      return;
+    }
+    await store.openFileInMain(item.absPath, openMode === 'newTab');
+  },
+  onExecuteAction: async (actionId) => {
+    await actionRegistry.executeById(actionId, {
+      activeScope: 'quickbar',
+      activeScopes: ['quickbar', 'global'],
+    });
+  },
+  onClose: () => {
+    void store.handleEscape();
+  },
+});
 
 function focusEditor(): void {
   if (
@@ -122,6 +156,7 @@ onUnmounted(() => {
     const dispose = actionDisposers.pop();
     dispose?.();
   }
+  quickOpenEngine.dispose();
   store.dispose();
 });
 
@@ -135,7 +170,15 @@ watch(
       store.saveAsModalOpen,
     ] as const,
   ([, unconfigured, currentMode, pickerOpen, saveAsOpen]) => {
-    if (!unconfigured && currentMode === 'capture' && !pickerOpen && !saveAsOpen) {
+    if (unconfigured) {
+      return;
+    }
+    if (currentMode === 'open') {
+      quickOpenEngine.refresh(true);
+      quickOpenFocusTick.value += 1;
+      return;
+    }
+    if (currentMode === 'capture' && !pickerOpen && !saveAsOpen) {
       focusEditor();
     }
   },
@@ -156,7 +199,13 @@ function handleKeydown(event: KeyboardEvent): void {
     return;
   }
 
-  if (event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+  if (
+    store.mode === 'capture' &&
+    event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.shiftKey
+  ) {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       store.cycleRelatedTarget('next');
@@ -275,14 +324,22 @@ function handleKeydown(event: KeyboardEvent): void {
       </div>
     </div>
 
-    <div v-else-if="store.mode !== 'capture'" class="qn-quickbar__placeholder">
+    <div
+      v-else-if="store.mode === 'open'"
+      class="qn-quickbar__open-body"
+      data-testid="quickbar-open-mode"
+    >
+      <QuickOpenPalette
+        :engine="quickOpenEngine"
+        variant="compact"
+        :focus-trigger="quickOpenFocusTick"
+      />
+    </div>
+
+    <div v-else-if="store.mode === 'command'" class="qn-quickbar__placeholder">
       <div class="qn-quickbar__s1-card">
-        <QnBadge tone="neutral" size="md">
-          {{ store.mode === 'open' ? '快速打开模式 (⌘K)' : '命令面板模式 (⌘⇧K)' }}
-        </QnBadge>
-        <p class="qn-quickbar__s1-desc">
-          该模式将在 M3 阶段接入完整检索与命令执行。按 Esc 可退回记录模式。
-        </p>
+        <QnBadge tone="neutral" size="md">命令面板模式 (⌘⇧K)</QnBadge>
+        <p class="qn-quickbar__s1-desc">命令面板将在 M3-04 阶段接入。按 Esc 可退回记录模式。</p>
         <QnButton variant="secondary" size="sm" @click="store.mode = 'capture'">
           返回记录模式 (Esc)
         </QnButton>
@@ -567,6 +624,15 @@ function handleKeydown(event: KeyboardEvent): void {
   margin: 0;
   font-size: var(--qn-text-sm);
   color: var(--qn-text-secondary);
+}
+
+.qn-quickbar__open-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--qn-space-3);
+  background-color: var(--qn-bg-elevated);
 }
 
 .qn-quickbar__body {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
-import type { DirNode, NoteSummary, TagNode } from '@/bindings/types';
-import { QnBadge, QnBanner, QnButton } from '@/components';
+import type { DirNode, NoteSummary, SearchResultItem, TagNode } from '@/bindings/types';
+import { QnBadge, QnBanner, QnButton, QnContextMenu, type ContextMenuEntry } from '@/components';
 import { useEditorTabsStore } from '@/features/editor';
 import { type NavTab, useNotesStore } from './store';
 
@@ -28,6 +28,37 @@ const expandedTags = ref<Record<string, boolean>>({});
 
 const renamingRelPath = ref<string | null>(null);
 const renameDraft = ref<string>('');
+const pinnedExternalExpanded = ref<boolean>(true);
+const externalCtxOpen = ref<boolean>(false);
+const externalCtxPos = ref<{ x: number; y: number }>({ x: 0, y: 0 });
+const externalCtxItem = ref<SearchResultItem | null>(null);
+
+const externalCtxMenuItems: ContextMenuEntry[] = [
+  { type: 'item', id: 'external.open', title: '在标签页打开' },
+  { type: 'item', id: 'external.reveal', title: '在访达中显示' },
+  { type: 'separator', id: 'external-sep' },
+  { type: 'item', id: 'external.unpin', title: '取消固定常用文件' },
+];
+
+function openExternalContextMenu(event: MouseEvent, item: SearchResultItem): void {
+  externalCtxItem.value = item;
+  externalCtxPos.value = { x: event.clientX, y: event.clientY };
+  externalCtxOpen.value = true;
+}
+
+async function handleExternalContextSelect(id: string): Promise<void> {
+  const item = externalCtxItem.value;
+  if (!item) {
+    return;
+  }
+  if (id === 'external.open') {
+    await editorTabsStore.openNoteByAbsPath(item.absPath, { preview: false });
+  } else if (id === 'external.reveal') {
+    await notesStore.revealExternalFile(item.absPath);
+  } else if (id === 'external.unpin') {
+    await notesStore.togglePinExternalFile(item.absPath);
+  }
+}
 const renameInputRef = ref<HTMLInputElement | null>(null);
 
 const navItems: { id: NavTab; label: string }[] = [
@@ -373,6 +404,62 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
     <QnBanner v-if="notesStore.errorMessage" tone="danger" data-testid="notes-error-banner">
       {{ notesStore.errorMessage }}
     </QnBanner>
+
+    <div
+      v-if="notesStore.pinnedExternalFiles.length > 0"
+      class="qn-notes-sidebar__pinned-external"
+      data-testid="notes-pinned-external"
+    >
+      <button
+        type="button"
+        class="qn-notes-sidebar__pinned-header"
+        data-testid="notes-pinned-external-toggle"
+        @click="pinnedExternalExpanded = !pinnedExternalExpanded"
+      >
+        <span>{{ pinnedExternalExpanded ? '▾' : '▸' }} 常用外部文件</span>
+        <QnBadge tone="accent" size="sm">{{ notesStore.pinnedExternalFiles.length }}</QnBadge>
+      </button>
+
+      <div v-if="pinnedExternalExpanded" class="qn-notes-sidebar__pinned-list">
+        <div
+          v-for="item in notesStore.pinnedExternalFiles"
+          :key="item.absPath"
+          :class="[
+            'qn-notes-sidebar__pinned-item',
+            {
+              'qn-notes-sidebar__pinned-item--active':
+                editorTabsStore.activeTab?.absPath === item.absPath,
+            },
+          ]"
+          :title="item.absPath"
+          :data-testid="`pinned-external-item-${item.absPath}`"
+          @click="editorTabsStore.openNoteByAbsPath(item.absPath, { preview: true })"
+          @dblclick="editorTabsStore.openNoteByAbsPath(item.absPath, { preview: false })"
+          @contextmenu.prevent="openExternalContextMenu($event, item)"
+        >
+          <span class="qn-notes-sidebar__pinned-title">{{ item.title }}</span>
+          <button
+            type="button"
+            class="qn-notes-sidebar__pinned-unpin"
+            title="取消固定"
+            :aria-label="`取消固定 ${item.title}`"
+            :data-testid="`pinned-external-unpin-${item.absPath}`"
+            @click.stop="notesStore.togglePinExternalFile(item.absPath)"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+
+      <QnContextMenu
+        :open="externalCtxOpen"
+        :x="externalCtxPos.x"
+        :y="externalCtxPos.y"
+        :items="externalCtxMenuItems"
+        @select="handleExternalContextSelect"
+        @close="externalCtxOpen = false"
+      />
+    </div>
 
     <div class="qn-notes-sidebar__list" data-testid="notes-list">
       <div v-if="notesStore.notes.length === 0" class="qn-notes-sidebar__empty">
@@ -750,5 +837,72 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
 
 .qn-notes-sidebar__card-action--danger:hover {
   color: var(--qn-danger);
+}
+
+.qn-notes-sidebar__pinned-external {
+  border-bottom: 1px solid var(--qn-border-subtle);
+  padding: var(--qn-space-1) var(--qn-space-2);
+  background-color: var(--qn-bg-sidebar);
+}
+
+.qn-notes-sidebar__pinned-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--qn-space-1);
+  border: none;
+  background: transparent;
+  color: var(--qn-text-secondary);
+  font-size: var(--qn-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.qn-notes-sidebar__pinned-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 140px;
+  overflow-y: auto;
+  margin-top: var(--qn-space-1);
+}
+
+.qn-notes-sidebar__pinned-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--qn-space-1);
+  padding: 3px var(--qn-space-2);
+  border-radius: var(--qn-radius-sm);
+  color: var(--qn-text-primary);
+  font-size: var(--qn-text-xs);
+  cursor: pointer;
+}
+
+.qn-notes-sidebar__pinned-item:hover,
+.qn-notes-sidebar__pinned-item--active {
+  background-color: var(--qn-bg-hover);
+}
+
+.qn-notes-sidebar__pinned-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qn-notes-sidebar__pinned-unpin {
+  border: none;
+  background: transparent;
+  color: var(--qn-text-muted);
+  font-size: var(--qn-text-xs);
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: var(--qn-radius-sm);
+}
+
+.qn-notes-sidebar__pinned-unpin:hover {
+  background-color: var(--qn-bg-active);
+  color: var(--qn-text-primary);
 }
 </style>

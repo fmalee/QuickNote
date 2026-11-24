@@ -15,11 +15,18 @@ import {
 import { NewNoteTemplateModal, NotesSidebar, useNotesStore } from '@/features/notes';
 import { OnboardingView, useOnboardingStore } from '@/features/onboarding';
 import { OutlinePanel, usePanelsStore } from '@/features/panels';
+import {
+  PENDING_OPEN_FILE_STORAGE_KEY,
+  QuickOpenPalette,
+  consumePendingOpenFile,
+  useQuickOpen,
+} from '@/features/quickopen';
 import { SettingsErrorBanner, VisualBaselinePreview, useSettingsStore } from '@/features/settings';
 import {
   ACTION_KEYBINDINGS_STORAGE_KEY,
   actionRegistry,
   collectNativeMenuAccelerators,
+  formatKeyComboDisplay,
   type ActionContext,
   type ActionScope,
 } from '@/lib/actions';
@@ -34,6 +41,8 @@ const externalActions = useExternalActions();
 const panelsStore = usePanelsStore();
 
 const baselinePreviewOpen = ref(false);
+const quickOpenModalOpen = ref(false);
+const quickOpenFocusTick = ref(0);
 let unlistenToastAppendUndo: UnlistenFn | null = null;
 let unlistenMainWindowState: UnlistenFn | null = null;
 let unlistenMenuAction: UnlistenFn | null = null;
@@ -46,7 +55,11 @@ function resolveActiveScopes(): ActionScope[] {
     return scopes;
   }
 
-  if (baselinePreviewOpen.value || document.querySelector('[role="dialog"]')) {
+  if (
+    baselinePreviewOpen.value ||
+    quickOpenModalOpen.value ||
+    document.querySelector('[role="dialog"]')
+  ) {
     scopes.unshift('modal');
   }
 
@@ -79,8 +92,60 @@ function buildActionContext(): ActionContext {
   };
 }
 
+const mainQuickOpenEngine = useQuickOpen({
+  getActionItems: () => {
+    const ctx = buildActionContext();
+    return actionRegistry
+      .getAll()
+      .filter((action) => action.scope !== 'quickbar')
+      .map((action) => ({
+        id: action.id,
+        title: action.title,
+        subtitle: action.id,
+        shortcutLabel: formatKeyComboDisplay(actionRegistry.getEffectiveKeys(action.id)),
+        disabled: action.when ? !action.when(ctx) : false,
+      }));
+  },
+  onOpenItem: async (item, openMode) => {
+    quickOpenModalOpen.value = false;
+    if (!item.absPath) {
+      return;
+    }
+    await editorTabsStore.openNoteByAbsPath(item.absPath, {
+      preview: openMode !== 'newTab',
+    });
+  },
+  onExecuteAction: async (actionId) => {
+    quickOpenModalOpen.value = false;
+    await actionRegistry.executeById(actionId, buildActionContext());
+  },
+  onClose: () => {
+    quickOpenModalOpen.value = false;
+  },
+});
+
+function openMainQuickOpen(): void {
+  quickOpenModalOpen.value = true;
+  mainQuickOpenEngine.refresh(true);
+  quickOpenFocusTick.value += 1;
+}
+
+function consumeAndOpenPendingFile(): void {
+  const pending = consumePendingOpenFile();
+  if (!pending) {
+    return;
+  }
+  void editorTabsStore.openNoteByAbsPath(pending.absPath, {
+    preview: !pending.newTab,
+    line: pending.line ?? null,
+  });
+}
+
 function bindMainWindowActions(): void {
   actionDisposers.push(
+    actionRegistry.bindHandler('window.quickOpen', () => {
+      openMainQuickOpen();
+    }),
     actionRegistry.bindHandler('window.save', () => editorTabsStore.flushSave()),
     actionRegistry.bindHandler('window.newNote', () => notesStore.openNewNoteModal()),
     actionRegistry.bindHandler(
@@ -139,6 +204,15 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => externalActions.feedback,
+  (feedback) => {
+    if (feedback) {
+      void notesStore.loadPinnedExternalFiles();
+    }
+  },
+);
+
 function handleWindowKeyDown(event: KeyboardEvent): void {
   if (event.isComposing || event.keyCode === 229) {
     return;
@@ -177,6 +251,9 @@ function handleWindowStorage(event: StorageEvent): void {
     actionRegistry.syncFromStorage();
     void syncNativeMenuAccelerators();
   }
+  if (event.key === PENDING_OPEN_FILE_STORAGE_KEY || event.key === null) {
+    consumeAndOpenPendingFile();
+  }
 }
 
 async function ensureCrossWindowListeners(): Promise<void> {
@@ -192,17 +269,19 @@ async function ensureCrossWindowListeners(): Promise<void> {
       if (winState.windowId === 'main' && winState.visible) {
         void notesStore.refreshAll();
         void panelsStore.initialize().then(() => editorTabsStore.handleMainWindowShown());
+        consumeAndOpenPendingFile();
       }
     });
     unlistenMenuAction = await onMenuAction((actionId) => {
+      const mappedActionId = actionId === 'menu_quick_open' ? 'window.quickOpen' : actionId;
       const ctx = buildActionContext();
       if (
         (ctx.activeScope === 'terminal' || ctx.activeScopes?.includes('terminal')) &&
-        actionId.startsWith('editor.')
+        mappedActionId.startsWith('editor.')
       ) {
         return;
       }
-      void actionRegistry.executeById(actionId, ctx);
+      void actionRegistry.executeById(mappedActionId, ctx);
     });
   } catch {
     // 非 Tauri 测试环境容错
@@ -264,7 +343,9 @@ watch(
         editorTabsStore.restoreTabsFromUiState(),
         panelsStore.initialize(),
         ensureCrossWindowListeners(),
-      ]);
+      ]).then(() => {
+        consumeAndOpenPendingFile();
+      });
     }
   },
   { immediate: true },
@@ -293,6 +374,7 @@ onUnmounted(() => {
     unlistenMenuAction = null;
   }
   crossWindowListenersBound = false;
+  mainQuickOpenEngine.dispose();
   notesStore.dispose();
   editorTabsStore.dispose();
   panelsStore.dispose();
@@ -414,6 +496,18 @@ onUnmounted(() => {
       <template #footer>
         <QnButton variant="primary" size="sm" @click="baselinePreviewOpen = false">关闭</QnButton>
       </template>
+    </QnModalShell>
+    <QnModalShell
+      :open="quickOpenModalOpen"
+      title="快速打开"
+      max-width="lg"
+      @close="quickOpenModalOpen = false"
+    >
+      <QuickOpenPalette
+        :engine="mainQuickOpenEngine"
+        variant="large"
+        :focus-trigger="quickOpenFocusTick"
+      />
     </QnModalShell>
     <NewNoteTemplateModal />
     <InboxExtractModal />

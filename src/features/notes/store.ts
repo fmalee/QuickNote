@@ -6,6 +6,7 @@ import type {
   NoteDoc,
   NoteSummary,
   NotesFilterArgs,
+  SearchResultItem,
 } from '@/bindings/types';
 import { useEditorTabsStore } from '@/features/editor';
 import type { UnlistenFn } from '@/lib/ipc/events';
@@ -15,11 +16,14 @@ import {
   extractNotesErrorMessage,
   fetchNavTreeAndTags,
   fetchNotesList,
+  fetchPinnedExternalFiles,
   fetchUiState,
   listNoteTemplates,
   patchUiState,
   renameNote,
+  revealExternalFileByPath,
   subscribeIndexStatus,
+  togglePinExternalFileByPath,
 } from './api';
 
 export type NavTab = 'inbox' | 'projects' | 'tags' | 'recent' | 'workspaces';
@@ -75,8 +79,10 @@ export const useNotesStore = defineStore('notes', () => {
   const newNoteModalOpen = ref<boolean>(false);
   const newNoteDefaultDir = ref<string>('');
   const templates = ref<NoteSummary[]>([]);
+  const pinnedExternalFiles = ref<SearchResultItem[]>([]);
 
   let requestSeq = 0;
+  let pinnedExternalSeq = 0;
   let filterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let filtersPersistTimer: ReturnType<typeof setTimeout> | null = null;
   let unlistenIndexStatus: UnlistenFn | null = null;
@@ -117,6 +123,27 @@ export const useNotesStore = defineStore('notes', () => {
     } finally {
       loadingTree.value = false;
     }
+  }
+
+  async function loadPinnedExternalFiles(): Promise<void> {
+    const seq = ++pinnedExternalSeq;
+    try {
+      const items = await fetchPinnedExternalFiles();
+      if (seq === pinnedExternalSeq) {
+        pinnedExternalFiles.value = items;
+      }
+    } catch {
+      // 容错：未配置或测试环境未 mock 时保持现有列表
+    }
+  }
+
+  async function togglePinExternalFile(absPath: string): Promise<void> {
+    await togglePinExternalFileByPath(absPath);
+    await loadPinnedExternalFiles();
+  }
+
+  async function revealExternalFile(absPath: string): Promise<void> {
+    await revealExternalFileByPath(absPath);
   }
 
   async function loadNotesList(): Promise<void> {
@@ -321,7 +348,7 @@ export const useNotesStore = defineStore('notes', () => {
   }
 
   async function refreshAll(): Promise<void> {
-    await Promise.all([loadTreeAndTags(), loadNotesList()]);
+    await Promise.all([loadTreeAndTags(), loadNotesList(), loadPinnedExternalFiles()]);
   }
 
   async function initialize(): Promise<void> {
@@ -346,7 +373,7 @@ export const useNotesStore = defineStore('notes', () => {
       }
     }
 
-    await Promise.all([loadTreeAndTags(), loadNotesList()]);
+    await Promise.all([loadTreeAndTags(), loadNotesList(), loadPinnedExternalFiles()]);
   }
 
   function dispose(): void {
@@ -380,8 +407,12 @@ export const useNotesStore = defineStore('notes', () => {
     newNoteModalOpen,
     newNoteDefaultDir,
     templates,
+    pinnedExternalFiles,
     loadTreeAndTags,
     loadNotesList,
+    loadPinnedExternalFiles,
+    togglePinExternalFile,
+    revealExternalFile,
     loadTemplates,
     refreshAll,
     setFilterText,

@@ -23,6 +23,7 @@ import {
   flattenDirRelPaths,
   inferDefaultTemplateName,
 } from '@/features/notes';
+import { writePendingOpenFile } from '@/features/quickopen';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import {
   appendQuickBarNote,
@@ -876,6 +877,22 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     await hideQuickBarWindow(reason);
   }
 
+  function setMode(nextMode: QuickBarMode): void {
+    mode.value = nextMode;
+    focusTick.value += 1;
+  }
+
+  async function openFileInMain(absPath: string, newTab = false): Promise<void> {
+    writePendingOpenFile({
+      absPath,
+      newTab,
+      line: null,
+      ts: Date.now(),
+    });
+    await showMainWindowForOnboarding();
+    await hide('esc');
+  }
+
   return {
     libraryInfo,
     settingsSnapshot,
@@ -920,6 +937,8 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     dispose,
     openMainOnboarding,
     hide,
+    setMode,
+    openFileInMain,
     setCaptureMode,
     selectRelatedNote,
     cycleRelatedTarget,

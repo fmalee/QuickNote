@@ -84,6 +84,29 @@ function getTabTitle(tab: EditorTab): string {
   return parts[parts.length - 1] ?? path;
 }
 
+function isExternalTab(tab: EditorTab): boolean {
+  if (tab.doc) {
+    return !tab.doc.isLibrary;
+  }
+  return tab.relPath === null;
+}
+
+async function handleTogglePinExternalTab(tab: EditorTab): Promise<void> {
+  const states =
+    tab.absPath &&
+    tab.absPath === externalActions.resolvedAbsPath &&
+    externalActions.states.length > 0
+      ? externalActions.states
+      : await externalActions.resolveForTarget({
+          absPath: tab.absPath || null,
+          workspaceKey: tab.doc?.meta.project ?? null,
+        });
+  await externalActions.executeAction('external.pin', {
+    overrideStates: states,
+    pinned: tab.doc?.meta.pinned,
+  });
+}
+
 function handleKeydown(event: KeyboardEvent): void {
   if (!event.metaKey || event.ctrlKey || event.altKey) {
     return;
@@ -125,7 +148,7 @@ onUnmounted(() => {
         :key="tab.key"
         role="tab"
         :aria-selected="tab.key === tabsStore.activeKey"
-        :data-testid="`editor-tab-${tab.relPath}`"
+        :data-testid="`editor-tab-${tab.relPath ?? tab.absPath}`"
         :class="[
           'qn-tabbar__item',
           {
@@ -141,6 +164,25 @@ onUnmounted(() => {
         @contextmenu.prevent="openTabContextMenu($event, tab)"
       >
         <span class="qn-tabbar__title">{{ getTabTitle(tab) }}</span>
+        <QnBadge
+          v-if="isExternalTab(tab)"
+          tone="accent"
+          size="sm"
+          data-testid="editor-tab-external-badge"
+        >
+          外部
+        </QnBadge>
+        <button
+          v-if="isExternalTab(tab)"
+          type="button"
+          class="qn-tabbar__pin-btn"
+          :title="tab.doc?.meta.pinned ? '取消固定常用文件' : '固定到常用文件'"
+          :aria-label="tab.doc?.meta.pinned ? '取消固定常用文件' : '固定到常用文件'"
+          :data-testid="`editor-tab-pin-${tab.absPath}`"
+          @click.stop="handleTogglePinExternalTab(tab)"
+        >
+          📌
+        </button>
         <QnBadge v-if="tab.isMissing" tone="danger">失联</QnBadge>
         <QnBadge v-else-if="tab.conflictState?.kind === 'deleted'" tone="danger">已删除</QnBadge>
         <QnBadge v-else-if="tab.conflictState?.kind === 'modified'" tone="warning">冲突</QnBadge>
@@ -149,7 +191,7 @@ onUnmounted(() => {
           type="button"
           class="qn-tabbar__close"
           :aria-label="`关闭 ${getTabTitle(tab)}`"
-          :data-testid="`editor-tab-close-${tab.relPath}`"
+          :data-testid="`editor-tab-close-${tab.relPath ?? tab.absPath}`"
           @click.stop="tabsStore.closeTab(tab.key)"
         >
           ×
@@ -251,6 +293,25 @@ onUnmounted(() => {
   border-radius: 50%;
   background-color: var(--qn-accent);
   flex-shrink: 0;
+}
+
+.qn-tabbar__pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  border: none;
+  border-radius: var(--qn-radius-sm);
+  background: transparent;
+  color: var(--qn-text-muted);
+  font-size: var(--qn-text-xs);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.qn-tabbar__pin-btn:hover {
+  background-color: var(--qn-bg-active);
+  color: var(--qn-text-primary);
 }
 
 .qn-tabbar__close {
