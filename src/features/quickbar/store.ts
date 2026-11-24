@@ -882,11 +882,15 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     focusTick.value += 1;
   }
 
-  async function openFileInMain(absPath: string, newTab = false): Promise<void> {
+  async function openFileInMain(
+    absPath: string,
+    newTab = false,
+    line: number | null = null,
+  ): Promise<void> {
     writePendingOpenFile({
       absPath,
       newTab,
-      line: null,
+      line,
       ts: Date.now(),
     });
     await showMainWindowForOnboarding();

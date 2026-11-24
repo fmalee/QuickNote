@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { QnBadge, QnBanner, QnButton } from '@/components';
+import { CommandBookPalette, joinLibraryPath, useCommandPalette } from '@/features/commands';
 import { QuickOpenPalette, useQuickOpen } from '@/features/quickopen';
 import {
   ACTION_KEYBINDINGS_STORAGE_KEY,
@@ -13,7 +14,25 @@ import { useQuickBarStore } from './store';
 const store = useQuickBarStore();
 const editorRef = ref<HTMLTextAreaElement | null>(null);
 const quickOpenFocusTick = ref(0);
+const commandFocusTick = ref(0);
 const actionDisposers: Array<() => void> = [];
+
+const commandPaletteEngine = useCommandPalette({
+  getContext: () => {
+    const root = store.libraryInfo?.root ?? null;
+    const relPath = store.uiState?.lastActiveDoc?.relPath ?? null;
+    return {
+      absPath: root && relPath ? joinLibraryPath(root, relPath) : null,
+      workspaceKey: store.resolvedTarget?.workspaceKey ?? null,
+    };
+  },
+  onOpenSource: async (absPath, line) => {
+    await store.openFileInMain(absPath, false, line);
+  },
+  onRequestClose: async () => {
+    await store.hide('esc');
+  },
+});
 
 const quickOpenEngine = useQuickOpen({
   getActionItems: () =>
@@ -157,6 +176,7 @@ onUnmounted(() => {
     dispose?.();
   }
   quickOpenEngine.dispose();
+  commandPaletteEngine.dispose();
   store.dispose();
 });
 
@@ -176,6 +196,11 @@ watch(
     if (currentMode === 'open') {
       quickOpenEngine.refresh(true);
       quickOpenFocusTick.value += 1;
+      return;
+    }
+    if (currentMode === 'command') {
+      void commandPaletteEngine.refresh(true);
+      commandFocusTick.value += 1;
       return;
     }
     if (currentMode === 'capture' && !pickerOpen && !saveAsOpen) {
@@ -336,14 +361,16 @@ function handleKeydown(event: KeyboardEvent): void {
       />
     </div>
 
-    <div v-else-if="store.mode === 'command'" class="qn-quickbar__placeholder">
-      <div class="qn-quickbar__s1-card">
-        <QnBadge tone="neutral" size="md">命令面板模式 (⌘⇧K)</QnBadge>
-        <p class="qn-quickbar__s1-desc">命令面板将在 M3-04 阶段接入。按 Esc 可退回记录模式。</p>
-        <QnButton variant="secondary" size="sm" @click="store.mode = 'capture'">
-          返回记录模式 (Esc)
-        </QnButton>
-      </div>
+    <div
+      v-else-if="store.mode === 'command'"
+      class="qn-quickbar__open-body"
+      data-testid="quickbar-command-mode"
+    >
+      <CommandBookPalette
+        :engine="commandPaletteEngine"
+        variant="compact"
+        :focus-trigger="commandFocusTick"
+      />
     </div>
 
     <div v-else class="qn-quickbar__body">

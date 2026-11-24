@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { QnBadge, QnBanner, QnButton, QnModalShell } from '@/components';
+import { CommandBookPalette, useCommandPalette } from '@/features/commands';
 import {
   DocHeaderBar,
   EditorConflictBanner,
@@ -43,6 +44,8 @@ const panelsStore = usePanelsStore();
 const baselinePreviewOpen = ref(false);
 const quickOpenModalOpen = ref(false);
 const quickOpenFocusTick = ref(0);
+const commandBookModalOpen = ref(false);
+const commandBookFocusTick = ref(0);
 let unlistenToastAppendUndo: UnlistenFn | null = null;
 let unlistenMainWindowState: UnlistenFn | null = null;
 let unlistenMenuAction: UnlistenFn | null = null;
@@ -58,6 +61,7 @@ function resolveActiveScopes(): ActionScope[] {
   if (
     baselinePreviewOpen.value ||
     quickOpenModalOpen.value ||
+    commandBookModalOpen.value ||
     document.querySelector('[role="dialog"]')
   ) {
     scopes.unshift('modal');
@@ -130,6 +134,29 @@ function openMainQuickOpen(): void {
   quickOpenFocusTick.value += 1;
 }
 
+const mainCommandPaletteEngine = useCommandPalette({
+  getContext: () => ({
+    absPath: editorTabsStore.activeTab?.absPath ?? null,
+    workspaceKey: editorTabsStore.activeTab?.doc?.meta.project ?? null,
+  }),
+  onOpenSource: async (absPath, line) => {
+    commandBookModalOpen.value = false;
+    await editorTabsStore.openNoteByAbsPath(absPath, {
+      preview: false,
+      line,
+    });
+  },
+  onRequestClose: () => {
+    commandBookModalOpen.value = false;
+  },
+});
+
+function openMainCommandBook(): void {
+  commandBookModalOpen.value = true;
+  void mainCommandPaletteEngine.refresh(true);
+  commandBookFocusTick.value += 1;
+}
+
 function consumeAndOpenPendingFile(): void {
   const pending = consumePendingOpenFile();
   if (!pending) {
@@ -145,6 +172,9 @@ function bindMainWindowActions(): void {
   actionDisposers.push(
     actionRegistry.bindHandler('window.quickOpen', () => {
       openMainQuickOpen();
+    }),
+    actionRegistry.bindHandler('window.commandBook', () => {
+      openMainCommandBook();
     }),
     actionRegistry.bindHandler('window.save', () => editorTabsStore.flushSave()),
     actionRegistry.bindHandler('window.newNote', () => notesStore.openNewNoteModal()),
@@ -273,7 +303,12 @@ async function ensureCrossWindowListeners(): Promise<void> {
       }
     });
     unlistenMenuAction = await onMenuAction((actionId) => {
-      const mappedActionId = actionId === 'menu_quick_open' ? 'window.quickOpen' : actionId;
+      let mappedActionId = actionId;
+      if (actionId === 'menu_quick_open') {
+        mappedActionId = 'window.quickOpen';
+      } else if (actionId === 'menu_command_book' || actionId === 'menu_tools_commands') {
+        mappedActionId = 'window.commandBook';
+      }
       const ctx = buildActionContext();
       if (
         (ctx.activeScope === 'terminal' || ctx.activeScopes?.includes('terminal')) &&
@@ -375,6 +410,7 @@ onUnmounted(() => {
   }
   crossWindowListenersBound = false;
   mainQuickOpenEngine.dispose();
+  mainCommandPaletteEngine.dispose();
   notesStore.dispose();
   editorTabsStore.dispose();
   panelsStore.dispose();
@@ -507,6 +543,18 @@ onUnmounted(() => {
         :engine="mainQuickOpenEngine"
         variant="large"
         :focus-trigger="quickOpenFocusTick"
+      />
+    </QnModalShell>
+    <QnModalShell
+      :open="commandBookModalOpen"
+      title="命令库"
+      max-width="lg"
+      @close="commandBookModalOpen = false"
+    >
+      <CommandBookPalette
+        :engine="mainCommandPaletteEngine"
+        variant="large"
+        :focus-trigger="commandBookFocusTick"
       />
     </QnModalShell>
     <NewNoteTemplateModal />
