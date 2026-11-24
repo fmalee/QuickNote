@@ -4,11 +4,11 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4 全部 7 卡 + `fix/M4-audit`（`6cf8114`）完工，实机首轮点验已完成，待执行 `fix/M4-qa`（终端滚动条/`⌘V` 原生直贴/外部终端按钮）与 `MergeView` 复验**。
+- **当前阶段**：**M0–M4（1.0 正式版）全部收官**！`m4-baseline` 与 `v1.0.0` 已同步落地并合入 `main`，后续按需规划 **M5（生态扩展：同步兼容 / 移动端 / AI）**。
 - **已完成**：
   - M0–M3 全阶段（`m0-baseline` / `m1-baseline` / `m2-baseline` / `m3-baseline`）。
-  - M4 全部 7 张卡片（`M4-01a`–`M4-06`）、M4 独立只读审查与 `fix/M4-audit`（`6cf8114`），以及首轮 macOS 实机点验问题分拣（`M4-qa-fixes.md`）。
-- **待执行**：从 `dev` 拉取 `fix/M4-qa` 修复 3 项终端实机体验问题，复验终端与 `MergeView` 冲突合并后，正式打 `m4-baseline` 并由用户确认 1.0 发版。
+  - M4 全阶段（`m4-baseline` / `v1.0.0`：`M4-01a`–`M4-06` + M4 独立只读审查 + `fix/M4-audit` `6cf8114` + `fix/M4-qa` `375d4d8` + `fix/M4-qa-scrollbar` `bfd693b` 实机点验收官；万篇 FTS5 2.7–6.1ms 达标、M2/M3 挂起债务全部清零）。
+- **待执行**：按需启动 M5 规划，或直接从 `v1.0.0` 执行 macOS 正式应用构建打包（`pnpm tauri build`）。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -41,5 +41,5 @@
 
 ## 5. 下一步动作
 
-1. 新开独立施工会话，从 `dev` 拉取 `fix/M4-qa` 执行 `spec/cards/M4-qa-fixes.md`（修复终端滚动条遮挡、`⌘V` 原生直贴、外部终端按会话目录打开与横幅 `tone`）。
-2. `fix/M4-qa` 合入 `dev` 后复验终端与 `MergeView` 冲突合并，全部通过即打 `m4-baseline` 标签并确认合入 `main` / 1.0 发版。
+1. QuickNote **1.0.0** 已合入 `main`（标签 `m4-baseline` / `v1.0.0`）；如需导出本机安装包，在 `main` / `dev` 上按需配置签名并运行 `pnpm tauri build`。
+2. 如需继续演进 M5（外部同步冲突兼容、移动端、AI 能力及 §2 中 2 项 M5 优化），可随时新开主控会话基于 `m4-baseline` 拆卡启动。
