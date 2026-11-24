@@ -4,11 +4,11 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4 施工推进中（已完成 `M4-01a` `e8c661e`、`M4-01b` `62e3d6c`、`M4-02` `8461999`、`M4-03` `342060b`）**。
+- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4 施工推进中（已完成 `M4-01a`–`M4-04`）**。
 - **已完成**：
   - M0–M3 全阶段（`m0-baseline` / `m1-baseline` / `m2-baseline` / `m3-baseline`）。
-  - M4 后端全部 9 条 IPC 与原生桥接（`M4-01a` `e8c661e` + `M4-01b` `62e3d6c`）、内嵌 `xterm.js` 终端面板（`M4-02` `8461999`）与 CM6 `MergeView` 冲突并排合并（`M4-03` `342060b`）。
-- **待执行**：从 `dev` 拉取 `feat/M4-04-export-and-settings-backup` 执行 `M4-04`，依序串行推进至 `M4-06` 后执行 M4 独立只读审查与 1.0 全量实机点验。
+  - M4 已完卡片：`M4-01a`（`e8c661e`）、`M4-01b`（`62e3d6c`）、`M4-02`（`8461999`）、`M4-03`（`342060b`）、`M4-04`（`f68542c`：富文本复制、打印级 PDF 导出弹窗、设置备份导入导出与内嵌终端参数表单）。
+- **待执行**：从 `dev` 拉取 `feat/M4-05-auxiliary-window-and-fullscreen` 执行 `M4-05`，完成后推进收官卡 `M4-06` 并执行 M4 独立只读审查与 1.0 全量实机点验。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -40,5 +40,5 @@
 
 ## 5. 下一步动作
 
-1. 新开独立施工会话，从 `dev` 拉取 `feat/M4-04-export-and-settings-backup` 执行 `spec/cards/M4-04-rich-text-pdf-export-and-settings-backup-ui.md`。
-2. 严格串行推进 `M4-04 → M4-05 → M4-06`，全部合入 `dev` 后启动 M4 独立只读审查与 1.0 全量人工点验。
+1. 新开独立施工会话，从 `dev` 拉取 `feat/M4-05-auxiliary-window-and-fullscreen` 执行 `spec/cards/M4-05-auxiliary-window-mode-and-fullscreen-workbench.md`。
+2. 严格串行推进 `M4-05 → M4-06`，全部合入 `dev` 后启动 M4 独立只读审查与 1.0 全量人工点验。
