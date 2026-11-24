@@ -1,5 +1,6 @@
 pub mod app;
 pub mod capture;
+pub mod external;
 pub mod index;
 pub mod library;
 pub mod notes;

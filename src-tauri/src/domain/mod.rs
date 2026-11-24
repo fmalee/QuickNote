@@ -3,6 +3,7 @@ pub mod backup;
 pub mod capture;
 pub mod command_book;
 pub mod error;
+pub mod external;
 pub mod frontmatter;
 pub mod hotkey;
 pub mod markdown;

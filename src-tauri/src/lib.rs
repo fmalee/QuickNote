@@ -9,8 +9,10 @@ use crate::application::hotkey::HotkeyManager;
 use crate::application::persistence::PersistenceManager;
 use crate::application::window::WindowManager;
 use crate::domain::window::HideReason;
+use crate::infra::external_open::{ExternalLauncher, MacosExternalLauncher};
 use crate::infra::macos::{NativeWindowBridge, NoopNativeBridge};
 use crate::infra::settings_watch::SettingsWatcher;
+use crate::infra::spotlight::SpotlightRunner;
 use crate::infra::vault_watch::VaultWatcher;
 
 pub mod application;
@@ -104,7 +106,7 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         )
         .item(&MenuItemBuilder::with_id("menu_quick_bar", "快速捕捉").build(app)?)
         .item(
-            &MenuItemBuilder::with_id("menu_quick_open", "快速打开…")
+            &MenuItemBuilder::with_id("window.quickOpen", "快速打开…")
                 .accelerator("CmdOrCtrl+K")
                 .build(app)?,
         )
@@ -210,6 +212,16 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         .item(
             &MenuItemBuilder::with_id("panel.toggle.outline", "大纲面板")
                 .accelerator("Ctrl+CmdOrCtrl+O")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("panel.toggle.related", "关联笔记面板")
+                .accelerator("Ctrl+CmdOrCtrl+R")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("panel.toggle.recent", "最近文档面板")
+                .accelerator("Ctrl+CmdOrCtrl+E")
                 .build(app)?,
         )
         .item(
@@ -322,6 +334,9 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
                 app_handle.exit(0);
             }
             "window.newNote"
+            | "window.quickOpen"
+            | "menu_command_book"
+            | "menu_tools_commands"
             | "editor.bold"
             | "editor.italic"
             | "editor.codeBlock"
@@ -338,6 +353,8 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
             | "editor.heading5"
             | "editor.heading6"
             | "panel.toggle.outline"
+            | "panel.toggle.related"
+            | "panel.toggle.recent"
             | "panel.collapseGroup" => {
                 let main_focused = app_handle
                     .get_webview_window("main")
@@ -439,6 +456,12 @@ pub fn run() -> Result<(), tauri::Error> {
 
             let cm = Arc::new(CaptureManager::new());
             app.manage(Arc::clone(&cm));
+
+            let spotlight_runner = Arc::new(SpotlightRunner::new());
+            app.manage(spotlight_runner);
+
+            let external_launcher: Arc<dyn ExternalLauncher> = Arc::new(MacosExternalLauncher);
+            app.manage(external_launcher);
 
             create_aux_windows(app.handle())?;
             wm.configure_native_panels(app.handle())
@@ -560,6 +583,10 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::notes::tags_batch_rename,
             commands::search::search_notes_and_files,
             commands::search::commands_search,
+            commands::search::search_spotlight,
+            commands::search::path_complete,
+            commands::external::external_actions_resolve,
+            commands::external::external_action_run,
             commands::capture::capture_resolve_target,
             commands::capture::note_append,
             commands::capture::note_undo_last_append,

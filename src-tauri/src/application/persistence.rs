@@ -170,6 +170,10 @@ impl PersistenceManager {
         self.app_data_dir.join("quickbar-draft.json")
     }
 
+    pub fn pinned_files_path(&self) -> PathBuf {
+        self.app_data_dir.join("pinned-files.json")
+    }
+
     pub fn recovery_dir(&self) -> PathBuf {
         self.app_data_dir.join("recovery")
     }
@@ -557,6 +561,62 @@ impl PersistenceManager {
             .lock()
             .map_err(|_| AppError::new(ErrorCode::InternalError, "SQLite lock poisoned"))?;
         f(&conn)
+    }
+
+    /// Reads deduplicated pinned external file paths from `<app_data_dir>/pinned-files.json`.
+    pub fn list_pinned_files(&self) -> Result<Vec<String>, AppError> {
+        let path = self.pinned_files_path();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let raw = fs::read_to_string(&path)
+            .map_err(|e| map_io_error(e, "Failed to read pinned-files.json"))?;
+        let parsed: Vec<String> = serde_json::from_str(&raw).map_err(|err| {
+            AppError::with_detail(
+                ErrorCode::InternalError,
+                "Failed to parse pinned-files.json",
+                err.to_string(),
+            )
+        })?;
+        let mut seen = std::collections::HashSet::new();
+        let mut deduped = Vec::new();
+        for item in parsed {
+            let trimmed = item.trim();
+            if !trimmed.is_empty() && seen.insert(trimmed.to_string()) {
+                deduped.push(trimmed.to_string());
+            }
+        }
+        Ok(deduped)
+    }
+
+    /// Toggles an external file in `<app_data_dir>/pinned-files.json` and returns the new pinned state.
+    pub fn toggle_pinned_file(&self, abs_path: &str) -> Result<bool, AppError> {
+        let trimmed = abs_path.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::new(
+                ErrorCode::ValidationError,
+                "abs_path cannot be empty",
+            ));
+        }
+
+        let mut items = self.list_pinned_files()?;
+        let pinned = if let Some(pos) = items.iter().position(|p| p == trimmed) {
+            items.remove(pos);
+            false
+        } else {
+            items.push(trimmed.to_string());
+            true
+        };
+
+        let json = serde_json::to_string_pretty(&items).map_err(|err| {
+            AppError::with_detail(
+                ErrorCode::InternalError,
+                "Failed to serialize pinned-files.json",
+                err.to_string(),
+            )
+        })?;
+        atomic_write_str(&self.pinned_files_path(), &json)?;
+        Ok(pinned)
     }
 
     /// Builds `AppInfo` reflecting the current `library_root` (`C3.4`, `M0-02`).

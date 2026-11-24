@@ -340,6 +340,33 @@ pub struct SearchResponse {
     pub truncated: bool,
 }
 
+/// Arguments for `search_spotlight` (`C4.2`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotlightArgs {
+    pub query: String,
+    #[specta(type = specta_typescript::Number)]
+    pub request_id: u64,
+}
+
+/// Arguments for `path_complete` (`C4.2`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PathCompleteArgs {
+    pub prefix: String,
+    #[specta(type = specta_typescript::Number)]
+    pub request_id: u64,
+}
+
+/// One filesystem completion row returned by `path_complete` (`C3.4`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PathEntry {
+    pub name: String,
+    pub abs_path: String,
+    pub is_dir: bool,
+}
+
 /// A note document parsed into `meta + body` (`D-0006`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedNote {

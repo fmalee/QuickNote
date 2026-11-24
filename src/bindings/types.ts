@@ -127,6 +127,17 @@ export type EditorsSettingsPatch = {
 /**  Unified application error code for all Tauri IPC responses (`C3.3`). */
 export type ErrorCode = "validationError" | "libraryNotConfigured" | "notFound" | "permissionDenied" | "conflict" | "undoUnavailable" | "invalidFrontmatter" | "settingsParseError" | "externalAppMissing" | "workspaceDirMissing" | "terminalLimitReached" | "terminalSpawnFailed" | "internalError";
 
+/**  Fixed action identifiers for external OS operations (`C3.4`). */
+export type ExternalActionId = "external.reveal" | "external.terminal" | "external.vscode" | "external.sublime" | "external.workspace" | "external.default" | "external.copyPath" | "external.pin";
+
+/**  Resolved availability and target path for one external action (`C3.4`). */
+export type ExternalActionState = {
+	id: ExternalActionId,
+	enabled: boolean,
+	disabledReason: string | null,
+	resolvedPath: string | null,
+};
+
 /**  External macOS app descriptor (`C6.2`). */
 export type ExternalAppConfig = {
 	name: string,
@@ -388,6 +399,19 @@ export type PanelsSettingsPatch = {
 	terminal?: TerminalPanelSettingsPatch | null,
 };
 
+/**  Arguments for `path_complete` (`C4.2`). */
+export type PathCompleteArgs = {
+	prefix: string,
+	requestId: number,
+};
+
+/**  One filesystem completion row returned by `path_complete` (`C3.4`). */
+export type PathEntry = {
+	name: string,
+	absPath: string,
+	isDir: boolean,
+};
+
 /**  Arguments for `window_show_quick_bar` (`C4.2`). */
 export type QuickBarArgs = {
 	mode: QuickBarMode | null,
@@ -458,6 +482,13 @@ export type RenameNoteArgs = {
 	newRelPath: string,
 };
 
+/**  Request payload for `external_actions_resolve` (`C4.2`). */
+export type ResolveExternalArgs = {
+	absPath: string | null,
+	workspaceKey: string | null,
+	commandId: string | null,
+};
+
 /**  Resolved Quick Bar capture target and display metadata (`C8.1`). */
 export type ResolvedTarget = {
 	scenario: string,
@@ -470,6 +501,13 @@ export type ResolvedTarget = {
 	isCrossWorkspaceFallback: boolean,
 	recommendedMode: CaptureMode,
 	chipLabel: string,
+};
+
+/**  Request payload for `external_action_run` (`C4.2`). */
+export type RunExternalArgs = {
+	id: ExternalActionId,
+	absPath: string | null,
+	dirPath: string | null,
 };
 
 /**  Arguments for `note_save_image` (`C4.2`, `v4` §5.6.3). */
@@ -571,6 +609,12 @@ export type SettingsPatch = {
 export type SettingsSnapshot = {
 	settings: Settings,
 	status: SettingsLoadStatus,
+};
+
+/**  Arguments for `search_spotlight` (`C4.2`). */
+export type SpotlightArgs = {
+	query: string,
+	requestId: number,
 };
 
 /**  Single open editor tab state (`C6.3`). */

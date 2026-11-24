@@ -17,8 +17,12 @@ vi.mock('@tauri-apps/api/event', () => ({
 import {
   appGetInfo,
   commandsSearch,
+  externalActionRun,
+  externalActionsResolve,
   isAppError,
   notesGetRelated,
+  pathComplete,
+  searchSpotlight,
   tagsBatchRename,
 } from '@/lib/ipc/commands';
 import { listenEvent } from '@/lib/ipc/events';
@@ -105,5 +109,31 @@ describe('IPC smoke wrapper', () => {
       args: { oldTag: 'dev', newTag: 'work' },
     });
     expect(res).toEqual({ updatedFiles: 2 });
+  });
+
+  it('invokes M3-01b searchSpotlight, pathComplete, externalActionsResolve, and externalActionRun', async () => {
+    mockInvoke.mockResolvedValueOnce({ requestId: 1, items: [], truncated: false });
+    await searchSpotlight({ query: 'foo', requestId: 1 });
+    expect(mockInvoke).toHaveBeenCalledWith('search_spotlight', {
+      args: { query: 'foo', requestId: 1 },
+    });
+
+    mockInvoke.mockResolvedValueOnce([]);
+    await pathComplete({ prefix: '/tmp/', requestId: 2 });
+    expect(mockInvoke).toHaveBeenCalledWith('path_complete', {
+      args: { prefix: '/tmp/', requestId: 2 },
+    });
+
+    mockInvoke.mockResolvedValueOnce([]);
+    await externalActionsResolve({ absPath: '/tmp/a.txt', workspaceKey: null, commandId: null });
+    expect(mockInvoke).toHaveBeenCalledWith('external_actions_resolve', {
+      args: { absPath: '/tmp/a.txt', workspaceKey: null, commandId: null },
+    });
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await externalActionRun({ id: 'external.reveal', absPath: '/tmp/a.txt', dirPath: null });
+    expect(mockInvoke).toHaveBeenCalledWith('external_action_run', {
+      args: { id: 'external.reveal', absPath: '/tmp/a.txt', dirPath: null },
+    });
   });
 });

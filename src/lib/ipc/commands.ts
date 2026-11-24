@@ -8,6 +8,7 @@ import type {
   CommandSearchArgs,
   CreateNoteArgs,
   ErrorCode,
+  ExternalActionState,
   HideQuickBarArgs,
   HotkeyStatus,
   HotkeyUpdateArgs,
@@ -21,12 +22,16 @@ import type {
   NoteUpdateMetaArgs,
   NotesFilterArgs,
   OpenExternalUrlArgs,
+  PathCompleteArgs,
+  PathEntry,
   QuickBarArgs,
   ReadNoteArgs,
   RelPathArgs,
   RelatedNoteItem,
   RenameNoteArgs,
+  ResolveExternalArgs,
   ResolvedTarget,
+  RunExternalArgs,
   SaveImageArgs,
   SavedImageResult,
   SearchQueryArgs,
@@ -35,6 +40,7 @@ import type {
   SetRootArgs,
   SettingsPatch,
   SettingsSnapshot,
+  SpotlightArgs,
   TagRenameArgs,
   TagRenameResult,
   TargetResolveInput,
@@ -219,4 +225,20 @@ export function notesGetRelated(args: RelPathArgs): Promise<RelatedNoteItem[]> {
 
 export function tagsBatchRename(args: TagRenameArgs): Promise<TagRenameResult> {
   return invoke<TagRenameResult>('tags_batch_rename', { args });
+}
+
+export function searchSpotlight(args: SpotlightArgs): Promise<SearchResponse> {
+  return invoke<SearchResponse>('search_spotlight', { args });
+}
+
+export function pathComplete(args: PathCompleteArgs): Promise<PathEntry[]> {
+  return invoke<PathEntry[]>('path_complete', { args });
+}
+
+export function externalActionsResolve(args: ResolveExternalArgs): Promise<ExternalActionState[]> {
+  return invoke<ExternalActionState[]>('external_actions_resolve', { args });
+}
+
+export function externalActionRun(args: RunExternalArgs): Promise<void> {
+  return invoke<void>('external_action_run', { args });
 }

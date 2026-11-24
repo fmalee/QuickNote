@@ -1,4 +1,5 @@
 pub mod capture;
+pub mod external;
 pub mod hotkey;
 pub mod index;
 pub mod library;
