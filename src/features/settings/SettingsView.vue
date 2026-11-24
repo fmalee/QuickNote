@@ -4,8 +4,10 @@ import { QnBadge, QnBanner, QnButton, QnPanelCard } from '@/components';
 import { formatHotkeyCombo } from '@/lib/utils';
 import SettingsAppearancePanel from './SettingsAppearancePanel.vue';
 import SettingsErrorBanner from './SettingsErrorBanner.vue';
+import SettingsExternalPanel from './SettingsExternalPanel.vue';
 import SettingsLibraryPanel from './SettingsLibraryPanel.vue';
 import SettingsShortcutsPanel from './SettingsShortcutsPanel.vue';
+import SettingsWorkspacesPanel from './SettingsWorkspacesPanel.vue';
 import VisualBaselinePreview from './VisualBaselinePreview.vue';
 import { BACKUP_HOTKEY_COMBO, type SettingsSection, useSettingsStore } from './store';
 
@@ -15,6 +17,8 @@ const sections: { id: SettingsSection; label: string }[] = [
   { id: 'general', label: '通用与热键' },
   { id: 'appearance', label: '外观与编辑器' },
   { id: 'library', label: '库与收件箱' },
+  { id: 'workspaces', label: '工作区' },
+  { id: 'external', label: '外部与搜索' },
   { id: 'shortcuts', label: '快捷键' },
   { id: 'baseline', label: '视觉基线预览' },
 ];
@@ -196,6 +200,14 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
 
       <section v-else-if="store.activeSection === 'library'" class="qn-settings__section">
         <SettingsLibraryPanel />
+      </section>
+
+      <section v-else-if="store.activeSection === 'workspaces'" class="qn-settings__section">
+        <SettingsWorkspacesPanel />
+      </section>
+
+      <section v-else-if="store.activeSection === 'external'" class="qn-settings__section">
+        <SettingsExternalPanel />
       </section>
 
       <section v-else-if="store.activeSection === 'shortcuts'" class="qn-settings__section">

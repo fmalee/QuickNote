@@ -6,6 +6,7 @@ export type ContextMenuEntry =
       title: string;
       shortcutLabel?: string;
       disabled?: boolean;
+      disabledReason?: string | null;
       danger?: boolean;
     }
   | {
@@ -143,9 +144,15 @@ function handleItemClick(entry: Extract<ContextMenuEntry, { type: 'item' }>): vo
           }"
           role="menuitem"
           :disabled="entry.disabled"
+          :title="entry.disabled && entry.disabledReason ? entry.disabledReason : undefined"
           @click="handleItemClick(entry)"
         >
-          <span class="qn-context-menu__label">{{ entry.title }}</span>
+          <span class="qn-context-menu__main">
+            <span class="qn-context-menu__label">{{ entry.title }}</span>
+            <span v-if="entry.disabled && entry.disabledReason" class="qn-context-menu__reason">
+              {{ entry.disabledReason }}
+            </span>
+          </span>
           <span v-if="entry.shortcutLabel" class="qn-context-menu__shortcut">
             {{ entry.shortcutLabel }}
           </span>
@@ -213,9 +220,23 @@ function handleItemClick(entry: Extract<ContextMenuEntry, { type: 'item' }>): vo
   cursor: not-allowed;
 }
 
-.qn-context-menu__label {
+.qn-context-menu__main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.qn-context-menu__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qn-context-menu__reason {
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

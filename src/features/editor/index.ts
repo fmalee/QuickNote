@@ -6,6 +6,15 @@ export { default as InboxBloatBanner } from './InboxBloatBanner.vue';
 export { default as InboxExtractModal } from './InboxExtractModal.vue';
 export { default as MarkdownEditor } from './MarkdownEditor.vue';
 export {
+  buildExternalContextMenuItems,
+  buildExternalRunArgs,
+  EXTERNAL_ACTION_SPECS,
+  type ExternalActionFeedback,
+  type ExternalActionSpec,
+  isExternalActionId,
+  useExternalActions,
+} from './useExternalActions';
+export {
   DEFAULT_AUTO_SAVE_DEBOUNCE_MS,
   DEFAULT_AUTO_SAVE_MAX_WAIT_MS,
   DEFAULT_INBOX_BLOAT_THRESHOLD_LINES,

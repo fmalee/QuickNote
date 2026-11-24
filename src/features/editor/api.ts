@@ -1,4 +1,5 @@
 import type {
+  ExternalActionState,
   ExternalChangeEvent,
   InboxExtractArgs,
   NoteDoc,
@@ -6,6 +7,8 @@ import type {
   NoteUpdateMetaArgs,
   OpenExternalUrlArgs,
   ReadNoteArgs,
+  ResolveExternalArgs,
+  RunExternalArgs,
   SaveImageArgs,
   SavedImageResult,
   UiState,
@@ -15,6 +18,8 @@ import type {
 } from '@/bindings/types';
 import {
   appOpenExternalUrl,
+  externalActionRun,
+  externalActionsResolve,
   inboxExtractToNote,
   isAppError,
   noteRead,
@@ -54,6 +59,14 @@ export function saveNoteImage(args: SaveImageArgs): Promise<SavedImageResult> {
 
 export function openExternalUrl(args: OpenExternalUrlArgs): Promise<void> {
   return appOpenExternalUrl(args);
+}
+
+export function resolveExternalActions(args: ResolveExternalArgs): Promise<ExternalActionState[]> {
+  return externalActionsResolve(args);
+}
+
+export function runExternalAction(args: RunExternalArgs): Promise<void> {
+  return externalActionRun(args);
 }
 
 export function listTemplates(): Promise<NoteSummary[]> {

@@ -1,9 +1,79 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue';
-import { QnBadge } from '@/components';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import type { ExternalActionState } from '@/bindings/types';
+import { QnBadge, QnContextMenu, type ContextMenuEntry } from '@/components';
 import { type EditorTab, useEditorTabsStore } from './store';
+import {
+  buildExternalContextMenuItems,
+  isExternalActionId,
+  useExternalActions,
+} from './useExternalActions';
 
 const tabsStore = useEditorTabsStore();
+const externalActions = useExternalActions();
+
+const contextMenuOpen = ref(false);
+const contextMenuPos = ref({ x: 0, y: 0 });
+const contextTab = ref<EditorTab | null>(null);
+const contextTabStates = ref<ExternalActionState[]>([]);
+let tabMenuSeq = 0;
+
+const contextMenuItems = computed<ContextMenuEntry[]>(() => [
+  ...buildExternalContextMenuItems(contextTabStates.value),
+  { type: 'separator', id: 'tab-sep' },
+  { type: 'item', id: 'tab.close', title: '关闭标签' },
+  {
+    type: 'item',
+    id: 'tab.closeOthers',
+    title: '关闭其他标签',
+    disabled: tabsStore.tabs.length <= 1,
+  },
+]);
+
+async function openTabContextMenu(event: MouseEvent, tab: EditorTab): Promise<void> {
+  const reqSeq = ++tabMenuSeq;
+  contextTab.value = tab;
+  contextMenuPos.value = { x: event.clientX, y: event.clientY };
+
+  if (
+    tab.absPath &&
+    tab.absPath === externalActions.resolvedAbsPath &&
+    externalActions.states.length > 0
+  ) {
+    contextTabStates.value = externalActions.states;
+    contextMenuOpen.value = true;
+    return;
+  }
+
+  contextTabStates.value = [];
+  contextMenuOpen.value = true;
+  const resolved = await externalActions.resolveForTarget({
+    absPath: tab.absPath || null,
+    workspaceKey: tab.doc?.meta.project ?? null,
+  });
+  if (reqSeq === tabMenuSeq) {
+    contextTabStates.value = resolved;
+  }
+}
+
+async function handleContextMenuSelect(id: string): Promise<void> {
+  const tab = contextTab.value;
+  if (!tab) {
+    return;
+  }
+  if (isExternalActionId(id)) {
+    await externalActions.executeAction(id, {
+      overrideStates: contextTabStates.value,
+      pinned: tab.doc?.meta.pinned,
+    });
+    return;
+  }
+  if (id === 'tab.close') {
+    tabsStore.closeTab(tab.key);
+  } else if (id === 'tab.closeOthers') {
+    tabsStore.closeOtherTabs(tab.key);
+  }
+}
 
 function getTabTitle(tab: EditorTab): string {
   if (tab.doc?.meta.title) {
@@ -68,6 +138,7 @@ onUnmounted(() => {
         @click="tabsStore.activateTab(tab.key)"
         @dblclick="tabsStore.promoteTabToPinned(tab.key)"
         @mousedown.middle.prevent="tabsStore.closeTab(tab.key)"
+        @contextmenu.prevent="openTabContextMenu($event, tab)"
       >
         <span class="qn-tabbar__title">{{ getTabTitle(tab) }}</span>
         <QnBadge v-if="tab.isMissing" tone="danger">失联</QnBadge>
@@ -96,6 +167,15 @@ onUnmounted(() => {
         关闭其他
       </button>
     </div>
+
+    <QnContextMenu
+      :open="contextMenuOpen"
+      :x="contextMenuPos.x"
+      :y="contextMenuPos.y"
+      :items="contextMenuItems"
+      @select="handleContextMenuSelect"
+      @close="contextMenuOpen = false"
+    />
   </div>
 </template>
 

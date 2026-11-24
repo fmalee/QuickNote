@@ -5,10 +5,12 @@ import {
   DocHeaderBar,
   EditorConflictBanner,
   EditorTabBar,
+  EXTERNAL_ACTION_SPECS,
   InboxBloatBanner,
   InboxExtractModal,
   MarkdownEditor,
   useEditorTabsStore,
+  useExternalActions,
 } from '@/features/editor';
 import { NewNoteTemplateModal, NotesSidebar, useNotesStore } from '@/features/notes';
 import { OnboardingView, useOnboardingStore } from '@/features/onboarding';
@@ -28,6 +30,7 @@ const onboardingStore = useOnboardingStore();
 const settingsStore = useSettingsStore();
 const notesStore = useNotesStore();
 const editorTabsStore = useEditorTabsStore();
+const externalActions = useExternalActions();
 const panelsStore = usePanelsStore();
 
 const baselinePreviewOpen = ref(false);
@@ -102,8 +105,39 @@ function bindMainWindowActions(): void {
     actionRegistry.bindHandler('panel.collapseGroup', () => {
       panelsStore.toggleCollapseAll();
     }),
+    ...EXTERNAL_ACTION_SPECS.map((spec) =>
+      actionRegistry.bindHandler(
+        spec.id,
+        async () => {
+          await externalActions.executeAction(spec.id, {
+            pinned: editorTabsStore.activeDoc?.meta.pinned,
+          });
+        },
+        {
+          when: (ctx) => Boolean(ctx.hasActiveDoc && externalActions.isActionEnabled(spec.id)),
+        },
+      ),
+    ),
   );
 }
+
+watch(
+  () => {
+    const doc = editorTabsStore.activeDoc;
+    return [
+      doc?.absPath ?? null,
+      doc?.meta.project ?? null,
+      doc?.meta.openDir ?? null,
+      doc?.meta.terminalDir ?? null,
+      doc?.meta.codeWorkspace ?? null,
+      settingsStore.lastSavedAt ?? null,
+    ] as const;
+  },
+  () => {
+    void externalActions.refreshForDoc(editorTabsStore.activeDoc);
+  },
+  { immediate: true },
+);
 
 function handleWindowKeyDown(event: KeyboardEvent): void {
   if (event.isComposing || event.keyCode === 229) {
@@ -353,6 +387,16 @@ onUnmounted(() => {
             Ln {{ editorTabsStore.activeTab.cursorLine }}, Col
             {{ editorTabsStore.activeTab.cursorCol }}
           </span>
+          <span
+            v-if="externalActions.feedback"
+            :class="[
+              'qn-main-shell__status-feedback',
+              `qn-main-shell__status-feedback--${externalActions.feedback.tone}`,
+            ]"
+            data-testid="external-action-feedback"
+          >
+            {{ externalActions.feedback.message }}
+          </span>
         </div>
         <span>热键：{{ settingsStore.hotkeyStatus?.combo ?? 'ctrl+alt+space' }}</span>
       </footer>
@@ -546,6 +590,18 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--qn-space-3);
+}
+
+.qn-main-shell__status-feedback--success {
+  color: var(--qn-success);
+}
+
+.qn-main-shell__status-feedback--warning {
+  color: var(--qn-warning);
+}
+
+.qn-main-shell__status-feedback--danger {
+  color: var(--qn-danger);
 }
 
 .qn-main-shell__baseline-scroll {

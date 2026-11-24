@@ -24,7 +24,8 @@ import {
   updateGlobalHotkey,
 } from './api';
 
-export type SettingsSection = 'general' | 'appearance' | 'library' | 'shortcuts' | 'baseline';
+export type SettingsSection =
+  'general' | 'appearance' | 'library' | 'workspaces' | 'external' | 'shortcuts' | 'baseline';
 
 export const PRIMARY_HOTKEY_COMBO = 'ctrl+alt+space';
 export const BACKUP_HOTKEY_COMBO = 'ctrl+alt+cmd+space';

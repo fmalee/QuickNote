@@ -1,4 +1,5 @@
 import {
+  externalActionRun,
   hotkeyUpdate,
   isAppError,
   librarySetRoot,
@@ -60,6 +61,22 @@ export function createTemplateNote(title: string): Promise<NoteDoc> {
 
 export function updateGlobalHotkey(args: HotkeyUpdateArgs): Promise<HotkeyStatus> {
   return hotkeyUpdate(args);
+}
+
+export function openSettingsYamlForRepair(): Promise<void> {
+  return externalActionRun({
+    id: 'external.default',
+    absPath: '$SETTINGS_YAML',
+    dirPath: null,
+  });
+}
+
+export function revealSettingsYamlInFinder(): Promise<void> {
+  return externalActionRun({
+    id: 'external.reveal',
+    absPath: '$SETTINGS_YAML',
+    dirPath: null,
+  });
 }
 
 export function subscribeSettingsStatus(

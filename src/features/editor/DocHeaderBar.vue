@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { NoteMetaPatch, NoteType } from '@/bindings/types';
-import { QnBadge, QnButton, QnModalShell } from '@/components';
+import { QnBadge, QnButton, QnContextMenu, QnModalShell } from '@/components';
 import DocPropertiesPopover from './DocPropertiesPopover.vue';
 import { needsExternalFrontmatterConfirm, useEditorTabsStore } from './store';
+import { isExternalActionId, useExternalActions } from './useExternalActions';
 
 const editorTabsStore = useEditorTabsStore();
+const externalActions = useExternalActions();
 
 const titleDraft = ref('');
 const tagInputDraft = ref('');
 const propertiesOpen = ref(false);
+const externalMenuOpen = ref(false);
+const externalMenuPos = ref({ x: 0, y: 0 });
 const externalConfirmOpen = ref(false);
 const pendingAction = ref<
   { kind: 'open-properties' } | { kind: 'patch'; patch: NoteMetaPatch } | null
@@ -39,6 +43,7 @@ watch(
   () => doc.value?.absPath,
   () => {
     propertiesOpen.value = false;
+    externalMenuOpen.value = false;
     externalConfirmOpen.value = false;
     pendingAction.value = null;
   },
@@ -155,6 +160,26 @@ function handlePropertiesClick(): void {
   propertiesOpen.value = true;
 }
 
+function handleExternalMenuClick(event: MouseEvent): void {
+  if (externalMenuOpen.value) {
+    externalMenuOpen.value = false;
+    return;
+  }
+  const target = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  const rect = target?.getBoundingClientRect();
+  externalMenuPos.value = rect
+    ? { x: rect.left, y: rect.bottom + 4 }
+    : { x: event.clientX, y: event.clientY };
+  externalMenuOpen.value = true;
+}
+
+async function handleExternalMenuSelect(id: string): Promise<void> {
+  if (!isExternalActionId(id)) {
+    return;
+  }
+  await externalActions.executeAction(id, { pinned: doc.value?.meta.pinned });
+}
+
 async function confirmExternalFrontmatter(): Promise<void> {
   const currentDoc = doc.value;
   const action = pendingAction.value;
@@ -216,6 +241,25 @@ function cancelExternalFrontmatter(): void {
         >
           移到新笔记…
         </QnButton>
+
+        <div class="qn-doc-header__prop-anchor">
+          <QnButton
+            variant="ghost"
+            size="sm"
+            data-testid="doc-header-external-btn"
+            @click="handleExternalMenuClick"
+          >
+            外部动作 ▾
+          </QnButton>
+          <QnContextMenu
+            :open="externalMenuOpen"
+            :x="externalMenuPos.x"
+            :y="externalMenuPos.y"
+            :items="externalActions.menuItems"
+            @select="handleExternalMenuSelect"
+            @close="externalMenuOpen = false"
+          />
+        </div>
 
         <div class="qn-doc-header__prop-anchor">
           <QnButton
