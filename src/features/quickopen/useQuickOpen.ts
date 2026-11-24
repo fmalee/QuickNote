@@ -249,19 +249,10 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
           lower ? entry.tag.toLowerCase().includes(lower) : true,
         );
 
-        const nextItems: QuickOpenResultItem[] = matchedTags.map((entry, idx) => ({
-          id: `tag:${entry.tag}`,
-          kind: 'tag',
-          title: `#${entry.tag}`,
-          subtitle: `${entry.count} 篇笔记`,
-          absPath: null,
-          relPath: null,
-          source: 'tag',
-          score: 1000 - idx,
-          tagName: entry.tag,
-        }));
-
-        const exactTag = allTags.find((entry) => entry.tag.toLowerCase() === lower);
+        const exactTag = lower
+          ? allTags.find((entry) => entry.tag.toLowerCase() === lower)
+          : undefined;
+        let noteItems: QuickOpenResultItem[] = [];
         if (exactTag) {
           const taggedNotes = await fetchQuickOpenNotesList({
             tab: 'tags',
@@ -273,21 +264,47 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
           if (reqId !== activeRequestId) {
             return;
           }
-          for (const note of taggedNotes) {
-            nextItems.push({
-              id: `tag-note:${note.key}`,
-              kind: 'note',
-              title: note.title || note.relPath || note.absPath,
-              subtitle: note.relPath ?? note.absPath,
-              absPath: note.absPath,
-              relPath: note.relPath,
-              source: 'library',
-              score: 500,
-            });
-          }
+          noteItems = taggedNotes.map((note, idx) => ({
+            id: `tag-note:${note.key}`,
+            kind: 'note' as const,
+            title: note.title || note.relPath || note.absPath,
+            subtitle: note.relPath ?? note.absPath,
+            absPath: note.absPath,
+            relPath: note.relPath,
+            source: 'library' as const,
+            score: 1000 - idx,
+          }));
         }
 
-        items.value = nextItems;
+        if (exactTag && noteItems.length > 0) {
+          const remainingTags = matchedTags.filter((entry) => entry.tag.toLowerCase() !== lower);
+          const tagItems: QuickOpenResultItem[] = remainingTags.map((entry, idx) => ({
+            id: `tag:${entry.tag}`,
+            kind: 'tag',
+            title: `#${entry.tag}`,
+            subtitle: `${entry.count} 篇笔记`,
+            absPath: null,
+            relPath: null,
+            source: 'tag',
+            score: 500 - idx,
+            tagName: entry.tag,
+          }));
+          items.value = [...noteItems, ...tagItems];
+        } else {
+          const tagItems: QuickOpenResultItem[] = matchedTags.map((entry, idx) => ({
+            id: `tag:${entry.tag}`,
+            kind: 'tag',
+            title: `#${entry.tag}`,
+            subtitle: `${entry.count} 篇笔记`,
+            absPath: null,
+            relPath: null,
+            source: 'tag',
+            score: 1000 - idx,
+            tagName: entry.tag,
+          }));
+          items.value = [...tagItems, ...noteItems];
+        }
+
         selectedIndex.value = 0;
         return;
       }

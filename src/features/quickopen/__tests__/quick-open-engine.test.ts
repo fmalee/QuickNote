@@ -284,7 +284,7 @@ describe('quick-open-engine (M3-03)', () => {
 
     expect(onExecuteAction).toHaveBeenCalledWith('window.save');
 
-    // Tag mode
+    // Tag mode: exact match with notes places real notes first and removes exact tag placeholder
     mockNotesList.mockResolvedValueOnce([
       {
         key: 'n1',
@@ -305,8 +305,10 @@ describe('quick-open-engine (M3-03)', () => {
     engine.setQuery('@work', true);
     await Promise.resolve();
     await Promise.resolve();
-    expect(engine.items.value.some((i) => i.kind === 'tag' && i.tagName === 'work')).toBe(true);
-    expect(engine.items.value.some((i) => i.kind === 'note' && i.title === '工作计划')).toBe(true);
+    expect(engine.items.value[0]).toEqual(
+      expect.objectContaining({ kind: 'note', title: '工作计划' }),
+    );
+    expect(engine.items.value.some((i) => i.kind === 'tag' && i.tagName === 'work')).toBe(false);
 
     // Fulltext mode
     engine.setQuery('#关键词', true);
@@ -366,6 +368,83 @@ describe('quick-open-engine (M3-03)', () => {
       absPath: '/tmp/demo.conf',
       dirPath: null,
     });
+
+    engine.dispose();
+  });
+
+  it('places real notes first and keeps sub-tags after notes on exact @tag match (M3-qa)', async () => {
+    const onOpenItem = vi.fn();
+    mockNotesGetTreeAndTags.mockResolvedValueOnce({
+      inboxCount: 0,
+      dirs: [],
+      tags: [
+        {
+          tag: '测试',
+          count: 2,
+          children: [{ tag: '测试/子标签', count: 1, children: [] }],
+        },
+      ],
+      workspaces: [],
+    } satisfies NavTreeSnapshot);
+    mockNotesList.mockResolvedValueOnce([
+      {
+        key: 'n-test-1',
+        relPath: 'notes/test-1.md',
+        absPath: '/vault/notes/test-1.md',
+        title: '第一篇测试笔记',
+        excerpt: '',
+        tags: ['测试'],
+        docType: 'note',
+        project: null,
+        pinned: false,
+        archived: false,
+        mtimeMs: 2,
+        metaError: null,
+        isInbox: false,
+      } satisfies NoteSummary,
+      {
+        key: 'n-test-2',
+        relPath: 'notes/test-2.md',
+        absPath: '/vault/notes/test-2.md',
+        title: '第二篇测试笔记',
+        excerpt: '',
+        tags: ['测试'],
+        docType: 'note',
+        project: null,
+        pinned: false,
+        archived: false,
+        mtimeMs: 1,
+        metaError: null,
+        isInbox: false,
+      } satisfies NoteSummary,
+    ]);
+
+    const engine = useQuickOpen({ onOpenItem });
+    engine.setQuery('@测试', true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(engine.items.value.map((item) => `${item.kind}:${item.title}`)).toEqual([
+      'note:第一篇测试笔记',
+      'note:第二篇测试笔记',
+      'tag:#测试/子标签',
+    ]);
+    expect(engine.selectedIndex.value).toBe(0);
+    expect(engine.selectedItem.value?.kind).toBe('note');
+    expect(engine.selectedItem.value?.absPath).toBe('/vault/notes/test-1.md');
+
+    engine.handleKeydown({
+      key: 'Enter',
+      isComposing: false,
+      keyCode: 13,
+      altKey: false,
+      metaKey: false,
+      preventDefault: vi.fn(),
+    } as unknown as KeyboardEvent);
+    expect(onOpenItem).toHaveBeenCalledWith(
+      expect.objectContaining({ absPath: '/vault/notes/test-1.md' }),
+      'open',
+    );
 
     engine.dispose();
   });

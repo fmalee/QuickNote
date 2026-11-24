@@ -1085,13 +1085,16 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
 
   async function handleMainWindowShown(): Promise<void> {
     try {
+      const hasQuickBarAppend = lastQuickBarAppendedRelPath !== null;
+      if (!hasQuickBarAppend && tabs.value.length > 0) {
+        return;
+      }
       const uiState = await fetchUiState();
       const targetRelPath = lastQuickBarAppendedRelPath ?? uiState.lastActiveDoc?.relPath ?? null;
       if (!targetRelPath) {
         return;
       }
-      const shouldSync =
-        lastQuickBarAppendedRelPath !== null || activeTab.value?.relPath !== targetRelPath;
+      const shouldSync = hasQuickBarAppend || activeTab.value?.relPath !== targetRelPath;
       if (shouldSync) {
         await syncAppendedNote(targetRelPath, {
           openIfMissing: true,

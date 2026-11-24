@@ -52,6 +52,9 @@ let unlistenMainWindowState: UnlistenFn | null = null;
 let unlistenMenuAction: UnlistenFn | null = null;
 let crossWindowListenersBound = false;
 let viewportResizeObserver: ResizeObserver | null = null;
+let pendingOpenInFlight: Promise<unknown> | null = null;
+let lastPendingOpenAtMs = 0;
+const CROSS_WINDOW_OPEN_GRACE_MS = 2000;
 const actionDisposers: Array<() => void> = [];
 
 function resolveActiveScopes(): ActionScope[] {
@@ -160,15 +163,24 @@ function openMainCommandBook(): void {
   commandBookFocusTick.value += 1;
 }
 
-function consumeAndOpenPendingFile(): void {
+function consumeAndOpenPendingFile(): boolean {
   const pending = consumePendingOpenFile();
   if (!pending) {
-    return;
+    return false;
   }
-  void editorTabsStore.openNoteByAbsPath(pending.absPath, {
-    preview: !pending.newTab,
-    line: pending.line ?? null,
-  });
+  lastPendingOpenAtMs = Date.now();
+  const openPromise = editorTabsStore
+    .openNoteByAbsPath(pending.absPath, {
+      preview: !pending.newTab,
+      line: pending.line ?? null,
+    })
+    .finally(() => {
+      if (pendingOpenInFlight === openPromise) {
+        pendingOpenInFlight = null;
+      }
+    });
+  pendingOpenInFlight = openPromise;
+  return true;
 }
 
 function bindMainWindowActions(): void {
@@ -310,8 +322,19 @@ async function ensureCrossWindowListeners(): Promise<void> {
     unlistenMainWindowState = await onWindowState((winState) => {
       if (winState.windowId === 'main' && winState.visible) {
         void notesStore.refreshAll();
-        void panelsStore.initialize().then(() => editorTabsStore.handleMainWindowShown());
-        consumeAndOpenPendingFile();
+        const openedNow = consumeAndOpenPendingFile();
+        const hasActiveOrRecentPendingOpen =
+          openedNow ||
+          pendingOpenInFlight !== null ||
+          Date.now() - lastPendingOpenAtMs < CROSS_WINDOW_OPEN_GRACE_MS;
+        if (hasActiveOrRecentPendingOpen) {
+          lastPendingOpenAtMs = 0;
+        }
+        void panelsStore.initialize().then(() => {
+          if (!hasActiveOrRecentPendingOpen) {
+            void editorTabsStore.handleMainWindowShown();
+          }
+        });
       }
     });
     unlistenMenuAction = await onMenuAction((actionId) => {
@@ -461,6 +484,8 @@ onUnmounted(() => {
     unlistenMenuAction = null;
   }
   crossWindowListenersBound = false;
+  pendingOpenInFlight = null;
+  lastPendingOpenAtMs = 0;
   mainQuickOpenEngine.dispose();
   mainCommandPaletteEngine.dispose();
   notesStore.dispose();

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { ExternalActionState } from '@/bindings/types';
 import { QnBadge, QnContextMenu, type ContextMenuEntry } from '@/components';
 import { type EditorTab, useEditorTabsStore } from './store';
@@ -12,11 +12,73 @@ import {
 const tabsStore = useEditorTabsStore();
 const externalActions = useExternalActions();
 
+const SCROLL_INDICATOR_HIDE_MS = 600;
+
+const tabListRef = ref<HTMLElement | null>(null);
+const isScrolling = ref(false);
 const contextMenuOpen = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
 const contextTab = ref<EditorTab | null>(null);
 const contextTabStates = ref<ExternalActionState[]>([]);
 let tabMenuSeq = 0;
+let scrollHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+function markScrolling(): void {
+  isScrolling.value = true;
+  if (scrollHideTimer !== null) {
+    clearTimeout(scrollHideTimer);
+  }
+  scrollHideTimer = setTimeout(() => {
+    scrollHideTimer = null;
+    isScrolling.value = false;
+  }, SCROLL_INDICATOR_HIDE_MS);
+}
+
+function handleTabListScroll(): void {
+  markScrolling();
+}
+
+function handleTabListWheel(event: WheelEvent): void {
+  const el = tabListRef.value;
+  if (!el) {
+    return;
+  }
+  const maxScrollLeft = el.scrollWidth - el.clientWidth;
+  if (maxScrollLeft <= 0) {
+    return;
+  }
+  const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+  if (delta === 0) {
+    return;
+  }
+  if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+    event.preventDefault();
+    el.scrollLeft = Math.max(0, Math.min(maxScrollLeft, el.scrollLeft + event.deltaY));
+  }
+  markScrolling();
+}
+
+watch(
+  () => tabsStore.activeKey,
+  async (activeKey) => {
+    if (!activeKey) {
+      return;
+    }
+    await nextTick();
+    const listEl = tabListRef.value;
+    if (!listEl || typeof listEl.querySelector !== 'function') {
+      return;
+    }
+    const activeEl = listEl.querySelector('.qn-tabbar__item--active');
+    if (activeEl && typeof (activeEl as HTMLElement).scrollIntoView === 'function') {
+      (activeEl as HTMLElement).scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest',
+      });
+    }
+  },
+);
 
 const contextMenuItems = computed<ContextMenuEntry[]>(() => [
   ...buildExternalContextMenuItems(contextTabStates.value),
@@ -134,6 +196,10 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (scrollHideTimer !== null) {
+    clearTimeout(scrollHideTimer);
+    scrollHideTimer = null;
+  }
   if (typeof window !== 'undefined') {
     window.removeEventListener('keydown', handleKeydown);
   }
@@ -142,7 +208,13 @@ onUnmounted(() => {
 
 <template>
   <div class="qn-tabbar" role="tablist" aria-label="已打开的笔记标签" data-testid="editor-tabbar">
-    <div class="qn-tabbar__list">
+    <div
+      ref="tabListRef"
+      :class="['qn-tabbar__list', { 'qn-tabbar__list--scrolling': isScrolling }]"
+      data-testid="editor-tabbar-list"
+      @scroll="handleTabListScroll"
+      @wheel="handleTabListWheel"
+    >
       <div
         v-for="tab in tabsStore.tabs"
         :key="tab.key"
@@ -239,7 +311,29 @@ onUnmounted(() => {
   gap: var(--qn-space-1);
   flex: 1;
   min-width: 0;
+  padding: 4px 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.qn-tabbar__list::-webkit-scrollbar {
+  height: 2px;
+}
+
+.qn-tabbar__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.qn-tabbar__list::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: var(--qn-radius-full);
+  transition: background-color 0.15s ease;
+}
+
+.qn-tabbar__list--scrolling::-webkit-scrollbar-thumb,
+.qn-tabbar__list:hover::-webkit-scrollbar-thumb {
+  background-color: var(--qn-border-strong);
 }
 
 .qn-tabbar__item {
