@@ -637,4 +637,11 @@ onUnmounted(() => {
 .qn-terminal-panel__xterm-host :deep(.xterm-viewport::-webkit-scrollbar) {
   display: none;
 }
+
+.qn-terminal-panel__xterm-host :deep(.xterm-scrollable-element > .scrollbar),
+.qn-terminal-panel__xterm-host :deep(.xterm-scrollable-element > .shadow) {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
 </style>
