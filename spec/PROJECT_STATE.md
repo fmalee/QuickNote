@@ -4,13 +4,13 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0（`m0-baseline`）、M1（`m1-baseline`）与 M2（`m2-baseline`）均已正式收官；**M3（快速打开、外部协作、完整命令库与面板组）** 全部 7 张施工卡均已合入 `dev`，进入 **M3 独立只读审查与 macOS 实机点验收官阶段**。
+- **当前阶段**：M0（`m0-baseline`）、M1（`m1-baseline`）、M2（`m2-baseline`）与 **M3（`m3-baseline`：快速打开、外部协作、完整命令库与面板组）** 均已正式收官，准备进入 **M4（内嵌终端、高级协作与 1.0 收官）**。
 - **已完成**：
   - M0 全阶段（`m0-baseline`）。
   - M1 全阶段（`m1-baseline`：`M1-01a`–`M1-05` + M1 独立只读审查与 `fix/M1-audit` 实机点验收官）。
   - M2 全阶段（`m2-baseline`：`M2-01`–`M2-05b` + M2 独立只读审查 + `fix/M2-audit` `be79e07` + `fix/M2-qa` `4d33f0d` 实机点验收官）。
-  - M3 全部施工卡（`M3-01a` `5e450c7`、`M3-01b` `b82f490`、`M3-02` `455c2ee`、`M3-03` `6da5535`、`M3-04` `8d940c4`、`M3-05a` `323236e`、`M3-05b` `efe8fd1`）。
-- **待执行**：执行 M3 增量独立只读审查（`git diff m2-baseline..dev`）、主控分拣修复（如有 `fix/M3-audit`）及 macOS 桌面实机点验，通过后打 `m3-baseline` 标签正式收官。
+  - M3 全阶段（`m3-baseline`：`M3-01a`–`M3-05b` + M3 独立只读审查 + `fix/M3-audit` `e4b0532` + `fix/M3-qa` `1dd8018` 实机点验收官）。
+- **待执行**：启动 **M4（内嵌终端、高级协作与 1.0 收官）** 阶段自包含轻量任务卡拆分并逐卡推进。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -21,6 +21,7 @@
 | `SettingsErrorBanner` “打开 `settings.yaml` 修复”按钮 | M0 审查 🟢#4 | **M3（已在 `M3-02` `455c2ee` 收口）** | 已在 `M3-01b` 落地 `$SETTINGS_YAML` 路由、`M3-02` 接入 `external_action_run`（`D-0008` / `v4` §4.7） |
 | `QuickBarView` 与 `bridge.m` 幂等双 `Esc` | M0 审查 🟢#4 | **保留现状** | 保持不动，避免破坏已实机通过的 Quick Bar 原生焦点与全屏行为 |
 | `collectTodoDecorations` 超长文档单遍扫描优化 | M2 审查 🟢#2 | **M4** | 随 M4 性能压测专项（大文档/万篇压测）统一优化 |
+| 非 Markdown 轻量诊断多行启发式边界（Nginx/YAML） | M3 审查 🟢#5 | **M4（按需）** | Nginx 多行指令与 YAML 跨行引号静态启发式微调，不引入重型解析器 |
 
 ## 3. 已验证实机约定与踩坑备忘
 
@@ -31,6 +32,7 @@
 - **macOS `Option` 快捷键识别**：macOS 按 `⌥⌘C`/`⌥⌘1` 等组合键时 `KeyboardEvent.key` 会变成特殊字符，前端统一动作注册表（`M2-02`）与录制器（`M2-03`）须优先基于 `event.code` 归一化。
 - **模板文件 YAML 占位符**：`v4` B.3 模板含裸 `id: {{id}}` / `title: {{title}}`，索引 `_templates/` 时强制按 `NoteType::Template` 归类并不计入 `meta_error` / 重复 `id`（`M2-01`）。
 - **macOS Tauri 2 外链、文件拖放与菜单快捷键**：`WKWebView` 静默拦截 `window.open`，外链（`http/https/mailto`）走参数化 Rust `app_open_external_url`（`open`）；Finder/截图拖入文件走 `getCurrentWebview().onDragDropEvent`（`onWindowFileDrop`）；原生菜单快捷键通过 `app_set_menu_accelerators` 与 `actionRegistry` 实时同步且在快捷键录制态临时挂起防抢键。
+- **M3 跨窗口打开与坐标系约定**：Quick Bar → 主窗口打开文件经 `PENDING_OPEN_FILE_STORAGE_KEY` 跨窗传递，`onWindowState(visible)` 命中待开文件时跳过 `handleMainWindowShown()` 防抢回旧焦点；编辑器内全部行号（大纲 / 收件箱提取 / `CommandEntry.line`）统一为剥离 frontmatter 后的 `NoteDoc.body` 1-based 行号（`D-0006`）；库外常用固定文件独立落盘 `<app_data_dir>/pinned-files.json`（不改动 `C6.3` `UiState`）。
 
 ## 4. 协作与防膨胀规矩（含 Token 省流铁律，已写入 `AGENTS.md`）
 
@@ -40,5 +42,5 @@
 
 ## 5. 下一步动作
 
-1. 新开独立只读审查会话对 `m2-baseline..dev` 增量执行 M3 契约与缺陷审查，将审查报告交给主控会话分拣决策（必要时拉 `fix/M3-audit` 收口）。
-2. 完成 macOS 桌面实机点验后，合并最终修复、打 `m3-baseline` 标签并正式收官 M3，准备进入 M4（内嵌终端、高级协作与 1.0 收官）。
+1. 新开主控会话基于 `m3-baseline` 拆分 **M4（内嵌终端、高级协作与 1.0 收官）** 自包含轻量任务卡（涵盖 `C4.2` M4 全部 9 条 IPC 命令：`settings_export`/`settings_import`、`note_export_pdf`、`terminal_spawn`/`write`/`resize`/`set_visibility`/`kill`/`list_sessions`、`D-0005` 折叠保活与 30 分钟空闲回收、CM6 `MergeView` 冲突并排合并、复制富文本、45% 侧栏辅助窗口、性能压测与 1.0 收官）。
+2. 从 `dev` 拉取 `M4-01` 分支并依卡逐个推进。

@@ -4,9 +4,9 @@
 
 ---
 
-## 1. M3 阶段任务卡（施工 7/7 达成 · 待独立审查与实机点验收官）
+## 1. M3 阶段任务卡（已收官 · 基线标签 `m3-baseline`）
 
-> 阶段目标：100% 补齐 `C4.2` 全部 7 条 M3 IPC 命令（`commands_search`、`notes_get_related`、`tags_batch_rename`、`search_spotlight`、`path_complete`、`external_actions_resolve`、`external_action_run`）；落地命令书全形态解析与 `note_links` 索引、可取消 `mdfind` Spotlight（黑名单/50 条硬上限）、统一外部动作（库内无配置严禁回退）并收口 `SettingsErrorBanner` “打开 `settings.yaml` 修复”债务（`D-0008`）；交付 Quick Bar 打开/命令双模式与主窗口大尺寸 `⌘K`/`⌘⇧K`、外部文件标签页与常用文件固定、完整右侧面板组（大纲/终端占位/相关文档前 20/最近编辑前 20 + 宽度持久化 + `<1200`/`<1000`/`<900` 响应式抽屉）、非 Markdown 15 语言高亮与轻量诊断（>2MB 关诊断/>5MB 退纯文本）及全库标签重命名/批量合并。
+> 阶段目标：100% 补齐 `C4.2` 全部 7 条 M3 IPC 命令（`commands_search`、`notes_get_related`、`tags_batch_rename`、`search_spotlight`、`path_complete`、`external_actions_resolve`、`external_action_run`）；落地命令书全形态解析与 `note_links` 索引、可取消 `mdfind` Spotlight（黑名单/50 条硬上限）、统一外部动作（库内无配置严禁回退）并收口 `SettingsErrorBanner` “打开 `settings.yaml` 修复”债务（`D-0008`）；交付 Quick Bar 打开/命令双模式与主窗口大尺寸 `⌘K`/`⌘⇧K`、外部文件标签页与常用文件固定、完整右侧面板组（大纲/终端占位/相关文档前 20/最近编辑前 20 + 宽度持久化 + `<1200`/`<1000`/`<900` 响应式抽屉）、非 Markdown 15 语言高亮与轻量诊断（>2MB 关诊断/>5MB 退纯文本）及全库标签重命名/批量合并。全部 7 卡及 `fix/M3-audit`（`e4b0532`）、`fix/M3-qa`（`1dd8018`）实机点验均已收官。
 
 M3 阶段共拆分为 7 张轻量、自包含、严格串行推进的任务卡（`M3-01a → M3-01b → M3-02 → M3-03 → M3-04 → M3-05a → M3-05b`）：
 
