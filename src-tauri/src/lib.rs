@@ -7,6 +7,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Windo
 use crate::application::capture::CaptureManager;
 use crate::application::hotkey::HotkeyManager;
 use crate::application::persistence::PersistenceManager;
+use crate::application::terminal::{TauriTerminalEventSink, TerminalManager};
 use crate::application::window::WindowManager;
 use crate::domain::window::HideReason;
 use crate::infra::external_open::{ExternalLauncher, MacosExternalLauncher};
@@ -464,6 +465,11 @@ pub fn run() -> Result<(), tauri::Error> {
             let external_launcher: Arc<dyn ExternalLauncher> = Arc::new(MacosExternalLauncher);
             app.manage(external_launcher);
 
+            let tm = TerminalManager::new(Arc::clone(&pm));
+            tm.set_event_sink(Arc::new(TauriTerminalEventSink::new(app.handle().clone())))
+                .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
+            app.manage(tm);
+
             create_aux_windows(app.handle())?;
             wm.configure_native_panels(app.handle())
                 .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
@@ -592,6 +598,20 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::capture::note_append,
             commands::capture::note_undo_last_append,
             commands::capture::inbox_extract_to_note,
+            commands::terminal::terminal_spawn,
+            commands::terminal::terminal_write,
+            commands::terminal::terminal_resize,
+            commands::terminal::terminal_set_visibility,
+            commands::terminal::terminal_kill,
+            commands::terminal::terminal_list_sessions,
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())?
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(tm) = app_handle.try_state::<Arc<TerminalManager>>() {
+                    tm.shutdown_all();
+                }
+            }
+        });
+    Ok(())
 }

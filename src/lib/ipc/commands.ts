@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import type {
   AppError,
   AppInfo,
@@ -44,6 +44,13 @@ import type {
   TagRenameArgs,
   TagRenameResult,
   TargetResolveInput,
+  TerminalData,
+  TerminalKillArgs,
+  TerminalResizeArgs,
+  TerminalSessionInfo,
+  TerminalSpawnArgs,
+  TerminalVisibilityArgs,
+  TerminalWriteArgs,
   UiState,
   UiStateArgs,
   UndoAppendResult,
@@ -241,4 +248,31 @@ export function externalActionsResolve(args: ResolveExternalArgs): Promise<Exter
 
 export function externalActionRun(args: RunExternalArgs): Promise<void> {
   return invoke<void>('external_action_run', { args });
+}
+
+export function terminalSpawn(
+  args: TerminalSpawnArgs,
+  onData: Channel<TerminalData>,
+): Promise<TerminalSessionInfo> {
+  return invoke<TerminalSessionInfo>('terminal_spawn', { args, onData });
+}
+
+export function terminalWrite(args: TerminalWriteArgs): Promise<void> {
+  return invoke<void>('terminal_write', { args });
+}
+
+export function terminalResize(args: TerminalResizeArgs): Promise<void> {
+  return invoke<void>('terminal_resize', { args });
+}
+
+export function terminalSetVisibility(args: TerminalVisibilityArgs): Promise<void> {
+  return invoke<void>('terminal_set_visibility', { args });
+}
+
+export function terminalKill(args: TerminalKillArgs): Promise<void> {
+  return invoke<void>('terminal_kill', { args });
+}
+
+export function terminalListSessions(): Promise<TerminalSessionInfo[]> {
+  return invoke<TerminalSessionInfo[]>('terminal_list_sessions');
 }

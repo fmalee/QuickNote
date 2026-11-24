@@ -5,6 +5,8 @@ import type {
   ExternalChangeEvent,
   IndexStatus,
   SettingsLoadStatus,
+  TerminalExitPayload,
+  TerminalSessionInfo,
   WindowState,
 } from '@/bindings/types';
 
@@ -51,6 +53,18 @@ export function onFsExternalChange(
 
 export function onMenuAction(handler: (actionId: string) => void): Promise<UnlistenFn> {
   return listenEvent<string>('menu:action', handler);
+}
+
+export function onTerminalSessionState(
+  handler: (info: TerminalSessionInfo) => void,
+): Promise<UnlistenFn> {
+  return listenEvent<TerminalSessionInfo>('terminal:session-state', handler);
+}
+
+export function onTerminalExit(
+  handler: (payload: TerminalExitPayload) => void,
+): Promise<UnlistenFn> {
+  return listenEvent<TerminalExitPayload>('terminal:exit', handler);
 }
 
 export async function onWindowFileDrop(

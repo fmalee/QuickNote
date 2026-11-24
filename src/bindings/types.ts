@@ -664,6 +664,30 @@ export type TargetResolveInput = {
 	isInboxView: boolean,
 };
 
+/**  Streamed PTY output chunk sent over `tauri::ipc::Channel` (`C4.3`). */
+export type TerminalData = {
+	sessionId: string,
+	dataBase64: string,
+};
+
+/**  Event payload emitted when a terminal session terminates (`C4.2`). */
+export type TerminalExitPayload = {
+	sessionId: string,
+	exitCode: number | null,
+	reason: TerminalExitReason,
+};
+
+/**  Reason a terminal session exited or was recycled (`C4.2`, `C8.7`). */
+export type TerminalExitReason = "process_exit" | "manual_close" | "idle_recycled" | "app_exit";
+
+/**  Arguments for manually killing a terminal session (`C4.2`). */
+export type TerminalKillArgs = {
+	sessionId: string,
+};
+
+/**  Lifecycle state of an embedded terminal session (`C8.7`, `D-0005`). */
+export type TerminalLifecycleState = "active" | "hidden_alive" | "recycled";
+
 /**  Embedded terminal panel configuration (`C6.2`). */
 export type TerminalPanelSettings = {
 	visibleByDefault: boolean,
@@ -680,6 +704,44 @@ export type TerminalPanelSettingsPatch = {
 	shell?: string | null,
 	idleRecycleMinutes?: number | null,
 	maxConcurrentSessions?: number | null,
+};
+
+/**  Arguments for resizing a terminal PTY (`C4.2`). */
+export type TerminalResizeArgs = {
+	sessionId: string,
+	cols: number,
+	rows: number,
+};
+
+/**  Snapshot metadata of a terminal session (`C4.2`). */
+export type TerminalSessionInfo = {
+	sessionId: string,
+	workspaceKey: string,
+	cwd: string,
+	hasActiveForegroundChild: boolean,
+	outputPaused: boolean,
+	state: TerminalLifecycleState,
+};
+
+/**  Arguments for spawning a workspace-scoped terminal session (`C4.2`). */
+export type TerminalSpawnArgs = {
+	workspaceKey: string,
+	cwd: string,
+	cols: number,
+	rows: number,
+	shell: string | null,
+};
+
+/**  Arguments for toggling terminal visibility / fold-keepalive (`C4.2`, `C8.7`). */
+export type TerminalVisibilityArgs = {
+	sessionId: string,
+	visible: boolean,
+};
+
+/**  Arguments for writing base64-encoded input bytes into a terminal session (`C4.2`). */
+export type TerminalWriteArgs = {
+	sessionId: string,
+	dataBase64: string,
 };
 
 /**  Complete persisted UI state (`C6.3`). */

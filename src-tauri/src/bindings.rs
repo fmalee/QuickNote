@@ -30,6 +30,11 @@ use crate::domain::settings::{
     Settings, SettingsLoadStatus, SettingsPatch, SettingsSnapshot, TerminalPanelSettings,
     TerminalPanelSettingsPatch, WindowMode, WorkspaceConfig,
 };
+use crate::domain::terminal::{
+    TerminalData, TerminalExitPayload, TerminalExitReason, TerminalKillArgs,
+    TerminalLifecycleState, TerminalResizeArgs, TerminalSessionInfo, TerminalSpawnArgs,
+    TerminalVisibilityArgs, TerminalWriteArgs,
+};
 use crate::domain::ui_state::{
     CaptureMode, FiltersUiState, HotkeySelfCheck, HotkeyStatus, LastActiveDocState,
     MainWindowState, NavTab, PanelGroupUiState, TabItemState, TabsUiState, UiState, UiStateArgs,
@@ -154,6 +159,16 @@ pub fn collect_types() -> Types {
         .register::<ExternalChangeEvent>()
         .register::<QuickBarDraft>()
         .register::<RecoverySnapshot>()
+        .register::<TerminalLifecycleState>()
+        .register::<TerminalExitReason>()
+        .register::<TerminalSpawnArgs>()
+        .register::<TerminalWriteArgs>()
+        .register::<TerminalResizeArgs>()
+        .register::<TerminalVisibilityArgs>()
+        .register::<TerminalKillArgs>()
+        .register::<TerminalSessionInfo>()
+        .register::<TerminalData>()
+        .register::<TerminalExitPayload>()
 }
 
 /// Renders the full TypeScript bindings content deterministically.

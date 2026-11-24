@@ -1,3 +1,4 @@
+import { Channel } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppInfo } from '@/bindings/types';
 
@@ -8,6 +9,7 @@ const { mockInvoke, mockListen } = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: mockInvoke,
+  Channel: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({
@@ -24,6 +26,12 @@ import {
   pathComplete,
   searchSpotlight,
   tagsBatchRename,
+  terminalKill,
+  terminalListSessions,
+  terminalResize,
+  terminalSetVisibility,
+  terminalSpawn,
+  terminalWrite,
 } from '@/lib/ipc/commands';
 import { listenEvent } from '@/lib/ipc/events';
 
@@ -134,6 +142,57 @@ describe('IPC smoke wrapper', () => {
     await externalActionRun({ id: 'external.reveal', absPath: '/tmp/a.txt', dirPath: null });
     expect(mockInvoke).toHaveBeenCalledWith('external_action_run', {
       args: { id: 'external.reveal', absPath: '/tmp/a.txt', dirPath: null },
+    });
+  });
+
+  it('invokes M4-01a terminal IPC wrappers', async () => {
+    const channel = new Channel();
+    const session = {
+      sessionId: 'term-1-1',
+      workspaceKey: 'ws-a',
+      cwd: '/tmp',
+      hasActiveForegroundChild: false,
+      outputPaused: false,
+      state: 'active' as const,
+    };
+    mockInvoke.mockResolvedValueOnce(session);
+    const spawned = await terminalSpawn(
+      { workspaceKey: 'ws-a', cwd: '/tmp', cols: 80, rows: 24, shell: null },
+      channel as never,
+    );
+    expect(spawned).toEqual(session);
+    expect(mockInvoke).toHaveBeenCalledWith('terminal_spawn', {
+      args: { workspaceKey: 'ws-a', cwd: '/tmp', cols: 80, rows: 24, shell: null },
+      onData: channel,
+    });
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await terminalWrite({ sessionId: 'term-1-1', dataBase64: 'aGk=' });
+    expect(mockInvoke).toHaveBeenCalledWith('terminal_write', {
+      args: { sessionId: 'term-1-1', dataBase64: 'aGk=' },
+    });
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await terminalResize({ sessionId: 'term-1-1', cols: 100, rows: 30 });
+    expect(mockInvoke).toHaveBeenCalledWith('terminal_resize', {
+      args: { sessionId: 'term-1-1', cols: 100, rows: 30 },
+    });
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await terminalSetVisibility({ sessionId: 'term-1-1', visible: false });
+    expect(mockInvoke).toHaveBeenCalledWith('terminal_set_visibility', {
+      args: { sessionId: 'term-1-1', visible: false },
+    });
+
+    mockInvoke.mockResolvedValueOnce([session]);
+    const sessions = await terminalListSessions();
+    expect(sessions).toEqual([session]);
+    expect(mockInvoke).toHaveBeenCalledWith('terminal_list_sessions');
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await terminalKill({ sessionId: 'term-1-1' });
+    expect(mockInvoke).toHaveBeenCalledWith('terminal_kill', {
+      args: { sessionId: 'term-1-1' },
     });
   });
 });
