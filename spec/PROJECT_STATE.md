@@ -4,11 +4,11 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4 施工推进中（已完成 `M4-01a`–`M4-04`）**。
+- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4 施工接近尾声（已完成 `M4-01a`–`M4-05`，仅余收官卡 `M4-06`）**。
 - **已完成**：
   - M0–M3 全阶段（`m0-baseline` / `m1-baseline` / `m2-baseline` / `m3-baseline`）。
-  - M4 已完卡片：`M4-01a`（`e8c661e`）、`M4-01b`（`62e3d6c`）、`M4-02`（`8461999`）、`M4-03`（`342060b`）、`M4-04`（`f68542c`：富文本复制、打印级 PDF 导出弹窗、设置备份导入导出与内嵌终端参数表单）。
-- **待执行**：从 `dev` 拉取 `feat/M4-05-auxiliary-window-and-fullscreen` 执行 `M4-05`，完成后推进收官卡 `M4-06` 并执行 M4 独立只读审查与 1.0 全量实机点验。
+  - M4 已完卡片：`M4-01a`（`e8c661e`）、`M4-01b`（`62e3d6c`）、`M4-02`（`8461999`）、`M4-03`（`342060b`）、`M4-04`（`f68542c`）、`M4-05`（`fcc91bb`：45% 侧栏辅助窗口布局、`window.toggleAuxiliary` 菜单联动与全屏状态同步）。
+- **待执行**：从 `dev` 拉取 `feat/M4-06-perf-debt-and-v1-readiness` 执行收官卡 `M4-06`，完成后启动 M4 独立只读审查与 1.0 全量实机点验。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -40,5 +40,5 @@
 
 ## 5. 下一步动作
 
-1. 新开独立施工会话，从 `dev` 拉取 `feat/M4-05-auxiliary-window-and-fullscreen` 执行 `spec/cards/M4-05-auxiliary-window-mode-and-fullscreen-workbench.md`。
-2. 严格串行推进 `M4-05 → M4-06`，全部合入 `dev` 后启动 M4 独立只读审查与 1.0 全量人工点验。
+1. 新开独立施工会话，从 `dev` 拉取 `feat/M4-06-perf-debt-and-v1-readiness` 执行收官卡 `spec/cards/M4-06-performance-benchmark-debt-cleanup-and-v1-readiness.md`。
+2. `M4-06` 合入 `dev` 后，启动 M4 独立只读审查会话（基于 `git diff m3-baseline..dev`），再按 `C9.3` 执行 1.0 全量实机点验。
