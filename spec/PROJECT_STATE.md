@@ -9,7 +9,7 @@
   - M0 全阶段（`m0-baseline`）。
   - M1 全阶段（`m1-baseline`：`M1-01a`–`M1-05` + M1 独立只读审查与 `fix/M1-audit` 实机点验收官）。
   - M2 全阶段（`m2-baseline`：`M2-01`–`M2-05b` + M2 独立只读审查 + `fix/M2-audit` `be79e07` + `fix/M2-qa` `4d33f0d` 实机点验收官）。
-- **待执行**：M3 后端契约已 100% 落盘（`M3-01a` `5e450c7`、`M3-01b` `b82f490`），按 `spec/cards/README.md` 顺序串行推进前端 5 卡（`M3-02` 至 `M3-05b`），随后进行 M3 独立只读审查与 macOS 实机点验。
+- **待执行**：M3 已完成 `M3-01a`（`5e450c7`）、`M3-01b`（`b82f490`）与 `M3-02`（`455c2ee`），按 `spec/cards/README.md` 顺序串行推进剩余 4 卡（`M3-03` 至 `M3-05b`），随后进行 M3 独立只读审查与 macOS 实机点验。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -17,7 +17,7 @@
 | --- | --- | --- | --- |
 | `ToastAppendUndoPayload` 手写类型收口 | M0 审查 🟡#4 | **M1（已在 `M1-02` `b8d6018` 收口）** | 已随 `AppendResult` 收归 Rust 生成并接入 `src/lib/ipc/events.ts` |
 | 默认模板（`note/doc/command-book`）格式对齐 | M0 审查 🟢#4 | **M2（已在 `M2-01` `87f1a44` 收口）** | 已在 `domain::template` 单源定义并与 `v4` 附录 B.3 逐字对齐 |
-| `SettingsErrorBanner` “打开 `settings.yaml` 修复”按钮 | M0 审查 🟢#4 | **M3（已排入 `M3-01b` + `M3-02`）** | `M3-01b` 落地 `$SETTINGS_YAML` 路由、`M3-02` 按钮接入 `external_action_run`（`D-0008` / `v4` §4.7） |
+| `SettingsErrorBanner` “打开 `settings.yaml` 修复”按钮 | M0 审查 🟢#4 | **M3（已在 `M3-02` `455c2ee` 收口）** | 已在 `M3-01b` 落地 `$SETTINGS_YAML` 路由、`M3-02` 接入 `external_action_run`（`D-0008` / `v4` §4.7） |
 | `QuickBarView` 与 `bridge.m` 幂等双 `Esc` | M0 审查 🟢#4 | **保留现状** | 保持不动，避免破坏已实机通过的 Quick Bar 原生焦点与全屏行为 |
 | `collectTodoDecorations` 超长文档单遍扫描优化 | M2 审查 🟢#2 | **M4** | 随 M4 性能压测专项（大文档/万篇压测）统一优化 |
 
@@ -39,5 +39,5 @@
 
 ## 5. 下一步动作
 
-1. 新开干净施工会话从 `dev` 拉取 `feat/M3-02-settings-workspaces-and-external-actions` 执行 `M3-02`（设置窗口工作区 CRUD、外部程序/`search_roots` 配置、`SettingsErrorBanner` 债务收口与主窗口外部动作集成）。
+1. 新开干净施工会话从 `dev` 拉取 `feat/M3-03-quick-open-spotlight-and-external-tabs` 执行 `M3-03`（Quick Bar 打开模式、主窗口大尺寸 `⌘K`、Spotlight 异步合并与外部文件标签页/常用文件固定）。
 2. 逐卡串行推进至 `M3-05b` 全部合入 `dev` 后，执行 M3 增量独立只读审查与 macOS 实机点验并打 `m3-baseline` 标签。
