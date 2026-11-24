@@ -8,7 +8,7 @@
 2. **严禁整篇读取大文档与大样本**：
    - **施工会话默认禁止读取** [spec/quicknote-design-v4.md](spec/quicknote-design-v4.md)（1150 行）、[spec/engineering-contract.md](spec/engineering-contract.md)（745 行）、[DECISIONS.md](DECISIONS.md) 以及 `src-tauri/tests/fixtures/vault/**` 下的大样本文件（仅主控拆卡、变更契约或里程碑只读审查会话可按需读取）。
    - 若施工中极个别细节确需核对原契约，必须先用 `grep` / `ripgrep` 定位精确行号，再用 `read_file` 读取 **≤ 60 行**的局部片段，绝不整篇加载。
-3. **只读白名单相关的最小代码集**：仅读取当前任务卡「允许修改文件白名单」中将被修改的源码或其直接调用的接口文件（优先只读顶部 struct / `pub fn` 签名，不读无关模块与历史测试文件）。
+3. **只读白名单相关的最小代码集**：仅读取当前任务卡「允许修改文件白名单」中将被修改的源码或其直接调用的接口文件（优先只读顶部 struct / `pub fn` 签名，不读无关模块与历史测试文件）。日常点状维护/小改需求可先读 [spec/CODEBASE_MAP.md](spec/CODEBASE_MAP.md) 3 秒定位目标文件，避免全仓盲搜。
 4. 遇契约未定义的技术选型按 `C11` 先记 `DECISIONS.md` 再写码；涉及产品行为取舍先询问用户。
 
 ## 硬规则
@@ -33,6 +33,8 @@
 
 | 内容 | 位置 |
 | --- | --- |
+| 产品使用指南与本地构建速查 | `README.md` |
+| AI 省流代码地图（功能→文件反查 / 改法菜谱 / 实机暗坑） | `spec/CODEBASE_MAP.md` |
 | 机器级工程契约（`C1`–`C12`） | `spec/engineering-contract.md` |
 | 架构决策账本（`D-xxxx`；变更 `C11`） | `DECISIONS.md` |
 | 产品与实现定稿方案 | `spec/quicknote-design-v4.md` |
