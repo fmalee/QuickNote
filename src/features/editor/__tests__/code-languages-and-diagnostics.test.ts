@@ -214,4 +214,67 @@ describe('codeDiagnostics', () => {
     const decoSet = state.field(diagnosticsField);
     expect(decoSet.size).toBe(1);
   });
+
+  it('allows multiline Nginx directives without false-positive semicolon warnings', () => {
+    const validMultilineNginx = [
+      'http {',
+      "  log_format main '$remote_addr - $remote_user [$time_local] '",
+      '                  \'"$request" $status $body_bytes_sent\';',
+      '  server {',
+      '    listen 80;',
+      '    location / {',
+      '      add_header Content-Security-Policy',
+      '        "default-src \'self\'"',
+      '        always;',
+      '      proxy_set_header X-Forwarded-For',
+      '        $proxy_add_x_forwarded_for;',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+
+    const ok = runLightweightDiagnostics('nginx', validMultilineNginx, null, 400);
+    expect(ok.diagnostics).toHaveLength(0);
+
+    const missingSemicolonBeforeNewDirective = [
+      'server {',
+      '  listen 80',
+      '  server_name example.com;',
+      '}',
+    ].join('\n');
+    const warn = runLightweightDiagnostics('nginx', missingSemicolonBeforeNewDirective, null, 80);
+    expect(warn.diagnostics).toHaveLength(1);
+    expect(warn.diagnostics[0]?.severity).toBe('warning');
+    expect(warn.diagnostics[0]?.line).toBe(2);
+  });
+
+  it('supports YAML block scalars (| / >) and multiline quoted strings without false positives', () => {
+    const validMultilineYaml = [
+      'script: |-',
+      '  if [ -f /tmp/a ]; then',
+      '    echo "unclosed quote in block scalar is literal',
+      '    no colon needed here',
+      '  fi',
+      'summary: >+',
+      '  first folded line without colon',
+      '  second folded line',
+      'items:',
+      '  - |',
+      '    list item block scalar line',
+      'multiline_double: "hello',
+      '  world"',
+      "multiline_single: 'foo",
+      "  bar''baz'",
+      'next_key: ok',
+    ].join('\n');
+
+    const ok = runLightweightDiagnostics('yaml', validMultilineYaml, null, 400);
+    expect(ok.diagnostics).toHaveLength(0);
+
+    const invalidYaml = ['name: test', 'bad_top_level_line', 'quote: "never closed'].join('\n');
+    const err = runLightweightDiagnostics('yaml', invalidYaml, null, 100);
+    expect(err.diagnostics).toHaveLength(2);
+    expect(err.diagnostics[0]?.line).toBe(2);
+    expect(err.diagnostics[1]?.line).toBe(3);
+  });
 });

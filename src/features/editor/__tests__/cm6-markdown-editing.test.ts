@@ -195,6 +195,53 @@ describe('CM6 行首待办 Widget 与待办命令', () => {
     const nonEmpty = runCmd('- [ ] 内容', { anchor: 6 }, todoBackspaceCommand);
     expect(nonEmpty.handled).toBe(false);
   });
+
+  it('5. 10,000 行大文档单遍扫描精确过滤围栏代码块且耗时 < 100ms', () => {
+    const lines: string[] = [];
+    let expectedTodoCount = 0;
+
+    // 构造 10,000 行混合内容：普通段落、有效待办项、多种围栏代码块内的伪待办项
+    for (let i = 0; i < 200; i += 1) {
+      lines.push(`## Section ${i}`);
+      lines.push(`- [ ] 有效待办 ${i}-1`);
+      lines.push(`  - [x] 有效已完成 ${i}-2`);
+      expectedTodoCount += 2;
+
+      // 3 空格缩进反引号围栏 + 内部 3 个反引号不提前闭合 4 个反引号围栏
+      lines.push('   ````markdown');
+      lines.push('- [ ] 代码块内假待办 A');
+      lines.push('```');
+      lines.push('- [x] 仍处于四反引号围栏内');
+      lines.push('   ````');
+
+      // 波浪号围栏
+      lines.push('~~~sh');
+      lines.push('- [ ] 波浪号围栏内假待办');
+      lines.push('~~~');
+
+      for (let p = 0; p < 39; p += 1) {
+        lines.push(`正文填充段落 ${i}-${p}`);
+      }
+    }
+
+    expect(lines.length).toBe(10_000);
+    const state = EditorState.create({ doc: lines.join('\n') });
+
+    const start = performance.now();
+    const entries = collectTodoDecorations(state.doc);
+    const elapsedMs = performance.now() - start;
+
+    expect(entries).toHaveLength(expectedTodoCount);
+    expect(elapsedMs).toBeLessThan(100);
+
+    // 局部区间扫描同样准确
+    const lastLine = state.doc.line(state.doc.lines);
+    const tailEntries = collectTodoDecorations(state.doc, [
+      { from: 0, to: state.doc.line(3).to },
+      { from: lastLine.from, to: lastLine.to },
+    ]);
+    expect(tailEntries).toHaveLength(2);
+  });
 });
 
 describe('CM6 全套 Markdown 格式命令', () => {

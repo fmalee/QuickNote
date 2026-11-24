@@ -12,6 +12,8 @@ import { isLineInFencedCodeBlock } from './markdownIndent';
 export const TODO_LINE_RE = /^(\s*)([-*+])(\s+)\[([ xX])\](?=\s|$)/;
 const BULLET_LINE_RE = /^(\s*)([-*+])(\s+)(.*)$/;
 const LEADING_WS_RE = /^(\s*)(.*)$/;
+const FENCE_OPEN_RE = /^\s{0,3}(`{3,}|~{3,})/;
+const FENCE_CLOSE_RE = /^\s{0,3}(`{3,}|~{3,})\s*$/;
 
 export class TodoCheckboxWidget extends WidgetType {
   readonly checked: boolean;
@@ -81,44 +83,93 @@ export function collectTodoDecorations(
   ranges?: readonly { from: number; to: number }[],
 ): TodoDecorationEntry[] {
   const entries: TodoDecorationEntry[] = [];
-  const seenLines = new Set<number>();
   const scanRanges = ranges ?? [{ from: 0, to: doc.length }];
+  if (scanRanges.length === 0 || doc.lines === 0) {
+    return entries;
+  }
 
-  for (const { from, to } of scanRanges) {
-    const startLine = doc.lineAt(from).number;
-    const endLine = doc.lineAt(to).number;
+  const rawIntervals = scanRanges
+    .map(({ from, to }) => {
+      const clampedFrom = Math.max(0, Math.min(from, doc.length));
+      const clampedTo = Math.max(clampedFrom, Math.min(to, doc.length));
+      return {
+        startLine: doc.lineAt(clampedFrom).number,
+        endLine: doc.lineAt(clampedTo).number,
+      };
+    })
+    .sort((a, b) => a.startLine - b.startLine || a.endLine - b.endLine);
 
-    for (let ln = startLine; ln <= endLine; ln += 1) {
-      if (seenLines.has(ln)) {
-        continue;
-      }
-      seenLines.add(ln);
-
-      if (isLineInFencedCodeBlock(doc, ln)) {
-        continue;
-      }
-
-      const line = doc.line(ln);
-      const match = TODO_LINE_RE.exec(line.text);
-      if (!match) {
-        continue;
-      }
-
-      const checked = (match[4] ?? ' ').toLowerCase() === 'x';
-      const widgetPos = line.from + (match[1] ?? '').length;
-      entries.push({
-        from: widgetPos,
-        side: -1,
-        checked,
-        decoration: Decoration.widget({
-          widget: new TodoCheckboxWidget(checked),
-          side: -1,
-        }),
-      });
+  const mergedIntervals: Array<{ startLine: number; endLine: number }> = [];
+  for (const interval of rawIntervals) {
+    const prev = mergedIntervals[mergedIntervals.length - 1];
+    if (prev && interval.startLine <= prev.endLine + 1) {
+      prev.endLine = Math.max(prev.endLine, interval.endLine);
+    } else {
+      mergedIntervals.push({ ...interval });
     }
   }
 
-  entries.sort((a, b) => a.from - b.from);
+  if (mergedIntervals.length === 0) {
+    return entries;
+  }
+
+  const maxEndLine = mergedIntervals[mergedIntervals.length - 1]!.endLine;
+  let rangeIdx = 0;
+  let fenceChar: '`' | '~' | null = null;
+  let fenceLen = 0;
+
+  for (let ln = 1; ln <= maxEndLine; ln += 1) {
+    while (rangeIdx < mergedIntervals.length && ln > mergedIntervals[rangeIdx]!.endLine) {
+      rangeIdx += 1;
+    }
+    if (rangeIdx >= mergedIntervals.length) {
+      break;
+    }
+
+    const line = doc.line(ln);
+    let inFence = false;
+
+    if (fenceChar === null) {
+      const openMatch = FENCE_OPEN_RE.exec(line.text);
+      const fence = openMatch?.[1];
+      if (fence) {
+        fenceChar = fence[0] as '`' | '~';
+        fenceLen = fence.length;
+      }
+    } else {
+      const closeMatch = FENCE_CLOSE_RE.exec(line.text);
+      const closeFence = closeMatch?.[1];
+      if (closeFence && closeFence[0] === fenceChar && closeFence.length >= fenceLen) {
+        fenceChar = null;
+        fenceLen = 0;
+      } else {
+        inFence = true;
+      }
+    }
+
+    const currentInterval = mergedIntervals[rangeIdx]!;
+    if (inFence || ln < currentInterval.startLine) {
+      continue;
+    }
+
+    const match = TODO_LINE_RE.exec(line.text);
+    if (!match) {
+      continue;
+    }
+
+    const checked = (match[4] ?? ' ').toLowerCase() === 'x';
+    const widgetPos = line.from + (match[1] ?? '').length;
+    entries.push({
+      from: widgetPos,
+      side: -1,
+      checked,
+      decoration: Decoration.widget({
+        widget: new TodoCheckboxWidget(checked),
+        side: -1,
+      }),
+    });
+  }
+
   return entries;
 }
 

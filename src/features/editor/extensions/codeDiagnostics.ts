@@ -243,16 +243,54 @@ function findUnclosedQuote(line: string): string | null {
   return quote;
 }
 
+function stripYamlTrailingComment(line: string): string {
+  let quote: string | null = null;
+  let escaped = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i]!;
+    if (quote) {
+      if (quote === '"' && escaped) {
+        escaped = false;
+      } else if (quote === '"' && ch === '\\') {
+        escaped = true;
+      } else if (quote === "'" && ch === "'" && line[i + 1] === "'") {
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === '#' && (i === 0 || /\s/.test(line[i - 1]!))) {
+      return line.slice(0, i);
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+    }
+  }
+  return line;
+}
+
 function diagnoseYaml(content: string): EditorDiagnostic[] {
   const diagnostics: EditorDiagnostic[] = [];
   const lines = content.split(/\r?\n/);
   const bracketStack: Array<{ ch: string; line: number; col: number; offset: number }> = [];
   let offset = 0;
+  let blockScalarBaseIndent: number | null = null;
+  let openQuote: '"' | "'" | null = null;
+  let openQuoteStart: {
+    line: number;
+    col: number;
+    offset: number;
+    length: number;
+    quote: '"' | "'";
+  } | null = null;
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]!;
     const lineNum = i + 1;
     const trimmed = line.trim();
+    const indentMatch = /^( *)/.exec(line);
+    const lineIndent = indentMatch?.[1]?.length ?? 0;
 
     if (/^ *\t/.test(line)) {
       diagnostics.push(
@@ -267,59 +305,56 @@ function diagnoseYaml(content: string): EditorDiagnostic[] {
       );
     }
 
-    if (trimmed && !trimmed.startsWith('#')) {
-      const unclosed = findUnclosedQuote(line);
-      if (unclosed) {
-        diagnostics.push(
-          makeLineDiagnostic(
-            lineNum,
-            1,
-            offset,
-            line.length,
-            'error',
-            `未闭合的字符串引号 (${unclosed})`,
-          ),
-        );
+    if (blockScalarBaseIndent !== null) {
+      if (!trimmed || lineIndent > blockScalarBaseIndent) {
+        offset += line.length + 1;
+        continue;
       }
+      blockScalarBaseIndent = null;
+    }
 
-      if (
-        bracketStack.length === 0 &&
-        line[0] !== ' ' &&
-        line[0] !== '\t' &&
-        !trimmed.startsWith('-') &&
-        !trimmed.startsWith('---') &&
-        !trimmed.startsWith('...') &&
-        !trimmed.startsWith('[') &&
-        !trimmed.startsWith('{') &&
-        !line.includes(':')
-      ) {
-        diagnostics.push(
-          makeLineDiagnostic(
-            lineNum,
-            1,
-            offset,
-            line.length,
-            'error',
-            'YAML 顶层映射缺少冒号分隔符 ":"',
-          ),
-        );
-      }
-
-      let q: string | null = null;
+    if (openQuote !== null) {
       let esc = false;
+      let closedAt = -1;
       for (let c = 0; c < line.length; c += 1) {
         const ch = line[c]!;
+        if (openQuote === '"' && esc) {
+          esc = false;
+        } else if (openQuote === '"' && ch === '\\') {
+          esc = true;
+        } else if (openQuote === "'" && ch === "'" && line[c + 1] === "'") {
+          c += 1;
+        } else if (ch === openQuote) {
+          openQuote = null;
+          openQuoteStart = null;
+          closedAt = c;
+          break;
+        }
+      }
+
+      if (openQuote !== null || closedAt < 0) {
+        offset += line.length + 1;
+        continue;
+      }
+
+      // 引号在本行闭合后，继续检查同一行剩余部分的括号配对
+      let q: string | null = null;
+      let qEsc = false;
+      for (let c = closedAt + 1; c < line.length; c += 1) {
+        const ch = line[c]!;
         if (q) {
-          if (q === '"' && esc) {
-            esc = false;
+          if (q === '"' && qEsc) {
+            qEsc = false;
           } else if (q === '"' && ch === '\\') {
-            esc = true;
+            qEsc = true;
+          } else if (q === "'" && ch === "'" && line[c + 1] === "'") {
+            c += 1;
           } else if (ch === q) {
             q = null;
           }
           continue;
         }
-        if (ch === '#') {
+        if (ch === '#' && /\s/.test(line[c - 1] ?? ' ')) {
           break;
         }
         if (ch === '"' || ch === "'") {
@@ -345,9 +380,109 @@ function diagnoseYaml(content: string): EditorDiagnostic[] {
           }
         }
       }
+      if (q === '"' || q === "'") {
+        openQuote = q;
+        openQuoteStart = { line: lineNum, col: 1, offset, length: line.length, quote: q };
+      }
+
+      offset += line.length + 1;
+      continue;
+    }
+
+    if (trimmed && !trimmed.startsWith('#')) {
+      if (
+        bracketStack.length === 0 &&
+        line[0] !== ' ' &&
+        line[0] !== '\t' &&
+        !trimmed.startsWith('-') &&
+        !trimmed.startsWith('---') &&
+        !trimmed.startsWith('...') &&
+        !trimmed.startsWith('[') &&
+        !trimmed.startsWith('{') &&
+        !line.includes(':')
+      ) {
+        diagnostics.push(
+          makeLineDiagnostic(
+            lineNum,
+            1,
+            offset,
+            line.length,
+            'error',
+            'YAML 顶层映射缺少冒号分隔符 ":"',
+          ),
+        );
+      }
+
+      const codeWithoutComment = stripYamlTrailingComment(line).trimEnd();
+      if (/(?:^-\s*|:\s*)[|>](?:[+-]?\d*|\d+[+-]?)$/.test(codeWithoutComment.trimStart())) {
+        blockScalarBaseIndent = lineIndent;
+        offset += line.length + 1;
+        continue;
+      }
+
+      let q: '"' | "'" | null = null;
+      let esc = false;
+      for (let c = 0; c < line.length; c += 1) {
+        const ch = line[c]!;
+        if (q) {
+          if (q === '"' && esc) {
+            esc = false;
+          } else if (q === '"' && ch === '\\') {
+            esc = true;
+          } else if (q === "'" && ch === "'" && line[c + 1] === "'") {
+            c += 1;
+          } else if (ch === q) {
+            q = null;
+          }
+          continue;
+        }
+        if (ch === '#' && (c === 0 || /\s/.test(line[c - 1]!))) {
+          break;
+        }
+        if (ch === '"' || ch === "'") {
+          q = ch;
+        } else if (ch === '[' || ch === '{') {
+          bracketStack.push({ ch, line: lineNum, col: c + 1, offset });
+        } else if (ch === ']' || ch === '}') {
+          const top = bracketStack[bracketStack.length - 1];
+          const expected = ch === ']' ? '[' : '{';
+          if (top && top.ch === expected) {
+            bracketStack.pop();
+          } else {
+            diagnostics.push(
+              makeLineDiagnostic(
+                lineNum,
+                c + 1,
+                offset,
+                line.length,
+                'error',
+                `多余的闭合括号 "${ch}"`,
+              ),
+            );
+          }
+        }
+      }
+
+      if (q !== null) {
+        openQuote = q;
+        openQuoteStart = { line: lineNum, col: 1, offset, length: line.length, quote: q };
+      }
     }
 
     offset += line.length + 1;
+  }
+
+  if (openQuoteStart !== null) {
+    diagnostics.push(
+      makeLineDiagnostic(
+        openQuoteStart.line,
+        openQuoteStart.col,
+        openQuoteStart.offset,
+        openQuoteStart.length,
+        'error',
+        `未闭合的字符串引号 (${openQuoteStart.quote})`,
+      ),
+    );
   }
 
   for (const unclosed of bracketStack) {
@@ -548,69 +683,165 @@ function diagnoseShell(content: string): EditorDiagnostic[] {
   return diagnostics;
 }
 
+const NGINX_DIRECTIVE_KEYWORDS = new Set([
+  'access_log',
+  'add_header',
+  'add_trailer',
+  'alias',
+  'allow',
+  'auth_basic',
+  'auth_basic_user_file',
+  'autoindex',
+  'charset',
+  'client_max_body_size',
+  'default_type',
+  'deny',
+  'error_log',
+  'error_page',
+  'events',
+  'expires',
+  'fastcgi_pass',
+  'geo',
+  'grpc_pass',
+  'gzip',
+  'gzip_types',
+  'http',
+  'if',
+  'include',
+  'index',
+  'keepalive_timeout',
+  'limit_req',
+  'limit_req_zone',
+  'listen',
+  'location',
+  'log_format',
+  'map',
+  'proxy_pass',
+  'proxy_set_header',
+  'return',
+  'rewrite',
+  'root',
+  'sendfile',
+  'server',
+  'server_name',
+  'set',
+  'ssl_certificate',
+  'ssl_certificate_key',
+  'tcp_nopush',
+  'try_files',
+  'types',
+  'upstream',
+  'uwsgi_pass',
+  'worker_processes',
+]);
+
 function diagnoseNginx(content: string): EditorDiagnostic[] {
   const diagnostics: EditorDiagnostic[] = [];
   const lines = content.split(/\r?\n/);
   const braceStack: Array<{ line: number; col: number; offset: number }> = [];
   let offset = 0;
+  let inString: string | null = null;
+  let pendingDirective: { line: number; col: number; offset: number; length: number } | null = null;
+  let prevEndedWithBackslash = false;
+
+  const flushPendingWarning = (): void => {
+    if (!pendingDirective) {
+      return;
+    }
+    diagnostics.push(
+      makeLineDiagnostic(
+        pendingDirective.line,
+        pendingDirective.col,
+        pendingDirective.offset,
+        pendingDirective.length,
+        'warning',
+        'Nginx 指令末尾可能缺少分号 ";"',
+      ),
+    );
+    pendingDirective = null;
+  };
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]!;
     const lineNum = i + 1;
-    const withoutComment = line.replace(/#.*$/, '').trim();
+    let codeEnd = line.length;
+    let hasBraceBoundary = false;
+    const wasInString = inString !== null;
 
-    if (withoutComment) {
-      let inString: string | null = null;
-      for (let c = 0; c < line.length; c += 1) {
-        const ch = line[c]!;
-        if (inString) {
-          if (ch === inString && line[c - 1] !== '\\') {
-            inString = null;
-          }
-          continue;
+    for (let c = 0; c < line.length; c += 1) {
+      const ch = line[c]!;
+      if (inString) {
+        if (ch === inString && line[c - 1] !== '\\') {
+          inString = null;
         }
-        if (ch === '#') {
-          break;
+        continue;
+      }
+      if (ch === '#') {
+        codeEnd = c;
+        break;
+      }
+      if (ch === '"' || ch === "'") {
+        inString = ch;
+      } else if (ch === '{') {
+        hasBraceBoundary = true;
+        flushPendingWarning();
+        braceStack.push({ line: lineNum, col: c + 1, offset });
+      } else if (ch === '}') {
+        hasBraceBoundary = true;
+        flushPendingWarning();
+        if (braceStack.length > 0) {
+          braceStack.pop();
+        } else {
+          diagnostics.push(
+            makeLineDiagnostic(
+              lineNum,
+              c + 1,
+              offset,
+              line.length,
+              'error',
+              '多余的闭合花括号 "}"',
+            ),
+          );
         }
-        if (ch === '"' || ch === "'") {
-          inString = ch;
-        } else if (ch === '{') {
-          braceStack.push({ line: lineNum, col: c + 1, offset });
-        } else if (ch === '}') {
-          if (braceStack.length > 0) {
-            braceStack.pop();
-          } else {
-            diagnostics.push(
-              makeLineDiagnostic(
-                lineNum,
-                c + 1,
-                offset,
-                line.length,
-                'error',
-                '多余的闭合花括号 "}"',
-              ),
-            );
-          }
+      }
+    }
+
+    const effectiveCode = line.slice(0, codeEnd).trim();
+    if (effectiveCode) {
+      if (!wasInString && !prevEndedWithBackslash && pendingDirective && !hasBraceBoundary) {
+        const firstTokenMatch = /^([a-z_][a-z0-9_]*)(?=\s|$|\{|;)/.exec(effectiveCode);
+        const firstToken = firstTokenMatch?.[1];
+        if (firstToken && NGINX_DIRECTIVE_KEYWORDS.has(firstToken)) {
+          flushPendingWarning();
         }
       }
 
-      const lastChar = withoutComment[withoutComment.length - 1];
-      if (lastChar !== '{' && lastChar !== '}' && lastChar !== ';' && lastChar !== '\\') {
-        diagnostics.push(
-          makeLineDiagnostic(
-            lineNum,
-            line.length,
-            offset,
-            line.length,
-            'warning',
-            'Nginx 指令末尾可能缺少分号 ";"',
-          ),
-        );
+      const lastChar = effectiveCode[effectiveCode.length - 1];
+      if (lastChar === ';') {
+        pendingDirective = null;
+        prevEndedWithBackslash = false;
+      } else if (lastChar === '{' || lastChar === '}') {
+        pendingDirective = null;
+        prevEndedWithBackslash = false;
+      } else if (lastChar === '\\') {
+        if (!pendingDirective) {
+          pendingDirective = { line: lineNum, col: line.length, offset, length: line.length };
+        }
+        prevEndedWithBackslash = true;
+      } else {
+        if (!pendingDirective) {
+          pendingDirective = { line: lineNum, col: line.length, offset, length: line.length };
+        }
+        prevEndedWithBackslash = false;
       }
+    } else if (!inString) {
+      prevEndedWithBackslash = false;
     }
 
     offset += line.length + 1;
   }
+
+  flushPendingWarning();
 
   for (const unclosed of braceStack) {
     diagnostics.push({
