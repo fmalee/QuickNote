@@ -9,7 +9,7 @@
   - M0 全阶段（`m0-baseline`）。
   - M1 全阶段（`m1-baseline`：`M1-01a`–`M1-05` + M1 独立只读审查与 `fix/M1-audit` 实机点验收官）。
   - M2 全阶段（`m2-baseline`：`M2-01`–`M2-05b` + M2 独立只读审查 + `fix/M2-audit` `be79e07` + `fix/M2-qa` `4d33f0d` 实机点验收官）。
-- **待执行**：按 `spec/cards/README.md` 顺序串行推进 `M3-01a` 至 `M3-05b`，随后进行 M3 独立只读审查与 macOS 实机点验。
+- **待执行**：M3 已完成 `M3-01a`（`5e450c7`），按 `spec/cards/README.md` 顺序串行推进 `M3-01b` 至 `M3-05b`，随后进行 M3 独立只读审查与 macOS 实机点验。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -39,5 +39,5 @@
 
 ## 5. 下一步动作
 
-1. 新开干净施工会话从 `dev` 拉取 `feat/M3-01a-backend-commands-related-tags` 执行首张卡 `M3-01a`（命令书解析、`note_links` 索引、`commands_search`、`notes_get_related`、`tags_batch_rename` 与非 Markdown 安全读写）。
+1. 新开干净施工会话从 `dev` 拉取 `feat/M3-01b-backend-spotlight-path-external` 执行 `M3-01b`（可取消 `mdfind` Spotlight 搜索、路径补全、统一外部动作与菜单桥接）。
 2. 逐卡串行推进至 `M3-05b` 全部合入 `dev` 后，执行 M3 增量独立只读审查与 macOS 实机点验并打 `m3-baseline` 标签。
