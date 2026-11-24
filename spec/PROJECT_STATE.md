@@ -4,11 +4,11 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4（内嵌终端、高级协作与 1.0 收官）施工推进中（已完成 `M4-01a` `e8c661e`）**。
+- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4（内嵌终端、高级协作与 1.0 收官）后端全量收口（已完成 `M4-01a` `e8c661e`、`M4-01b` `62e3d6c`），进入前端功能施工**。
 - **已完成**：
   - M0–M3 全阶段（`m0-baseline` / `m1-baseline` / `m2-baseline` / `m3-baseline`）。
-  - M4 阶段拆卡规划（`M4-01a`–`M4-06`）及 `M4-01a`（`e8c661e`：后端内嵌终端 PTY 引擎、6 条终端 IPC、`Channel<TerminalData>`、折叠保活与 30 分钟空闲回收）。
-- **待执行**：从 `dev` 拉取 `feat/M4-01b-backend-export-and-auxiliary-window` 执行 `M4-01b`，依序串行推进至 `M4-06` 后执行 M4 独立只读审查与 1.0 全量实机点验。
+  - M4 后端全部 9 条 IPC 与原生桥接：`M4-01a`（`e8c661e`：PTY 引擎、6 条终端 IPC、`Channel<TerminalData>`、折叠保活与 30 分钟空闲回收）+ `M4-01b`（`62e3d6c`：`settings_export`/`settings_import`、原生离屏 `WKWebView` `note_export_pdf` 与 45% 侧栏辅助窗口桥接）。
+- **待执行**：从 `dev` 拉取 `feat/M4-02-embedded-xterm-terminal` 执行 `M4-02`，依序串行推进至 `M4-06` 后执行 M4 独立只读审查与 1.0 全量实机点验。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -40,5 +40,5 @@
 
 ## 5. 下一步动作
 
-1. 新开独立施工会话，从 `dev` 拉取 `feat/M4-01b-backend-export-and-auxiliary-window` 执行 `spec/cards/M4-01b-backend-settings-backup-pdf-and-auxiliary-window.md`。
-2. 严格串行推进 `M4-01b → M4-02 → M4-03 → M4-04 → M4-05 → M4-06`，全部合入 `dev` 后启动 M4 独立只读审查与 1.0 全量人工点验。
+1. 新开独立施工会话，从 `dev` 拉取 `feat/M4-02-embedded-xterm-terminal` 执行 `spec/cards/M4-02-embedded-xterm-terminal-panel-and-key-isolation.md`。
+2. 严格串行推进 `M4-02 → M4-03 → M4-04 → M4-05 → M4-06`，全部合入 `dev` 后启动 M4 独立只读审查与 1.0 全量人工点验。
