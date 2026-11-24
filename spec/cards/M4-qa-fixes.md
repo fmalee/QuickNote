@@ -20,6 +20,14 @@
        display: none;
      }
 
+     /* @xterm/xterm v6 使用 VS Code DomScrollableElement 自绘 DOM 滚动条 */
+     .qn-terminal-panel__xterm-host :deep(.xterm-scrollable-element > .scrollbar),
+     .qn-terminal-panel__xterm-host :deep(.xterm-scrollable-element > .shadow) {
+       display: none !important;
+       opacity: 0 !important;
+       pointer-events: none !important;
+     }
+
      .qn-terminal-panel__session-tabs {
        scrollbar-width: none;
      }
