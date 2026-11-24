@@ -4,6 +4,8 @@ import type {
   AppInfo,
   AppendNoteArgs,
   AppendResult,
+  CommandEntry,
+  CommandSearchArgs,
   CreateNoteArgs,
   ErrorCode,
   HideQuickBarArgs,
@@ -22,6 +24,7 @@ import type {
   QuickBarArgs,
   ReadNoteArgs,
   RelPathArgs,
+  RelatedNoteItem,
   RenameNoteArgs,
   ResolvedTarget,
   SaveImageArgs,
@@ -32,6 +35,8 @@ import type {
   SetRootArgs,
   SettingsPatch,
   SettingsSnapshot,
+  TagRenameArgs,
+  TagRenameResult,
   TargetResolveInput,
   UiState,
   UiStateArgs,
@@ -202,4 +207,16 @@ export function noteUndoLastAppend(): Promise<UndoAppendResult> {
 
 export function inboxExtractToNote(args: InboxExtractArgs): Promise<NoteDoc> {
   return invoke<NoteDoc>('inbox_extract_to_note', { args });
+}
+
+export function commandsSearch(args: CommandSearchArgs): Promise<CommandEntry[]> {
+  return invoke<CommandEntry[]>('commands_search', { args });
+}
+
+export function notesGetRelated(args: RelPathArgs): Promise<RelatedNoteItem[]> {
+  return invoke<RelatedNoteItem[]>('notes_get_related', { args });
+}
+
+export function tagsBatchRename(args: TagRenameArgs): Promise<TagRenameResult> {
+  return invoke<TagRenameResult>('tags_batch_rename', { args });
 }

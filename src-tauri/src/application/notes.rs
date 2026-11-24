@@ -9,6 +9,7 @@ use chrono::{Local, Utc};
 use crate::application::index::index_single_note;
 use crate::application::persistence::PersistenceManager;
 use crate::domain::backup::format_backup_filename;
+use crate::domain::command_book::{filter_and_rank_commands, CommandEntry, CommandSearchArgs};
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::frontmatter::{
     apply_yaml_patch, build_frontmatter_block, render_yaml_string, replace_frontmatter_yaml,
@@ -16,19 +17,20 @@ use crate::domain::frontmatter::{
 };
 use crate::domain::markdown::{decode_base64_image, normalize_image_ext};
 use crate::domain::note::{
-    compose_note, compute_body_hash, count_list_items, format_ulid, meta_patch_ops, parse_note,
-    tag_matches, ConflictInfo, CreateNoteArgs, DirNode, NavTreeSnapshot, NoteDoc, NoteMeta,
-    NoteMetaPatch, NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs,
-    RelPathArgs, RenameNoteArgs, SaveImageArgs, SavedImageResult, SearchItemKind, SearchQueryArgs,
-    SearchResponse, SearchResultItem, SearchSource, TagNode, WorkspaceSummary, WriteNoteArgs,
-    WriteResult, INBOX_REL_PATH,
+    compose_note, compute_body_hash, count_list_items, format_ulid, meta_patch_ops,
+    normalize_tag_name, parse_note, rewrite_tags_for_rename, score_related_notes, tag_matches,
+    ConflictInfo, CreateNoteArgs, DirNode, NavTreeSnapshot, NoteDoc, NoteMeta, NoteMetaPatch,
+    NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs, RelPathArgs,
+    RelatedNoteCandidate, RelatedNoteItem, RenameNoteArgs, SaveImageArgs, SavedImageResult,
+    SearchItemKind, SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode,
+    TagRenameArgs, TagRenameResult, WorkspaceSummary, WriteNoteArgs, WriteResult, INBOX_REL_PATH,
 };
 use crate::domain::template::{builtin_template, render_template, TemplateVars};
 use crate::domain::tokenizer::build_fts_query;
 use crate::infra::fs::{atomic_write_bytes, atomic_write_str, map_io_error, prune_backups};
 use crate::infra::sqlite::{
-    delete_note_index_by_rel_path, get_note_key_by_rel_path, list_all_indexed_notes,
-    search_notes_fts,
+    delete_note_index_by_rel_path, get_note_key_by_rel_path, list_all_commands,
+    list_all_indexed_notes, list_backlink_sources, search_notes_fts,
 };
 
 static ULID_SEQ: AtomicU64 = AtomicU64::new(1);
@@ -66,8 +68,13 @@ fn require_library_root(pm: &PersistenceManager) -> Result<PathBuf, AppError> {
 }
 
 fn resolve_rel_path(root: &Path, abs_path: &Path) -> Option<String> {
-    abs_path
-        .strip_prefix(root)
+    if let Ok(rel) = abs_path.strip_prefix(root) {
+        return Some(rel.to_string_lossy().replace('\\', "/"));
+    }
+    let canon_root = fs::canonicalize(root).ok()?;
+    let canon_abs = fs::canonicalize(abs_path).ok()?;
+    canon_abs
+        .strip_prefix(&canon_root)
         .ok()
         .map(|p| p.to_string_lossy().replace('\\', "/"))
 }
@@ -99,6 +106,26 @@ fn normalize_rel_path(rel: &str) -> Result<String, AppError> {
         ));
     }
     Ok(trimmed.to_string())
+}
+
+fn is_markdown_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
+}
+
+fn expand_input_path(raw: &str) -> PathBuf {
+    let trimmed = raw.trim();
+    if trimmed == "~" {
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home);
+        }
+    } else if let Some(rest) = trimmed.strip_prefix("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join(rest);
+        }
+    }
+    PathBuf::from(trimmed)
 }
 
 /// Lists indexed notes filtered by tab, directory, tags, workspace, or search text (`C4.2`).
@@ -330,7 +357,7 @@ fn build_tag_tree(
 
 /// Reads a note by absolute path (supports both library and external `.md` files) (`C4.2`).
 pub fn note_read(pm: &PersistenceManager, args: ReadNoteArgs) -> Result<NoteDoc, AppError> {
-    let abs_path = PathBuf::from(args.abs_path.trim());
+    let abs_path = expand_input_path(&args.abs_path);
     if !abs_path.is_file() {
         return Err(AppError::with_detail(
             ErrorCode::NotFound,
@@ -341,16 +368,44 @@ pub fn note_read(pm: &PersistenceManager, args: ReadNoteArgs) -> Result<NoteDoc,
 
     let raw = fs::read_to_string(&abs_path).map_err(|e| map_io_error(e, "Failed to read note"))?;
     let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
-    let stem = abs_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("untitled");
-    let parsed = parse_note(&raw, stem);
 
     let root = pm.current_library_root()?.map(PathBuf::from);
     let rel_path = root.as_deref().and_then(|r| resolve_rel_path(r, &abs_path));
     let is_library = rel_path.is_some();
     let is_inbox = rel_path.as_deref() == Some(INBOX_REL_PATH);
+
+    if !is_markdown_path(&abs_path) {
+        let title = abs_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("untitled")
+            .to_string();
+        let meta = NoteMeta {
+            title,
+            doc_type: NoteType::Note,
+            ..NoteMeta::default()
+        };
+        let body_hash = compute_body_hash(&raw);
+        let key = format!("abs:{}", abs_path.to_string_lossy());
+        return Ok(NoteDoc {
+            key,
+            rel_path,
+            abs_path: abs_path.to_string_lossy().to_string(),
+            is_library,
+            is_inbox: false,
+            meta,
+            body: raw,
+            body_hash,
+            mtime_ms,
+            size_bytes,
+        });
+    }
+
+    let stem = abs_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("untitled");
+    let parsed = parse_note(&raw, stem);
 
     let key = if let Some(ref rel) = rel_path {
         pm.with_db(|conn| get_note_key_by_rel_path(conn, rel))?
@@ -502,7 +557,7 @@ fn resolve_template_raw(root: &Path, template_name: Option<&str>) -> Result<Stri
 
 /// Writes `body` with optimistic concurrency check (`base_body_hash`) and ULID back-fill (`D-0006`).
 pub fn note_write(pm: &PersistenceManager, args: WriteNoteArgs) -> Result<WriteResult, AppError> {
-    let abs_path = PathBuf::from(args.abs_path.trim());
+    let abs_path = expand_input_path(&args.abs_path);
     if !abs_path.is_file() {
         return Err(AppError::with_detail(
             ErrorCode::NotFound,
@@ -513,6 +568,47 @@ pub fn note_write(pm: &PersistenceManager, args: WriteNoteArgs) -> Result<WriteR
 
     let raw = fs::read_to_string(&abs_path).map_err(|e| map_io_error(e, "Failed to read note"))?;
     let (current_mtime_ms, _) = file_mtime_and_size(&abs_path)?;
+
+    if !is_markdown_path(&abs_path) {
+        let disk_body_hash = compute_body_hash(&raw);
+        if disk_body_hash != args.base_body_hash {
+            let conflict = ConflictInfo {
+                abs_path: abs_path.to_string_lossy().to_string(),
+                current_body: raw,
+                current_body_hash: disk_body_hash,
+                current_mtime_ms,
+            };
+            let detail = serde_json::to_string(&conflict).map_err(|e| {
+                AppError::with_detail(
+                    ErrorCode::InternalError,
+                    "Failed to serialize conflict info",
+                    e.to_string(),
+                )
+            })?;
+            return Err(AppError::with_detail(
+                ErrorCode::Conflict,
+                "Document modified on disk",
+                detail,
+            ));
+        }
+
+        atomic_write_str(&abs_path, &args.body)?;
+        let (new_mtime_ms, _) = file_mtime_and_size(&abs_path)?;
+        let new_body_hash = compute_body_hash(&args.body);
+        pm.record_self_write(&abs_path, &new_body_hash);
+        let _ = pm.clear_recovery_snapshot(&args.abs_path);
+        let abs_lossy = abs_path.to_string_lossy();
+        if abs_lossy != args.abs_path {
+            let _ = pm.clear_recovery_snapshot(&abs_lossy);
+        }
+
+        return Ok(WriteResult {
+            body_hash: new_body_hash,
+            mtime_ms: new_mtime_ms,
+            updated_meta: None,
+        });
+    }
+
     let stem = abs_path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -945,4 +1041,132 @@ pub fn note_save_image(
     atomic_write_bytes(&abs_path, &bytes)?;
 
     Ok(SavedImageResult { rel_path })
+}
+
+/// Searches indexed command-book entries (`C4.2`, `v4` §4.8).
+pub fn commands_search(
+    pm: &PersistenceManager,
+    args: CommandSearchArgs,
+) -> Result<Vec<CommandEntry>, AppError> {
+    let _ = require_library_root(pm)?;
+    let entries = pm.with_db(list_all_commands)?;
+    Ok(filter_and_rank_commands(&entries, &args.query))
+}
+
+/// Returns up to 20 related notes scored by backlinks, shared tags, and shared project (`C4.2`, `C8.6`).
+pub fn notes_get_related(
+    pm: &PersistenceManager,
+    args: RelPathArgs,
+) -> Result<Vec<RelatedNoteItem>, AppError> {
+    let _ = require_library_root(pm)?;
+    let rel_path = normalize_rel_path(&args.rel_path)?;
+
+    pm.with_db(|conn| {
+        let rows = list_all_indexed_notes(conn)?;
+        let Some(current_row) = rows.iter().find(|r| r.rel_path == rel_path) else {
+            return Err(AppError::with_detail(
+                ErrorCode::NotFound,
+                "Note not found in index",
+                rel_path.clone(),
+            ));
+        };
+
+        let backlink_sources = list_backlink_sources(conn, &rel_path)?;
+        let current = RelatedNoteCandidate {
+            key: &current_row.key,
+            rel_path: &current_row.rel_path,
+            title: &current_row.title,
+            tags: &current_row.tags,
+            project: current_row.project.as_deref(),
+            mtime_ms: current_row.mtime_ms,
+        };
+
+        let candidates: Vec<RelatedNoteCandidate<'_>> = rows
+            .iter()
+            .map(|r| RelatedNoteCandidate {
+                key: &r.key,
+                rel_path: &r.rel_path,
+                title: &r.title,
+                tags: &r.tags,
+                project: r.project.as_deref(),
+                mtime_ms: r.mtime_ms,
+            })
+            .collect();
+
+        Ok(score_related_notes(
+            &current,
+            &candidates,
+            &backlink_sources,
+        ))
+    })
+}
+
+/// Renames or merges a tag (and its hierarchical subtags) across all patchable library notes (`C4.2`, `C6.4`, `D-0006`).
+pub fn tags_batch_rename(
+    pm: &PersistenceManager,
+    args: TagRenameArgs,
+) -> Result<TagRenameResult, AppError> {
+    let root = require_library_root(pm)?;
+    let old_tag = normalize_tag_name(&args.old_tag);
+    let new_tag = normalize_tag_name(&args.new_tag);
+
+    if old_tag.is_empty() || new_tag.is_empty() || old_tag == new_tag {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "oldTag and newTag must be non-empty and distinct",
+        ));
+    }
+
+    let rows = pm.with_db(list_all_indexed_notes)?;
+    let mut updated_files: u32 = 0;
+
+    for row in rows {
+        if row.rel_path.starts_with("_templates/") || row.meta_error.is_some() {
+            continue;
+        }
+        if !row.tags.iter().any(|t| tag_matches(t, &old_tag)) {
+            continue;
+        }
+
+        let abs_path = root.join(&row.rel_path);
+        if !abs_path.is_file() {
+            continue;
+        }
+
+        let raw = fs::read_to_string(&abs_path)
+            .map_err(|e| map_io_error(e, "Failed to read note during tag batch rename"))?;
+        let stem = abs_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("untitled");
+        let parsed = parse_note(&raw, stem);
+        if !parsed.yaml_patchable || parsed.meta.meta_error.is_some() {
+            continue;
+        }
+
+        let Some(new_tags) = rewrite_tags_for_rename(&parsed.meta.tags, &old_tag, &new_tag) else {
+            continue;
+        };
+
+        let patch = NoteMetaPatch {
+            tags: Some(new_tags),
+            ..NoteMetaPatch::default()
+        };
+        let ops = meta_patch_ops(&patch);
+        let base_yaml = parsed.yaml.as_deref().unwrap_or("");
+        let patched_yaml = match apply_yaml_patch(base_yaml, &ops) {
+            Ok(y) => y,
+            Err(_) => continue,
+        };
+        let new_block = build_frontmatter_block(&patched_yaml);
+        let new_content = compose_note(Some(&new_block), &parsed.body);
+
+        atomic_write_str(&abs_path, &new_content)?;
+        let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
+        index_single_note(pm, &row.rel_path, &new_content, mtime_ms, size_bytes as i64)?;
+        pm.record_self_write(&abs_path, &compute_body_hash(&parsed.body));
+        updated_files += 1;
+    }
+
+    Ok(TagRenameResult { updated_files })
 }

@@ -1,8 +1,10 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 
+use crate::domain::command_book::CommandEntry;
 use crate::domain::error::{AppError, ErrorCode};
 use crate::infra::fs::map_io_error;
 
@@ -114,6 +116,8 @@ pub struct NoteIndexRecord {
     pub title_tokens: String,
     pub tag_tokens: String,
     pub body_tokens: String,
+    pub links: Vec<String>,
+    pub commands: Vec<CommandEntry>,
 }
 
 /// Lightweight row returned from `notes` queries.
@@ -144,6 +148,10 @@ pub fn replace_all_notes_index(
 
     tx.execute("DELETE FROM note_tags", [])
         .map_err(|e| map_sqlite_error(e, "Failed to clear note_tags"))?;
+    tx.execute("DELETE FROM note_links", [])
+        .map_err(|e| map_sqlite_error(e, "Failed to clear note_links"))?;
+    tx.execute("DELETE FROM commands", [])
+        .map_err(|e| map_sqlite_error(e, "Failed to clear commands"))?;
     tx.execute("DELETE FROM notes_fts", [])
         .map_err(|e| map_sqlite_error(e, "Failed to clear notes_fts"))?;
     tx.execute("DELETE FROM notes", [])
@@ -197,6 +205,17 @@ pub fn delete_note_index_by_rel_path(conn: &Connection, rel_path: &str) -> Resul
 }
 
 fn delete_note_in_tx(tx: &rusqlite::Transaction<'_>, rel_path: &str) -> Result<(), AppError> {
+    tx.execute(
+        "DELETE FROM note_links WHERE source_rel_path = ?1",
+        params![rel_path],
+    )
+    .map_err(|e| map_sqlite_error(e, "Failed to delete note_links"))?;
+    tx.execute(
+        "DELETE FROM commands WHERE note_rel_path = ?1",
+        params![rel_path],
+    )
+    .map_err(|e| map_sqlite_error(e, "Failed to delete commands"))?;
+
     let existing_key: Option<String> = tx
         .query_row(
             "SELECT key FROM notes WHERE rel_path = ?1",
@@ -261,6 +280,38 @@ fn insert_note_in_tx(
         params![rec.key, rec.title_tokens, rec.tag_tokens, rec.body_tokens],
     )
     .map_err(|e| map_sqlite_error(e, "Failed to insert into notes_fts"))?;
+
+    for target in &rec.links {
+        tx.execute(
+            "INSERT OR IGNORE INTO note_links (source_rel_path, target_rel_path) VALUES (?1, ?2)",
+            params![rec.rel_path, target],
+        )
+        .map_err(|e| map_sqlite_error(e, "Failed to insert into note_links"))?;
+    }
+
+    for cmd in &rec.commands {
+        let keywords_json =
+            serde_json::to_string(&cmd.keywords).unwrap_or_else(|_| "[]".to_string());
+        tx.execute(
+            "INSERT INTO commands (
+                id, note_rel_path, section, title, description,
+                code, language, keywords, is_danger, line
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                cmd.id,
+                cmd.note_rel_path,
+                cmd.section,
+                cmd.title,
+                cmd.description,
+                cmd.code,
+                cmd.language,
+                keywords_json,
+                i64::from(cmd.is_danger),
+                cmd.line as i64,
+            ],
+        )
+        .map_err(|e| map_sqlite_error(e, "Failed to insert into commands"))?;
+    }
 
     Ok(())
 }
@@ -380,4 +431,73 @@ pub fn get_note_key_by_rel_path(
     )
     .optional()
     .map_err(|e| map_sqlite_error(e, "Failed to query note key by rel_path"))
+}
+
+/// Lists all indexed command entries ordered by `note_rel_path ASC, line ASC`.
+pub fn list_all_commands(conn: &Connection) -> Result<Vec<CommandEntry>, AppError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, note_rel_path, section, title, description,
+                    code, language, keywords, is_danger, line
+             FROM commands
+             ORDER BY note_rel_path ASC, line ASC",
+        )
+        .map_err(|e| map_sqlite_error(e, "Failed to prepare list_all_commands"))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let raw_keywords: String = row.get(7)?;
+            let keywords = parse_stored_keywords(&raw_keywords);
+            let line_i64: i64 = row.get(9)?;
+            Ok(CommandEntry {
+                id: row.get(0)?,
+                note_rel_path: row.get(1)?,
+                section: row.get(2)?,
+                title: row.get(3)?,
+                description: row.get(4)?,
+                code: row.get(5)?,
+                language: row.get(6)?,
+                keywords,
+                is_danger: row.get::<_, i64>(8)? != 0,
+                line: line_i64.max(1) as u32,
+            })
+        })
+        .map_err(|e| map_sqlite_error(e, "Failed to query commands"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| map_sqlite_error(e, "Failed to read command rows"))?;
+
+    Ok(rows)
+}
+
+fn parse_stored_keywords(raw: &str) -> Vec<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    if let Ok(parsed) = serde_json::from_str::<Vec<String>>(trimmed) {
+        return parsed;
+    }
+    trimmed
+        .split_whitespace()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Lists all `source_rel_path` values in `note_links` pointing to `target_rel_path`.
+pub fn list_backlink_sources(
+    conn: &Connection,
+    target_rel_path: &str,
+) -> Result<HashSet<String>, AppError> {
+    let mut stmt = conn
+        .prepare("SELECT source_rel_path FROM note_links WHERE target_rel_path = ?1")
+        .map_err(|e| map_sqlite_error(e, "Failed to prepare list_backlink_sources"))?;
+
+    let sources = stmt
+        .query_map(params![target_rel_path], |row| row.get::<_, String>(0))
+        .map_err(|e| map_sqlite_error(e, "Failed to query backlink sources"))?
+        .collect::<Result<HashSet<String>, _>>()
+        .map_err(|e| map_sqlite_error(e, "Failed to read backlink source rows"))?;
+
+    Ok(sources)
 }

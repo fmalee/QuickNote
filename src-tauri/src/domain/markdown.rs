@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::tokenizer::is_cjk;
@@ -295,4 +295,217 @@ pub fn decode_base64_image(raw: &str, max_bytes: usize) -> Result<Vec<u8>, AppEr
     }
 
     Ok(out)
+}
+
+/// Extracts normalized library-relative `.md`/`.markdown` links from Markdown body (`C8.6`).
+pub fn extract_relative_note_links(source_rel_path: &str, body: &str) -> Vec<String> {
+    let mut links = BTreeSet::new();
+    let mut fence: Option<(char, usize)> = None;
+
+    for raw_line in body.lines() {
+        let line = raw_line.trim_end_matches('\r');
+        let trimmed = line.trim_start();
+        let leading_spaces = line.len().saturating_sub(trimmed.len());
+
+        if leading_spaces <= 3 {
+            if let Some((fence_char, fence_len)) = fence {
+                let run_len = trimmed.chars().take_while(|&c| c == fence_char).count();
+                if run_len >= fence_len && trimmed[run_len..].trim().is_empty() {
+                    fence = None;
+                }
+                continue;
+            } else if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+                let fence_char = trimmed.chars().next().unwrap_or('`');
+                let run_len = trimmed.chars().take_while(|&c| c == fence_char).count();
+                if run_len >= 3 {
+                    fence = Some((fence_char, run_len));
+                    continue;
+                }
+            }
+        } else if fence.is_some() {
+            continue;
+        }
+
+        if leading_spaces <= 3 {
+            if let Some(target) = parse_reference_link_definition(trimmed) {
+                if let Some(normalized) = normalize_relative_md_target(source_rel_path, target) {
+                    links.insert(normalized);
+                }
+                continue;
+            }
+        }
+
+        let clean_line = strip_inline_code_spans(line);
+        let mut rest = clean_line.as_str();
+        while let Some(open_bracket) = rest.find('[') {
+            let is_image = open_bracket > 0 && rest.as_bytes()[open_bracket - 1] == b'!';
+            let after_bracket = &rest[open_bracket + 1..];
+            if let Some(close_bracket) = after_bracket.find(']') {
+                let after_close = &after_bracket[close_bracket + 1..];
+                if let Some(after_paren) = after_close.strip_prefix('(') {
+                    if let Some(close_paren) = after_paren.find(')') {
+                        if !is_image {
+                            let raw_inner = &after_paren[..close_paren];
+                            if let Some(target) = parse_link_destination(raw_inner) {
+                                if let Some(normalized) =
+                                    normalize_relative_md_target(source_rel_path, target)
+                                {
+                                    links.insert(normalized);
+                                }
+                            }
+                        }
+                        rest = &after_paren[close_paren + 1..];
+                        continue;
+                    }
+                }
+            }
+            rest = after_bracket;
+        }
+    }
+
+    links.into_iter().collect()
+}
+
+fn strip_inline_code_spans(line: &str) -> String {
+    let bytes = line.as_bytes();
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'`' {
+            let start = i;
+            while i < bytes.len() && bytes[i] == b'`' {
+                i += 1;
+            }
+            let tick_len = i - start;
+
+            // Search for matching closing backtick run of exact length.
+            let mut j = i;
+            let mut found_close = None;
+            while j < bytes.len() {
+                if bytes[j] == b'`' {
+                    let close_start = j;
+                    while j < bytes.len() && bytes[j] == b'`' {
+                        j += 1;
+                    }
+                    if j - close_start == tick_len {
+                        found_close = Some(j);
+                        break;
+                    }
+                } else {
+                    j += 1;
+                }
+            }
+
+            if let Some(end_idx) = found_close {
+                i = end_idx;
+                continue;
+            } else {
+                out.push_str(&line[start..i]);
+                continue;
+            }
+        }
+
+        if let Some(ch) = line[i..].chars().next() {
+            out.push(ch);
+            i += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+
+    out
+}
+
+fn parse_reference_link_definition(trimmed: &str) -> Option<&str> {
+    if !trimmed.starts_with('[') {
+        return None;
+    }
+    let close_bracket = trimmed[1..].find("]:")?;
+    let after_colon = trimmed[1 + close_bracket + 2..].trim_start();
+    if after_colon.is_empty() {
+        return None;
+    }
+    parse_link_destination(after_colon)
+}
+
+fn parse_link_destination(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(after_lt) = trimmed.strip_prefix('<') {
+        let end_gt = after_lt.find('>')?;
+        let dest = after_lt[..end_gt].trim();
+        if dest.is_empty() {
+            None
+        } else {
+            Some(dest)
+        }
+    } else {
+        let dest = trimmed.split_whitespace().next()?;
+        if dest.is_empty() {
+            None
+        } else {
+            Some(dest)
+        }
+    }
+}
+
+fn normalize_relative_md_target(source_rel_path: &str, raw_target: &str) -> Option<String> {
+    let target = raw_target.trim();
+    if target.is_empty() || target.starts_with('#') || target.starts_with('/') {
+        return None;
+    }
+
+    let lower = target.to_ascii_lowercase();
+    if lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("mailto:")
+        || lower.starts_with("file://")
+    {
+        return None;
+    }
+
+    let cut_idx = target.find(['#', '?']).unwrap_or(target.len());
+    let path_only = target[..cut_idx].trim();
+    if path_only.is_empty() {
+        return None;
+    }
+
+    // Reject other explicit URI schemes (e.g. `obsidian://`, `data:`).
+    if let Some(colon_idx) = path_only.find(':') {
+        if !path_only[..colon_idx].contains('/') {
+            return None;
+        }
+    }
+
+    let path_lower = path_only.to_ascii_lowercase();
+    if !path_lower.ends_with(".md") && !path_lower.ends_with(".markdown") {
+        return None;
+    }
+
+    let source_clean = source_rel_path.trim().replace('\\', "/");
+    let mut stack: Vec<&str> = match source_clean.rsplit_once('/') {
+        Some((dir, _)) if !dir.is_empty() => dir.split('/').filter(|s| !s.is_empty()).collect(),
+        _ => Vec::new(),
+    };
+
+    let target_clean = path_only.replace('\\', "/");
+    for seg in target_clean.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                stack.pop()?;
+            }
+            other => stack.push(other),
+        }
+    }
+
+    let normalized = stack.join("/");
+    if normalized.is_empty() || normalized == source_clean {
+        return None;
+    }
+
+    Some(normalized)
 }

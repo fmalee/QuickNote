@@ -8,14 +8,16 @@ use crate::domain::capture::{
     AppendNoteArgs, AppendResult, InboxExtractArgs, ResolvedTarget, TargetKind, TargetResolveInput,
     UndoAppendResult,
 };
+use crate::domain::command_book::{CommandEntry, CommandSearchArgs};
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::hotkey::HotkeyUpdateArgs;
 use crate::domain::note::{
     ConflictInfo, CreateNoteArgs, DirNode, IndexPhase, IndexStatus, NavTreeSnapshot, NoteDoc,
     NoteMeta, NoteMetaPatch, NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs,
-    ReadNoteArgs, RelPathArgs, RenameNoteArgs, SaveImageArgs, SavedImageResult, SearchItemKind,
-    SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode, WorkspaceSummary,
-    WriteNoteArgs, WriteResult,
+    ReadNoteArgs, RelPathArgs, RelatedNoteItem, RelatedReason, RenameNoteArgs, SaveImageArgs,
+    SavedImageResult, SearchItemKind, SearchQueryArgs, SearchResponse, SearchResultItem,
+    SearchSource, TagNode, TagRenameArgs, TagRenameResult, WorkspaceSummary, WriteNoteArgs,
+    WriteResult,
 };
 use crate::domain::settings::{
     EditorSettings, EditorSettingsPatch, EditorTheme, EditorsSettings, EditorsSettingsPatch,
@@ -125,6 +127,12 @@ pub fn collect_types() -> Types {
         .register::<SearchResultItem>()
         .register::<SearchQueryArgs>()
         .register::<SearchResponse>()
+        .register::<CommandEntry>()
+        .register::<CommandSearchArgs>()
+        .register::<RelatedReason>()
+        .register::<RelatedNoteItem>()
+        .register::<TagRenameArgs>()
+        .register::<TagRenameResult>()
         .register::<TargetKind>()
         .register::<TargetResolveInput>()
         .register::<ResolvedTarget>()

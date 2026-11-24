@@ -7,7 +7,9 @@ use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::application::persistence::PersistenceManager;
+use crate::domain::command_book::parse_command_book;
 use crate::domain::error::{AppError, ErrorCode};
+use crate::domain::markdown::extract_relative_note_links;
 use crate::domain::note::{
     compute_body_hash, make_excerpt, parse_note, IndexPhase, IndexStatus, NoteType, INBOX_REL_PATH,
 };
@@ -222,6 +224,26 @@ pub fn build_note_index_record(
         }
     });
 
+    let body_start_line = parsed
+        .block
+        .as_deref()
+        .map(|b| b.matches('\n').count() as u32 + 1)
+        .unwrap_or(1);
+
+    let links = if is_template {
+        Vec::new()
+    } else {
+        extract_relative_note_links(rel_path, &parsed.body)
+    };
+
+    let commands = if !is_template
+        && (parsed.meta.doc_type == NoteType::CommandBook || rel_path.starts_with("commands/"))
+    {
+        parse_command_book(rel_path, &parsed.body, body_start_line)
+    } else {
+        Vec::new()
+    };
+
     let frontmatter_json = serde_json::to_string(&parsed.meta).unwrap_or_else(|_| "{}".to_string());
     let excerpt = make_excerpt(&parsed.body, 160);
     let title_tokens = tokenize_mixed(&parsed.meta.title);
@@ -249,6 +271,8 @@ pub fn build_note_index_record(
         title_tokens,
         tag_tokens,
         body_tokens,
+        links,
+        commands,
     }
 }
 

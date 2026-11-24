@@ -5,14 +5,15 @@ use tauri::State;
 use crate::application::notes::{
     note_create as create_uc, note_delete as delete_uc, note_read as read_uc,
     note_rename as rename_uc, note_save_image as save_image_uc, note_update_meta as update_meta_uc,
-    note_write as write_uc, notes_get_tree_and_tags as tree_uc, notes_list as list_uc,
+    note_write as write_uc, notes_get_related as related_uc, notes_get_tree_and_tags as tree_uc,
+    notes_list as list_uc, tags_batch_rename as tag_rename_uc,
 };
 use crate::application::persistence::PersistenceManager;
 use crate::domain::error::AppError;
 use crate::domain::note::{
     CreateNoteArgs, NavTreeSnapshot, NoteDoc, NoteSummary, NoteUpdateMetaArgs, NotesFilterArgs,
-    ReadNoteArgs, RelPathArgs, RenameNoteArgs, SaveImageArgs, SavedImageResult, WriteNoteArgs,
-    WriteResult,
+    ReadNoteArgs, RelPathArgs, RelatedNoteItem, RenameNoteArgs, SaveImageArgs, SavedImageResult,
+    TagRenameArgs, TagRenameResult, WriteNoteArgs, WriteResult,
 };
 
 #[tauri::command]
@@ -84,4 +85,20 @@ pub fn note_save_image(
     args: SaveImageArgs,
 ) -> Result<SavedImageResult, AppError> {
     save_image_uc(&pm, args)
+}
+
+#[tauri::command]
+pub fn notes_get_related(
+    pm: State<'_, Arc<PersistenceManager>>,
+    args: RelPathArgs,
+) -> Result<Vec<RelatedNoteItem>, AppError> {
+    related_uc(&pm, args)
+}
+
+#[tauri::command]
+pub fn tags_batch_rename(
+    pm: State<'_, Arc<PersistenceManager>>,
+    args: TagRenameArgs,
+) -> Result<TagRenameResult, AppError> {
+    tag_rename_uc(&pm, args)
 }

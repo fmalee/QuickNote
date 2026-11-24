@@ -14,7 +14,13 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: mockListen,
 }));
 
-import { appGetInfo, isAppError } from '@/lib/ipc/commands';
+import {
+  appGetInfo,
+  commandsSearch,
+  isAppError,
+  notesGetRelated,
+  tagsBatchRename,
+} from '@/lib/ipc/commands';
 import { listenEvent } from '@/lib/ipc/events';
 
 describe('IPC smoke wrapper', () => {
@@ -80,5 +86,24 @@ describe('IPC smoke wrapper', () => {
     expect(returnedUnlisten).toBe(unlisten);
     capturedCallback?.({ payload: { count: 42 } });
     expect(received).toEqual([42]);
+  });
+
+  it('invokes M3-01a commandsSearch, notesGetRelated, and tagsBatchRename', async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    await commandsSearch({ query: 'git' });
+    expect(mockInvoke).toHaveBeenCalledWith('commands_search', { args: { query: 'git' } });
+
+    mockInvoke.mockResolvedValueOnce([]);
+    await notesGetRelated({ relPath: 'notes/a.md' });
+    expect(mockInvoke).toHaveBeenCalledWith('notes_get_related', {
+      args: { relPath: 'notes/a.md' },
+    });
+
+    mockInvoke.mockResolvedValueOnce({ updatedFiles: 2 });
+    const res = await tagsBatchRename({ oldTag: 'dev', newTag: 'work' });
+    expect(mockInvoke).toHaveBeenCalledWith('tags_batch_rename', {
+      args: { oldTag: 'dev', newTag: 'work' },
+    });
+    expect(res).toEqual({ updatedFiles: 2 });
   });
 });

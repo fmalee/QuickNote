@@ -40,6 +40,25 @@ export type AppendResult = {
 /**  Capture formatting mode (`C3.4`, `C6.3`). */
 export type CaptureMode = "list" | "todo" | "prose";
 
+/**  Parsed command entry from a `command-book` note (`C3.4`). */
+export type CommandEntry = {
+	id: string,
+	noteRelPath: string,
+	section: string,
+	title: string,
+	description: string,
+	code: string,
+	language: string | null,
+	keywords: string[],
+	isDanger: boolean,
+	line: number,
+};
+
+/**  Arguments for `commands_search` (`C4.2`). */
+export type CommandSearchArgs = {
+	query: string,
+};
+
 /**  Structured conflict info serialized into `AppError.detail` on `ErrorCode::Conflict` (`C3.4`). */
 export type ConflictInfo = {
 	absPath: string,
@@ -421,6 +440,18 @@ export type RelPathArgs = {
 	relPath: string,
 };
 
+/**  Related note item returned by `notes_get_related` (`C3.4`, `C8.6`). */
+export type RelatedNoteItem = {
+	key: string,
+	relPath: string,
+	title: string,
+	reason: RelatedReason,
+	score: number,
+};
+
+/**  Primary relation reason for `notes_get_related` (`C3.4`, `C8.6`). */
+export type RelatedReason = "backlink" | "shared_tags" | "same_project";
+
 /**  Arguments for `note_rename` (`C4.2`). */
 export type RenameNoteArgs = {
 	relPath: string,
@@ -565,6 +596,17 @@ export type TagNode = {
 	tag: string,
 	count: number,
 	children: TagNode[],
+};
+
+/**  Arguments for `tags_batch_rename` (`C4.2`). */
+export type TagRenameArgs = {
+	oldTag: string,
+	newTag: string,
+};
+
+/**  Result returned by `tags_batch_rename` (`C4.2`). */
+export type TagRenameResult = {
+	updatedFiles: number,
 };
 
 /**  Resolved capture target kind (`C8.1`). */
