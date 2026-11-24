@@ -79,3 +79,23 @@ export {
   type ImageInsertOutcome,
   MAX_IMAGE_SIZE_BYTES,
 } from './extensions/markdownImages';
+export {
+  createCodeIndentCommand,
+  createCodeOutdentCommand,
+  detectDocumentLanguage,
+  detectFileIndentation,
+  type DetectedLanguage,
+  type DetectedLanguageId,
+  type FileIndentation,
+  getStreamLanguageExtension,
+} from './extensions/codeLanguages';
+export {
+  DIAGNOSTICS_MAX_BYTES,
+  diagnosticsField,
+  type DiagnosticsResult,
+  dispatchDiagnostics,
+  type EditorDiagnostic,
+  PLAIN_TEXT_FALLBACK_BYTES,
+  runLightweightDiagnostics,
+  setDiagnosticsEffect,
+} from './extensions/codeDiagnostics';

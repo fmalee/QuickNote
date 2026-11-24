@@ -8,6 +8,7 @@ import type {
   RelPathArgs,
   RenameNoteArgs,
   SearchResultItem,
+  TagRenameResult,
   UiState,
   UiStatePatchKey,
 } from '@/bindings/types';
@@ -20,6 +21,7 @@ import {
   notesGetTreeAndTags,
   notesList,
   searchNotesAndFiles,
+  tagsBatchRename,
   uiStateGet,
   uiStateSet,
 } from '@/lib/ipc/commands';
@@ -53,6 +55,10 @@ export function renameNote(args: RenameNoteArgs): Promise<NoteDoc> {
 
 export function deleteNote(args: RelPathArgs): Promise<void> {
   return noteDelete(args);
+}
+
+export function batchRenameTag(oldTag: string, newTag: string): Promise<TagRenameResult> {
+  return tagsBatchRename({ oldTag, newTag });
 }
 
 export function fetchUiState(): Promise<UiState> {

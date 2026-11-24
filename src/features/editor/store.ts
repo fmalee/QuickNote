@@ -1205,6 +1205,23 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
   }
 
+  async function refreshOpenTabsMetaFromDisk(): Promise<void> {
+    for (const tab of tabs.value) {
+      try {
+        const latest = await readNote({ absPath: tab.absPath });
+        tab.doc = latest;
+        if (!tab.isDirty) {
+          tab.draftBody = latest.body;
+          tab.baseBodyHash = latest.bodyHash;
+          tab.saveStatus = 'saved';
+          tab.syncSeq += 1;
+        }
+      } catch {
+        // 忽略单文件刷新失败
+      }
+    }
+  }
+
   function dispose(): void {
     if (persistTimer !== null) {
       clearTimeout(persistTimer);
@@ -1274,6 +1291,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     handleQuickBarAppendEvent,
     handleMainWindowShown,
     restoreTabsFromUiState,
+    refreshOpenTabsMetaFromDisk,
     dispose,
   };
 });

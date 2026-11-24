@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
 import type { DirNode, NoteSummary, SearchResultItem, TagNode } from '@/bindings/types';
-import { QnBadge, QnBanner, QnButton, QnContextMenu, type ContextMenuEntry } from '@/components';
+import {
+  type ContextMenuEntry,
+  QnBadge,
+  QnBanner,
+  QnButton,
+  QnContextMenu,
+  QnInput,
+  QnModalShell,
+} from '@/components';
 import { useEditorTabsStore } from '@/features/editor';
 import { type NavTab, useNotesStore } from './store';
 
@@ -54,6 +62,80 @@ const externalCtxMenuItems: ContextMenuEntry[] = [
   { type: 'separator', id: 'external-sep' },
   { type: 'item', id: 'external.unpin', title: '取消固定常用文件' },
 ];
+
+const tagCtxOpen = ref<boolean>(false);
+const tagCtxPos = ref<{ x: number; y: number }>({ x: 0, y: 0 });
+const tagCtxTarget = ref<string | null>(null);
+const tagCtxMenuItems: ContextMenuEntry[] = [
+  { type: 'item', id: 'tag.rename', title: '重命名 / 合并…' },
+];
+
+const tagRenameModalOpen = ref<boolean>(false);
+const tagRenameOld = ref<string>('');
+const tagRenameDraft = ref<string>('');
+const tagRenameNotice = ref<string | null>(null);
+
+const allExistingTags = computed<Set<string>>(() => {
+  const set = new Set<string>();
+  function walk(nodes: TagNode[]): void {
+    for (const node of nodes) {
+      set.add(node.tag);
+      walk(node.children);
+    }
+  }
+  walk(notesStore.navTree.tags);
+  return set;
+});
+
+const normalizedTagDraft = computed<string>(() => tagRenameDraft.value.trim().replace(/^#+/, ''));
+
+const isTagMergeTarget = computed<boolean>(() => {
+  const target = normalizedTagDraft.value;
+  return Boolean(target && target !== tagRenameOld.value && allExistingTags.value.has(target));
+});
+
+const canSubmitTagRename = computed<boolean>(() => {
+  const target = normalizedTagDraft.value;
+  return Boolean(target && target !== tagRenameOld.value && !notesStore.mutating);
+});
+
+function openTagContextMenu(event: MouseEvent, tag: string): void {
+  tagCtxTarget.value = tag;
+  tagCtxPos.value = { x: event.clientX, y: event.clientY };
+  tagCtxOpen.value = true;
+}
+
+function handleTagContextSelect(id: string): void {
+  const target = tagCtxTarget.value;
+  tagCtxOpen.value = false;
+  if (id === 'tag.rename' && target) {
+    openTagRenameModal(target);
+  }
+}
+
+function openTagRenameModal(tag: string): void {
+  tagRenameOld.value = tag;
+  tagRenameDraft.value = tag;
+  tagRenameModalOpen.value = true;
+}
+
+function closeTagRenameModal(): void {
+  tagRenameModalOpen.value = false;
+}
+
+async function submitTagRename(): Promise<void> {
+  if (!canSubmitTagRename.value) {
+    return;
+  }
+  const updatedFiles = await notesStore.renameOrMergeTag(
+    tagRenameOld.value,
+    normalizedTagDraft.value,
+  );
+  if (!notesStore.errorMessage) {
+    tagRenameModalOpen.value = false;
+    tagRenameNotice.value = `已更新 ${updatedFiles} 篇笔记的标签`;
+  }
+}
 
 function openExternalContextMenu(event: MouseEvent, item: SearchResultItem): void {
   externalCtxItem.value = item;
@@ -372,6 +454,14 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
           #{{ tag }} ×
         </button>
       </div>
+      <div v-if="tagRenameNotice" class="qn-notes-sidebar__tag-notice">
+        <QnBanner tone="success" data-testid="tag-rename-success-banner">
+          <span>{{ tagRenameNotice }}</span>
+          <template #actions>
+            <QnButton size="sm" variant="ghost" @click="tagRenameNotice = null">关闭</QnButton>
+          </template>
+        </QnBanner>
+      </div>
       <div v-if="flatTags.length === 0" class="qn-notes-sidebar__empty">暂无标签</div>
       <div v-else class="qn-notes-sidebar__tree">
         <div
@@ -388,6 +478,7 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
           ]"
           :data-testid="`tag-node-${entry.node.tag}`"
           @click="notesStore.toggleTag(entry.node.tag)"
+          @contextmenu.prevent="openTagContextMenu($event, entry.node.tag)"
         >
           <button
             v-if="entry.hasChildren"
@@ -400,9 +491,26 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
           </button>
           <span v-else class="qn-notes-sidebar__expand-spacer" />
           <span class="qn-notes-sidebar__tree-label">#{{ entry.node.tag }}</span>
+          <button
+            type="button"
+            class="qn-notes-sidebar__tag-action"
+            title="重命名 / 合并…"
+            :data-testid="`tag-rename-trigger-${entry.node.tag}`"
+            @click.stop="openTagRenameModal(entry.node.tag)"
+          >
+            重命名
+          </button>
           <span class="qn-notes-sidebar__tree-count">{{ entry.node.count }}</span>
         </div>
       </div>
+      <QnContextMenu
+        :open="tagCtxOpen"
+        :x="tagCtxPos.x"
+        :y="tagCtxPos.y"
+        :items="tagCtxMenuItems"
+        @select="handleTagContextSelect"
+        @close="tagCtxOpen = false"
+      />
     </div>
 
     <div
@@ -597,6 +705,48 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
       </div>
     </div>
   </aside>
+
+  <QnModalShell
+    :open="tagRenameModalOpen"
+    title="重命名 / 合并标签"
+    max-width="sm"
+    data-testid="tag-rename-modal"
+    @close="closeTagRenameModal"
+  >
+    <div class="qn-tag-rename-modal__body">
+      <div class="qn-tag-rename-modal__row">
+        <span class="qn-tag-rename-modal__label">原标签</span>
+        <code class="qn-tag-rename-modal__old">#{{ tagRenameOld }}</code>
+      </div>
+      <div class="qn-tag-rename-modal__row">
+        <label class="qn-tag-rename-modal__label" for="qn-tag-rename-input">新标签</label>
+        <QnInput
+          id="qn-tag-rename-input"
+          v-model="tagRenameDraft"
+          placeholder="输入新标签名（不含 #）"
+          data-testid="tag-rename-input"
+          @keydown.enter.prevent="submitTagRename"
+        />
+      </div>
+      <QnBanner v-if="isTagMergeTarget" tone="warning" data-testid="tag-merge-warning">
+        目标标签
+        <code>#{{ normalizedTagDraft }}</code>
+        已存在，确认后将把原标签下的全部笔记<strong>合并</strong>到该标签下（自动去重，不覆盖注释与未知字段）。
+      </QnBanner>
+    </div>
+    <template #footer>
+      <QnButton size="sm" variant="ghost" @click="closeTagRenameModal">取消</QnButton>
+      <QnButton
+        size="sm"
+        variant="primary"
+        :disabled="!canSubmitTagRename"
+        data-testid="tag-rename-submit-btn"
+        @click="submitTagRename"
+      >
+        {{ isTagMergeTarget ? '确认合并' : '确认重命名' }}
+      </QnButton>
+    </template>
+  </QnModalShell>
 </template>
 
 <style scoped>
@@ -1039,6 +1189,54 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
 
 .qn-notes-sidebar__pinned-unpin:hover {
   background-color: var(--qn-bg-active);
+  color: var(--qn-text-primary);
+}
+
+.qn-notes-sidebar__tag-notice {
+  margin-bottom: var(--qn-space-1);
+}
+
+.qn-notes-sidebar__tag-action {
+  display: none;
+  border: none;
+  background: transparent;
+  color: var(--qn-text-muted);
+  font-size: var(--qn-text-xs);
+  cursor: pointer;
+  padding: 0 var(--qn-space-1);
+  border-radius: var(--qn-radius-sm);
+}
+
+.qn-notes-sidebar__tree-item:hover .qn-notes-sidebar__tag-action,
+.qn-notes-sidebar__tree-item:focus-within .qn-notes-sidebar__tag-action {
+  display: inline-flex;
+}
+
+.qn-notes-sidebar__tag-action:hover {
+  background-color: var(--qn-bg-active);
+  color: var(--qn-accent);
+}
+
+.qn-tag-rename-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qn-space-3);
+}
+
+.qn-tag-rename-modal__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qn-space-1);
+}
+
+.qn-tag-rename-modal__label {
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-secondary);
+}
+
+.qn-tag-rename-modal__old {
+  font-family: var(--qn-font-mono);
+  font-size: var(--qn-text-sm);
   color: var(--qn-text-primary);
 }
 </style>

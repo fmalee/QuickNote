@@ -11,6 +11,7 @@ import type {
 import { useEditorTabsStore } from '@/features/editor';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import {
+  batchRenameTag,
   createNote,
   deleteNote,
   extractNotesErrorMessage,
@@ -347,6 +348,46 @@ export const useNotesStore = defineStore('notes', () => {
     }
   }
 
+  async function renameOrMergeTag(oldTagInput: string, newTagInput: string): Promise<number> {
+    const oldTag = oldTagInput.trim().replace(/^#+/, '');
+    const newTag = newTagInput.trim().replace(/^#+/, '');
+    if (!oldTag || !newTag) {
+      errorMessage.value = '标签名称不能为空。';
+      return 0;
+    }
+    if (oldTag === newTag) {
+      errorMessage.value = '新标签名称不能与原标签相同。';
+      return 0;
+    }
+
+    mutating.value = true;
+    errorMessage.value = null;
+    try {
+      const result = await batchRenameTag(oldTag, newTag);
+      if (selectedTags.value.length > 0) {
+        const replaced = selectedTags.value.map((tag) => {
+          if (tag === oldTag) {
+            return newTag;
+          }
+          if (tag.startsWith(`${oldTag}/`)) {
+            return `${newTag}${tag.slice(oldTag.length)}`;
+          }
+          return tag;
+        });
+        selectedTags.value = Array.from(new Set(replaced));
+        persistFiltersDebounced();
+      }
+      await Promise.all([loadTreeAndTags(), loadNotesList()]);
+      await editorTabsStore.refreshOpenTabsMetaFromDisk();
+      return result.updatedFiles;
+    } catch (error) {
+      errorMessage.value = extractNotesErrorMessage(error);
+      return 0;
+    } finally {
+      mutating.value = false;
+    }
+  }
+
   async function refreshAll(): Promise<void> {
     await Promise.all([loadTreeAndTags(), loadNotesList(), loadPinnedExternalFiles()]);
   }
@@ -427,6 +468,7 @@ export const useNotesStore = defineStore('notes', () => {
     createNewNote,
     renameNoteItem,
     deleteNoteItem,
+    renameOrMergeTag,
     initialize,
     dispose,
   };
