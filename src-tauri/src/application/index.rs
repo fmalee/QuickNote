@@ -224,12 +224,6 @@ pub fn build_note_index_record(
         }
     });
 
-    let body_start_line = parsed
-        .block
-        .as_deref()
-        .map(|b| b.matches('\n').count() as u32 + 1)
-        .unwrap_or(1);
-
     let links = if is_template {
         Vec::new()
     } else {
@@ -239,7 +233,7 @@ pub fn build_note_index_record(
     let commands = if !is_template
         && (parsed.meta.doc_type == NoteType::CommandBook || rel_path.starts_with("commands/"))
     {
-        parse_command_book(rel_path, &parsed.body, body_start_line)
+        parse_command_book(rel_path, &parsed.body)
     } else {
         Vec::new()
     };

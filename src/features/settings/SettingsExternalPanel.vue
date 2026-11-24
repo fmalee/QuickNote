@@ -313,7 +313,7 @@ async function removeSearchRoot(target: string): Promise<void> {
 
     <QnPanelCard
       title="Spotlight 搜索根目录 (searchRoots)"
-      subtitle="限制 Spotlight 外部文件检索范围（留空表示不额外限定特定根目录）"
+      subtitle="留空将不检索库外 Spotlight 文件"
     >
       <div class="qn-external-panel__stack">
         <div class="qn-external-panel__add-row">

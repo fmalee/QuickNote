@@ -63,6 +63,7 @@ export interface CommandPaletteEngine {
   confirmManualDir: (dirPath?: string) => Promise<boolean>;
   openSourceFile: () => Promise<boolean>;
   resolveTerminalForSelected: () => Promise<void>;
+  requestClose: () => Promise<void>;
   dispose: () => void;
 }
 
@@ -353,6 +354,10 @@ export function useCommandPalette(options: UseCommandPaletteOptions = {}): Comma
     },
   );
 
+  async function requestClose(): Promise<void> {
+    await options.onRequestClose?.();
+  }
+
   function dispose(): void {
     clearSearchTimer();
     if (feedbackTimer !== null) {
@@ -390,6 +395,7 @@ export function useCommandPalette(options: UseCommandPaletteOptions = {}): Comma
     confirmManualDir,
     openSourceFile,
     resolveTerminalForSelected,
+    requestClose,
     dispose,
   };
 }

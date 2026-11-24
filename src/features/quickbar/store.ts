@@ -846,11 +846,15 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     if (!unlistenWindowState) {
       unlistenWindowState = await subscribeQuickBarWindowState((state) => {
         if (state.windowId === 'quickbar' && state.visible) {
+          if (state.mode === null) {
+            mode.value = 'capture';
+          }
           void refreshState().then(() => {
             focusTick.value += 1;
           });
         } else if (state.windowId === 'quickbar' && !state.visible) {
-          // 切 Space 或 Esc 隐藏时关闭弹层但完整保留草稿
+          // 切 Space、热键或 Esc 隐藏时关闭弹层、复位至默认 capture 模式并完整保留草稿
+          mode.value = 'capture';
           targetPickerOpen.value = false;
           saveAsModalOpen.value = false;
         }
@@ -873,7 +877,9 @@ export const useQuickBarStore = defineStore('quickbar', () => {
   }
 
   async function hide(reason: HideReason = 'esc'): Promise<void> {
+    mode.value = 'capture';
     targetPickerOpen.value = false;
+    saveAsModalOpen.value = false;
     await hideQuickBarWindow(reason);
   }
 

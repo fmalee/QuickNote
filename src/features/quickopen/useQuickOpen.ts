@@ -459,21 +459,25 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
 
     if (event.key === 'ArrowDown') {
       event.preventDefault();
+      event.stopPropagation?.();
       moveSelection(1);
       return true;
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault();
+      event.stopPropagation?.();
       moveSelection(-1);
       return true;
     }
     if (event.key === 'Tab' && parsedQuery.value.mode === 'path') {
       event.preventDefault();
+      event.stopPropagation?.();
       void handleTabComplete();
       return true;
     }
     if (event.key === 'Enter') {
       event.preventDefault();
+      event.stopPropagation?.();
       if (event.altKey) {
         void revealItem(selectedItem.value);
         return true;
@@ -484,6 +488,7 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
     }
     if (event.key === 'Escape' && options.onClose) {
       event.preventDefault();
+      event.stopPropagation?.();
       options.onClose();
       return true;
     }

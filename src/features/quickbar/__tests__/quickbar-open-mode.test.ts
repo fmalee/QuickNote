@@ -1,5 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { createPinia, setActivePinia } from 'pinia';
-import { createSSRApp } from 'vue';
+import * as vueRuntime from 'vue';
+import { createRenderer, createSSRApp, nextTick, ssrContextKey } from 'vue';
+import { compileScript, compileTemplate, parse } from 'vue/compiler-sfc';
 import { renderToString } from 'vue/server-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -407,5 +411,421 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
 
     tabsStore.dispose();
     notesStore.dispose();
+  });
+
+  it('stops Esc and Cmd+Enter bubbling from QuickOpenPalette to QuickBarView and guards capture actions', async () => {
+    interface Listener {
+      (event: unknown): void;
+    }
+
+    class FakeNode {
+      parentNode: FakeNode | null = null;
+      childNodes: FakeNode[] = [];
+      private listeners = new Map<string, Set<Listener>>();
+
+      appendChild(child: FakeNode): FakeNode {
+        child.parentNode = this;
+        this.childNodes.push(child);
+        return child;
+      }
+
+      insertBefore(child: FakeNode, anchor: FakeNode | null): FakeNode {
+        child.parentNode = this;
+        if (!anchor) {
+          this.childNodes.push(child);
+          return child;
+        }
+        const idx = this.childNodes.indexOf(anchor);
+        if (idx >= 0) {
+          this.childNodes.splice(idx, 0, child);
+        } else {
+          this.childNodes.push(child);
+        }
+        return child;
+      }
+
+      removeChild(child: FakeNode): FakeNode {
+        const idx = this.childNodes.indexOf(child);
+        if (idx >= 0) {
+          this.childNodes.splice(idx, 1);
+          child.parentNode = null;
+        }
+        return child;
+      }
+
+      get nextSibling(): FakeNode | null {
+        if (!this.parentNode) {
+          return null;
+        }
+        const siblings = this.parentNode.childNodes;
+        const idx = siblings.indexOf(this);
+        return idx >= 0 && idx + 1 < siblings.length ? (siblings[idx + 1] ?? null) : null;
+      }
+
+      addEventListener(type: string, fn: Listener): void {
+        let set = this.listeners.get(type);
+        if (!set) {
+          set = new Set();
+          this.listeners.set(type, set);
+        }
+        set.add(fn);
+      }
+
+      removeEventListener(type: string, fn: Listener): void {
+        this.listeners.get(type)?.delete(fn);
+      }
+
+      dispatchEvent(event: FakeKeyboardEvent): boolean {
+        if (!event.target) {
+          event.target = this;
+        }
+        event.currentTarget = this;
+        const set = this.listeners.get(event.type);
+        if (set) {
+          for (const fn of Array.from(set)) {
+            fn(event);
+          }
+        }
+        if (event.bubbles && !event.cancelBubble && this.parentNode) {
+          this.parentNode.dispatchEvent(event);
+        }
+        return !event.defaultPrevented;
+      }
+    }
+
+    class FakeElement extends FakeNode {
+      tagName: string;
+      attributes = new Map<string, string>();
+      style: Record<string, string> & {
+        setProperty: (k: string, v: string) => void;
+        removeProperty: (k: string) => void;
+      };
+      textContent = '';
+      value = '';
+      disabled = false;
+
+      constructor(tagName: string) {
+        super();
+        this.tagName = tagName.toUpperCase();
+        this.style = Object.assign(Object.create(null) as Record<string, string>, {
+          setProperty: () => undefined,
+          removeProperty: () => undefined,
+        }) as FakeElement['style'];
+      }
+
+      setAttribute(name: string, val: string): void {
+        this.attributes.set(name, String(val));
+      }
+
+      getAttribute(name: string): string | null {
+        return this.attributes.get(name) ?? null;
+      }
+
+      removeAttribute(name: string): void {
+        this.attributes.delete(name);
+      }
+
+      focus(): void {}
+      select(): void {}
+
+      querySelector(selector: string): FakeElement | null {
+        const testIdMatch = /^\[data-testid="([^"]+)"\]$/.exec(selector);
+        const targetTestId = testIdMatch?.[1];
+        const visit = (node: FakeNode): FakeElement | null => {
+          if (node instanceof FakeElement && targetTestId) {
+            if (node.getAttribute('data-testid') === targetTestId) {
+              return node;
+            }
+          }
+          for (const child of node.childNodes) {
+            const found = visit(child);
+            if (found) {
+              return found;
+            }
+          }
+          return null;
+        };
+        return visit(this);
+      }
+    }
+
+    class FakeKeyboardEvent {
+      type: string;
+      key: string;
+      code: string;
+      metaKey: boolean;
+      ctrlKey: boolean;
+      altKey: boolean;
+      shiftKey: boolean;
+      bubbles: boolean;
+      cancelable: boolean;
+      isComposing = false;
+      keyCode: number;
+      defaultPrevented = false;
+      cancelBubble = false;
+      target: FakeNode | null = null;
+      currentTarget: FakeNode | null = null;
+
+      constructor(
+        type: string,
+        init: {
+          key: string;
+          code?: string;
+          metaKey?: boolean;
+          ctrlKey?: boolean;
+          altKey?: boolean;
+          shiftKey?: boolean;
+          bubbles?: boolean;
+          cancelable?: boolean;
+          keyCode?: number;
+        },
+      ) {
+        this.type = type;
+        this.key = init.key;
+        this.code = init.code ?? '';
+        this.metaKey = Boolean(init.metaKey);
+        this.ctrlKey = Boolean(init.ctrlKey);
+        this.altKey = Boolean(init.altKey);
+        this.shiftKey = Boolean(init.shiftKey);
+        this.bubbles = Boolean(init.bubbles);
+        this.cancelable = Boolean(init.cancelable);
+        this.keyCode = init.keyCode ?? 0;
+      }
+
+      preventDefault(): void {
+        this.defaultPrevented = true;
+      }
+
+      stopPropagation(): void {
+        this.cancelBubble = true;
+      }
+    }
+
+    const body = new FakeElement('body');
+
+    const origKeyboardEvent = (globalThis as { KeyboardEvent?: unknown }).KeyboardEvent;
+    const origElement = (globalThis as { Element?: unknown }).Element;
+
+    Object.defineProperty(globalThis, 'KeyboardEvent', {
+      value: FakeKeyboardEvent,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(globalThis, 'Element', {
+      value: FakeElement,
+      configurable: true,
+      writable: true,
+    });
+
+    const restorers: Array<() => void> = [];
+    function patchDomRender(comp: Record<string, unknown>, relPath: string): void {
+      const fullPath = path.resolve(process.cwd(), relPath);
+      const { descriptor } = parse(fs.readFileSync(fullPath, 'utf8'));
+      const script = compileScript(descriptor, { id: relPath });
+      const tpl = compileTemplate({
+        source: descriptor.template!.content,
+        id: relPath,
+        filename: relPath,
+        compilerOptions: { mode: 'function', bindingMetadata: script.bindings },
+      });
+      const renderFn = new Function('Vue', tpl.code)(vueRuntime) as unknown;
+      const prevRender = comp.render;
+      const prevSsrRender = comp.ssrRender;
+      comp.render = renderFn;
+      comp.ssrRender = undefined;
+      restorers.push(() => {
+        comp.render = prevRender;
+        comp.ssrRender = prevSsrRender;
+      });
+    }
+
+    const { createApp } = createRenderer<FakeNode, FakeElement>({
+      createElement: (tag) => new FakeElement(tag),
+      createText: (text) => {
+        const node = new FakeNode();
+        (node as unknown as { nodeValue: string }).nodeValue = text;
+        return node;
+      },
+      createComment: () => new FakeNode(),
+      setText: (node, text) => {
+        (node as unknown as { nodeValue: string }).nodeValue = text;
+      },
+      setElementText: (el, text) => {
+        el.textContent = text;
+      },
+      insert: (child, parent, anchor) => parent.insertBefore(child, anchor ?? null),
+      remove: (child) => child.parentNode?.removeChild(child),
+      parentNode: (node) => node.parentNode as FakeElement | null,
+      nextSibling: (node) => node.nextSibling,
+      patchProp: (el, key, prev, next) => {
+        if (key.startsWith('on')) {
+          const ev = key.slice(2).toLowerCase();
+          if (prev) el.removeEventListener(ev, prev as Listener);
+          if (next) el.addEventListener(ev, next as Listener);
+        } else if (key === 'value') {
+          el.value = String(next ?? '');
+        } else if (next == null || next === false) {
+          el.removeAttribute(key);
+        } else {
+          el.setAttribute(key, String(next === true ? '' : next));
+        }
+      },
+    });
+
+    const quickOpenMod = await import('@/features/quickopen');
+    const targetPickerMod = await import('../QuickBarTargetPicker.vue');
+    const componentsMod = await import('@/components');
+
+    patchDomRender(
+      quickOpenMod.QuickOpenPalette as unknown as Record<string, unknown>,
+      'src/features/quickopen/QuickOpenPalette.vue',
+    );
+    patchDomRender(
+      targetPickerMod.default as unknown as Record<string, unknown>,
+      'src/features/quickbar/QuickBarTargetPicker.vue',
+    );
+    patchDomRender(
+      componentsMod.QnBadge as unknown as Record<string, unknown>,
+      'src/components/QnBadge.vue',
+    );
+    patchDomRender(
+      componentsMod.QnBanner as unknown as Record<string, unknown>,
+      'src/components/QnBanner.vue',
+    );
+    patchDomRender(
+      componentsMod.QnButton as unknown as Record<string, unknown>,
+      'src/components/QnButton.vue',
+    );
+    patchDomRender(
+      QuickBarView as unknown as Record<string, unknown>,
+      'src/features/quickbar/QuickBarView.vue',
+    );
+
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useQuickBarStore();
+    await store.initialize();
+    store.draft = '尚未提交的草稿';
+
+    const host = new FakeElement('div');
+    body.appendChild(host);
+    const app = createApp(QuickBarView);
+    app.use(pinia);
+    app.provide(ssrContextKey, { modules: new Set() });
+
+    try {
+      app.mount(host);
+      store.setMode('open');
+      await nextTick();
+      await nextTick();
+
+      const inputEl = host.querySelector('[data-testid="quickopen-input"]');
+      expect(inputEl).not.toBeNull();
+
+      // 1. In open mode, Cmd+Enter with bubbles: true must NOT trigger quickbar.submitAppend
+      const cmdEnter = new FakeKeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+        keyCode: 13,
+      });
+      inputEl!.dispatchEvent(cmdEnter);
+      expect(cmdEnter.cancelBubble).toBe(true);
+      expect(mockNoteAppend).not.toHaveBeenCalled();
+      expect(store.draft).toBe('尚未提交的草稿');
+
+      // Also verify direct dispatch on actionRegistry in open mode does NOT trigger capture actions
+      const directCmdEnter = new FakeKeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+        keyCode: 13,
+      });
+      const dispatchRes = actionRegistry.dispatchKeyEvent(
+        directCmdEnter as unknown as KeyboardEvent,
+        {
+          activeScope: 'quickbar',
+          activeScopes: ['quickbar', 'global'],
+        },
+      );
+      expect(dispatchRes.handled).toBe(false);
+      expect(mockNoteAppend).not.toHaveBeenCalled();
+
+      // 2. In open mode, one Esc with bubbles: true returns to capture mode and must NOT hide Quick Bar
+      const escEvent = new FakeKeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        bubbles: true,
+        cancelable: true,
+        keyCode: 27,
+      });
+      inputEl!.dispatchEvent(escEvent);
+      expect(escEvent.cancelBubble).toBe(true);
+      expect(store.mode).toBe('capture');
+      expect(mockWindowHideQuickBar).not.toHaveBeenCalled();
+    } finally {
+      app.unmount();
+      store.dispose();
+      while (restorers.length > 0) {
+        restorers.pop()?.();
+      }
+      Object.defineProperty(globalThis, 'KeyboardEvent', {
+        value: origKeyboardEvent,
+        configurable: true,
+        writable: true,
+      });
+      Object.defineProperty(globalThis, 'Element', {
+        value: origElement,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+
+  it('resets Quick Bar mode back to capture on hide or re-show without explicit mode (v4 §3.5.4)', async () => {
+    let windowStateListener: ((state: WindowState) => void) | undefined;
+    mockOnWindowState.mockImplementationOnce(async (cb: (state: WindowState) => void) => {
+      windowStateListener = cb;
+      return () => undefined;
+    });
+
+    const store = useQuickBarStore();
+    await store.initialize();
+    store.draft = '保留草稿';
+
+    // 1. Hide via openFileInMain resets mode to capture
+    store.setMode('open');
+    await store.openFileInMain('/etc/nginx/nginx.conf', false);
+    expect(store.mode).toBe('capture');
+    expect(store.draft).toBe('保留草稿');
+
+    // 2. Hide via hotkey / window:state visible=false resets mode to capture
+    store.setMode('command');
+    windowStateListener?.({
+      windowId: 'quickbar',
+      visible: false,
+      fullscreen: false,
+      mode: null,
+      reason: 'hotkey',
+    });
+    expect(store.mode).toBe('capture');
+    expect(store.draft).toBe('保留草稿');
+
+    // 3. Re-show via window:state visible=true with mode=null resets mode to capture
+    store.setMode('open');
+    windowStateListener?.({
+      windowId: 'quickbar',
+      visible: true,
+      fullscreen: false,
+      mode: null,
+      reason: null,
+    });
+    expect(store.mode).toBe('capture');
+
+    store.dispose();
   });
 });

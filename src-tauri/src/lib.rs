@@ -111,7 +111,7 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("menu_command_book", "命令库…")
+            &MenuItemBuilder::with_id("window.commandBook", "命令库…")
                 .accelerator("CmdOrCtrl+Shift+K")
                 .build(app)?,
         )
@@ -225,7 +225,7 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("menu_view_terminal", "终端面板")
+            &MenuItemBuilder::with_id("panel.toggle.terminal", "终端面板")
                 .accelerator("Ctrl+CmdOrCtrl+T")
                 .build(app)?,
         )
@@ -335,7 +335,7 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
             }
             "window.newNote"
             | "window.quickOpen"
-            | "menu_command_book"
+            | "window.commandBook"
             | "menu_tools_commands"
             | "editor.bold"
             | "editor.italic"
@@ -355,6 +355,7 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
             | "panel.toggle.outline"
             | "panel.toggle.related"
             | "panel.toggle.recent"
+            | "panel.toggle.terminal"
             | "panel.collapseGroup" => {
                 let main_focused = app_handle
                     .get_webview_window("main")

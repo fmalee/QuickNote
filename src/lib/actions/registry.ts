@@ -26,6 +26,8 @@ export const SCOPE_PRIORITY: readonly ActionScope[] = [
 
 export const NATIVE_MENU_ACTION_IDS = [
   'window.newNote',
+  'window.quickOpen',
+  'window.commandBook',
   'editor.bold',
   'editor.italic',
   'editor.codeBlock',
@@ -42,14 +44,14 @@ export const NATIVE_MENU_ACTION_IDS = [
   'editor.heading5',
   'editor.heading6',
   'panel.toggle.outline',
+  'panel.toggle.related',
+  'panel.toggle.recent',
+  'panel.toggle.terminal',
   'panel.collapseGroup',
 ] as const;
 
 const FIXED_NATIVE_MENU_ACCELERATORS: Readonly<Record<string, string>> = {
   menu_settings: 'cmd+,',
-  menu_quick_open: 'cmd+k',
-  menu_command_book: 'shift+cmd+k',
-  menu_view_terminal: 'ctrl+cmd+t',
 };
 
 /**

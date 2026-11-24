@@ -7,7 +7,9 @@ import type {
   RunExternalArgs,
 } from '@/bindings/types';
 import type { ContextMenuEntry } from '@/components/QnContextMenu.vue';
+import { useNotesStore } from '@/features/notes';
 import { extractEditorErrorMessage, resolveExternalActions, runExternalAction } from './api';
+import { useEditorTabsStore } from './store';
 
 export interface ExternalActionSpec {
   id: ExternalActionId;
@@ -24,7 +26,7 @@ export const EXTERNAL_ACTION_SPECS: readonly ExternalActionSpec[] = [
   { id: 'external.workspace', title: '在外部编辑器打开工作区', pathMode: 'file' },
   { id: 'external.default', title: '使用系统默认应用打开', pathMode: 'file' },
   { id: 'external.copyPath', title: '复制文件路径', pathMode: 'file' },
-  { id: 'external.pin', title: '置顶 / 取消置顶笔记', pathMode: 'file' },
+  { id: 'external.pin', title: '固定 / 取消固定常用文件', pathMode: 'file' },
 ];
 
 const EXTERNAL_SPEC_MAP = new Map<ExternalActionId, ExternalActionSpec>(
@@ -191,10 +193,42 @@ export const useExternalActions = defineStore('externalActions', () => {
       if (id === 'external.copyPath') {
         feedback.value = { tone: 'success', message: '已复制文件路径' };
       } else if (id === 'external.pin') {
-        feedback.value = {
-          tone: 'success',
-          message: options?.pinned ? '已取消固定' : '已固定到常用文件',
-        };
+        let wasPinned = options?.pinned;
+        try {
+          const tabsStore = useEditorTabsStore();
+          if (wasPinned === undefined) {
+            const matchedTab = tabsStore.tabs.find((tab) => tab.absPath === state.resolvedPath);
+            wasPinned = matchedTab?.doc?.meta.pinned ?? false;
+          }
+          const nextPinned = !wasPinned;
+          for (const tab of tabsStore.tabs) {
+            if (tab.absPath === state.resolvedPath && tab.doc) {
+              tab.doc = {
+                ...tab.doc,
+                meta: {
+                  ...tab.doc.meta,
+                  pinned: nextPinned,
+                },
+              };
+            }
+          }
+          feedback.value = {
+            tone: 'success',
+            message: nextPinned ? '已固定到常用文件' : '已取消固定常用文件',
+          };
+        } catch {
+          const nextPinned = !wasPinned;
+          feedback.value = {
+            tone: 'success',
+            message: nextPinned ? '已固定到常用文件' : '已取消固定常用文件',
+          };
+        }
+        try {
+          const notesStore = useNotesStore();
+          void notesStore.refreshPinnedExternalFiles();
+        } catch {
+          // 独立单元测试环境容错
+        }
       } else {
         const spec = EXTERNAL_SPEC_MAP.get(id);
         feedback.value = {

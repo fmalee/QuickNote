@@ -22,6 +22,15 @@ const pendingAction = ref<
 const doc = computed(() => editorTabsStore.activeDoc);
 const tab = computed(() => editorTabsStore.activeTab);
 
+const isMarkdown = computed(() => {
+  const currentDoc = doc.value;
+  if (!currentDoc) {
+    return false;
+  }
+  const path = currentDoc.absPath || currentDoc.relPath || '';
+  return /\.(md|markdown)$/i.test(path);
+});
+
 const isInboxWithSelection = computed(() => {
   const currentDoc = doc.value;
   const currentTab = tab.value;
@@ -213,6 +222,7 @@ function cancelExternalFrontmatter(): void {
   <header v-if="doc" class="qn-doc-header" data-testid="doc-header-bar">
     <div class="qn-doc-header__top">
       <input
+        v-if="isMarkdown"
         v-model="titleDraft"
         type="text"
         class="qn-doc-header__title-input"
@@ -221,6 +231,9 @@ function cancelExternalFrontmatter(): void {
         @blur="handleTitleCommit"
         @keydown="handleTitleKeydown"
       />
+      <span v-else class="qn-doc-header__title-readonly" data-testid="doc-header-title-readonly">
+        {{ doc.meta.title || doc.relPath || doc.absPath }}
+      </span>
 
       <div class="qn-doc-header__controls">
         <QnBadge
@@ -243,6 +256,7 @@ function cancelExternalFrontmatter(): void {
         </QnButton>
 
         <select
+          v-if="isMarkdown"
           :value="doc.meta.docType"
           class="qn-doc-header__type-select"
           data-testid="doc-header-type-select"
@@ -256,7 +270,7 @@ function cancelExternalFrontmatter(): void {
         </select>
 
         <QnButton
-          v-if="isInboxWithSelection"
+          v-if="isMarkdown && isInboxWithSelection"
           variant="secondary"
           size="sm"
           data-testid="inbox-extract-btn"
@@ -284,7 +298,7 @@ function cancelExternalFrontmatter(): void {
           />
         </div>
 
-        <div class="qn-doc-header__prop-anchor">
+        <div v-if="isMarkdown" class="qn-doc-header__prop-anchor">
           <QnButton
             variant="ghost"
             size="sm"
@@ -302,8 +316,11 @@ function cancelExternalFrontmatter(): void {
       </div>
     </div>
 
-    <div class="qn-doc-header__meta-row">
-      <div class="qn-doc-header__tags" data-testid="doc-header-tags">
+    <div
+      v-if="isMarkdown || doc.meta.metaError || editorTabsStore.errorMessage"
+      class="qn-doc-header__meta-row"
+    >
+      <div v-if="isMarkdown" class="qn-doc-header__tags" data-testid="doc-header-tags">
         <span v-for="tag in doc.meta.tags" :key="tag" class="qn-doc-header__tag-chip">
           <span>#{{ tag }}</span>
           <button
@@ -394,6 +411,19 @@ function cancelExternalFrontmatter(): void {
   outline: none;
   border-color: var(--qn-border-subtle);
   background-color: var(--qn-bg-elevated);
+}
+
+.qn-doc-header__title-readonly {
+  flex: 1;
+  min-width: 0;
+  color: var(--qn-text-primary);
+  font-size: var(--qn-text-xl);
+  font-weight: 700;
+  font-family: var(--qn-font-sans);
+  padding: var(--qn-space-1) 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qn-doc-header__controls {

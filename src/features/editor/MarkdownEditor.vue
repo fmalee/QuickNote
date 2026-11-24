@@ -59,12 +59,13 @@ import {
   parseLinkTarget,
   resolveHeadingAnchor,
 } from './extensions/markdownLinks';
+import { resolveScrollTargetAnchor } from './extensions/scrollTarget';
 import {
   todoBackspaceCommand,
   todoCheckboxPlugin,
   todoEnterCommand,
 } from './extensions/markdownTodo';
-import { type EditorTab, useEditorTabsStore } from './store';
+import { type EditorScrollTarget, type EditorTab, useEditorTabsStore } from './store';
 
 interface EditorNotice {
   tone: 'info' | 'warning' | 'danger' | 'success';
@@ -793,6 +794,9 @@ function switchToTab(tab: EditorTab | null): void {
   } finally {
     suppressUpdate = false;
   }
+  if (editorTabsStore.scrollTarget?.key === tab.key) {
+    applyScrollTarget(editorTabsStore.scrollTarget);
+  }
 }
 
 function handleWindowBlur(): void {
@@ -947,20 +951,27 @@ watch(
   },
 );
 
+function applyScrollTarget(target: EditorScrollTarget | null): boolean {
+  if (!target || !view || target.key !== currentTabKey) {
+    return false;
+  }
+  const resolved = resolveScrollTargetAnchor(view.state.doc, target);
+  view.dispatch({
+    selection: { anchor: resolved.anchor },
+    effects: EditorView.scrollIntoView(resolved.anchor, { y: 'start', yMargin: 48 }),
+  });
+  editorTabsStore.setActiveTopLine(resolved.line);
+  if (editorTabsStore.scrollTarget?.seq === target.seq) {
+    editorTabsStore.scrollTarget = null;
+  }
+  view.focus();
+  return true;
+}
+
 watch(
   () => editorTabsStore.scrollTarget,
   (target) => {
-    if (!target || !view || target.key !== currentTabKey) {
-      return;
-    }
-    const maxOffset = view.state.doc.length;
-    const anchor = Math.max(0, Math.min(target.from, maxOffset));
-    view.dispatch({
-      selection: { anchor },
-      effects: EditorView.scrollIntoView(anchor, { y: 'start', yMargin: 48 }),
-    });
-    editorTabsStore.setActiveTopLine(target.line);
-    view.focus();
+    applyScrollTarget(target);
   },
 );
 
@@ -983,6 +994,7 @@ onMounted(() => {
     if (initialTab) {
       view.scrollDOM.scrollTop = initialTab.scrollTop;
       updateStatusAndDiagnostics(initialTab, initialState.doc.toString());
+      applyScrollTarget(editorTabsStore.scrollTarget);
     }
   }
   for (const actionId of EDITOR_FORMAT_ACTION_IDS) {

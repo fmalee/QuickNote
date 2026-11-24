@@ -479,7 +479,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
   },
   {
     id: 'external.pin',
-    title: '置顶 / 取消置顶笔记',
+    title: '固定 / 取消固定常用文件',
     category: 'external',
     defaultKeys: null,
     scope: 'main-window',

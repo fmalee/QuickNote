@@ -10,14 +10,16 @@ use quicknote_lib::application::external::{
     external_action_run, external_actions_resolve, path_complete, search_spotlight,
 };
 use quicknote_lib::application::library::set_library_root;
-use quicknote_lib::application::notes::search_notes_and_files;
+use quicknote_lib::application::notes::{note_read, search_notes_and_files};
 use quicknote_lib::application::persistence::PersistenceManager;
 use quicknote_lib::domain::error::{AppError, ErrorCode};
 use quicknote_lib::domain::external::{
     is_spotlight_blacklisted, ExternalActionId, ExternalActionState, ResolveExternalArgs,
     RunExternalArgs, SETTINGS_FILE_SENTINEL,
 };
-use quicknote_lib::domain::note::{PathCompleteArgs, SearchQueryArgs, SearchSource, SpotlightArgs};
+use quicknote_lib::domain::note::{
+    PathCompleteArgs, ReadNoteArgs, SearchQueryArgs, SearchSource, SpotlightArgs,
+};
 use quicknote_lib::domain::settings::{
     ExternalAppConfig, SetRootArgs, SettingsPatch, WorkspaceConfig,
 };
@@ -570,6 +572,48 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
     let pinned_list = pm.list_pinned_files().expect("list pinned");
     assert_eq!(pinned_list, vec![ext_file.to_string_lossy().to_string()]);
 
+    let pinned_doc = note_read(
+        &pm,
+        ReadNoteArgs {
+            abs_path: ext_file.to_string_lossy().to_string(),
+        },
+    )
+    .expect("read pinned external file");
+    assert!(!pinned_doc.is_library);
+    assert!(pinned_doc.meta.pinned);
+
+    // External markdown file also reflects pinned-files.json in meta.pinned
+    let ext_md = ext_dir.path().join("ext_readme.md");
+    fs::write(&ext_md, "---\ntitle: ExtReadme\n---\nHello\n").expect("write ext_md");
+    external_action_run(
+        &pm,
+        &launcher,
+        RunExternalArgs {
+            id: ExternalActionId::ExternalPin,
+            abs_path: Some(ext_md.to_string_lossy().to_string()),
+            dir_path: None,
+        },
+    )
+    .expect("pin external md");
+    let pinned_md_doc = note_read(
+        &pm,
+        ReadNoteArgs {
+            abs_path: ext_md.to_string_lossy().to_string(),
+        },
+    )
+    .expect("read pinned external md");
+    assert!(pinned_md_doc.meta.pinned);
+    external_action_run(
+        &pm,
+        &launcher,
+        RunExternalArgs {
+            id: ExternalActionId::ExternalPin,
+            abs_path: Some(ext_md.to_string_lossy().to_string()),
+            dir_path: None,
+        },
+    )
+    .expect("unpin external md");
+
     let search_empty = search_notes_and_files(
         &pm,
         SearchQueryArgs {
@@ -596,4 +640,13 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
     )
     .expect("unpin external file");
     assert!(pm.list_pinned_files().expect("list pinned").is_empty());
+
+    let unpinned_doc = note_read(
+        &pm,
+        ReadNoteArgs {
+            abs_path: ext_file.to_string_lossy().to_string(),
+        },
+    )
+    .expect("read unpinned external file");
+    assert!(!unpinned_doc.meta.pinned);
 }

@@ -138,6 +138,10 @@ export const useNotesStore = defineStore('notes', () => {
     }
   }
 
+  async function refreshPinnedExternalFiles(): Promise<void> {
+    await loadPinnedExternalFiles();
+  }
+
   async function togglePinExternalFile(absPath: string): Promise<void> {
     await togglePinExternalFileByPath(absPath);
     await loadPinnedExternalFiles();
@@ -452,6 +456,7 @@ export const useNotesStore = defineStore('notes', () => {
     loadTreeAndTags,
     loadNotesList,
     loadPinnedExternalFiles,
+    refreshPinnedExternalFiles,
     togglePinExternalFile,
     revealExternalFile,
     loadTemplates,

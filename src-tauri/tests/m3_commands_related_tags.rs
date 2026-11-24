@@ -4,16 +4,16 @@ use std::path::{Path, PathBuf};
 use quicknote_lib::application::index::index_rebuild;
 use quicknote_lib::application::library::set_library_root;
 use quicknote_lib::application::notes::{
-    commands_search, note_delete, note_read, note_write, notes_get_related, notes_list,
-    tags_batch_rename,
+    commands_search, note_delete, note_read, note_update_meta, note_write, notes_get_related,
+    notes_list, tags_batch_rename,
 };
 use quicknote_lib::application::persistence::PersistenceManager;
 use quicknote_lib::domain::command_book::{filter_and_rank_commands, parse_command_book};
 use quicknote_lib::domain::error::ErrorCode;
 use quicknote_lib::domain::markdown::extract_relative_note_links;
 use quicknote_lib::domain::note::{
-    compute_body_hash, parse_note, NoteType, NotesFilterArgs, ReadNoteArgs, RelPathArgs,
-    RelatedReason, TagRenameArgs, WriteNoteArgs,
+    compute_body_hash, parse_note, NoteMetaPatch, NoteType, NoteUpdateMetaArgs, NotesFilterArgs,
+    ReadNoteArgs, RelPathArgs, RelatedReason, TagRenameArgs, WriteNoteArgs,
 };
 use quicknote_lib::domain::settings::SetRootArgs;
 
@@ -81,14 +81,7 @@ fn parses_fixture_command_book_with_exact_lines_and_metadata() {
     let parsed = parse_note(&raw, "常用命令");
     assert_eq!(parsed.meta.doc_type, NoteType::CommandBook);
 
-    let body_start_line = parsed
-        .block
-        .as_deref()
-        .map(|b| b.matches('\n').count() as u32 + 1)
-        .unwrap_or(1);
-    assert_eq!(body_start_line, 9);
-
-    let entries = parse_command_book("commands/常用命令.md", &parsed.body, body_start_line);
+    let entries = parse_command_book("commands/常用命令.md", &parsed.body);
     assert_eq!(entries.len(), 3);
 
     let e0 = &entries[0];
@@ -99,7 +92,7 @@ fn parses_fixture_command_book_with_exact_lines_and_metadata() {
     assert_eq!(e0.language.as_deref(), Some("bash"));
     assert_eq!(e0.keywords, vec!["撤销", "commit", "回退", "reset"]);
     assert!(!e0.is_danger);
-    assert_eq!(e0.line, 12);
+    assert_eq!(e0.line, 4);
 
     let e1 = &entries[1];
     assert_eq!(e1.section, "Git");
@@ -108,7 +101,7 @@ fn parses_fixture_command_book_with_exact_lines_and_metadata() {
     assert_eq!(e1.code, "git clean -fd");
     assert_eq!(e1.language.as_deref(), Some("bash"));
     assert!(e1.is_danger);
-    assert_eq!(e1.line, 21);
+    assert_eq!(e1.line, 13);
 
     let e2 = &entries[2];
     assert_eq!(e2.section, "Nginx");
@@ -117,7 +110,7 @@ fn parses_fixture_command_book_with_exact_lines_and_metadata() {
     assert_eq!(e2.code, "nginx -s reload");
     assert_eq!(e2.language.as_deref(), Some("bash"));
     assert!(!e2.is_danger);
-    assert_eq!(e2.line, 30);
+    assert_eq!(e2.line, 22);
 
     // Pure ranking check
     let ranked = filter_and_rank_commands(&entries, "回退");
@@ -143,9 +136,9 @@ fn index_rebuild_and_commands_search_sync_on_write_and_delete() {
     )
     .expect("commands_search empty");
     assert_eq!(all.len(), 3);
-    assert_eq!(all[0].line, 12);
-    assert_eq!(all[1].line, 21);
-    assert_eq!(all[2].line, 30);
+    assert_eq!(all[0].line, 4);
+    assert_eq!(all[1].line, 13);
+    assert_eq!(all[2].line, 22);
 
     let by_kw = commands_search(
         &pm,
@@ -454,4 +447,26 @@ fn non_markdown_files_roundtrip_without_stripping_frontmatter_or_adding_ulid() {
     )
     .expect("read conf");
     assert_eq!(conf_doc.body, conf_raw);
+
+    // Non-Markdown files reject frontmatter metadata updates
+    let meta_err = note_update_meta(
+        &pm,
+        NoteUpdateMetaArgs {
+            abs_path: conf_path.to_string_lossy().to_string(),
+            patch: NoteMetaPatch {
+                title: Some("Hacked".to_string()),
+                ..NoteMetaPatch::default()
+            },
+        },
+    )
+    .expect_err("non-markdown note_update_meta must fail");
+    assert_eq!(meta_err.code, ErrorCode::ValidationError);
+    assert_eq!(
+        meta_err.message,
+        "Only Markdown files support frontmatter metadata"
+    );
+    assert_eq!(
+        fs::read_to_string(&conf_path).expect("read conf back"),
+        conf_raw
+    );
 }

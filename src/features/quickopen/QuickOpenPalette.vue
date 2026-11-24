@@ -81,7 +81,9 @@ function handleInput(event: Event): void {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
-  props.engine.handleKeydown(event);
+  if (props.engine.handleKeydown(event)) {
+    event.stopPropagation?.();
+  }
 }
 
 function handleItemClick(item: QuickOpenResultItem, index: number, event: MouseEvent): void {
@@ -236,7 +238,7 @@ watch(
   align-items: center;
   gap: var(--qn-space-2);
   padding: var(--qn-space-2) var(--qn-space-3);
-  border: 1px solid var(--qn-border-default);
+  border: 1px solid var(--qn-border-subtle);
   border-radius: var(--qn-radius-md);
   background-color: var(--qn-bg-base);
 }

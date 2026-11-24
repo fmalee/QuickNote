@@ -88,12 +88,13 @@ function buildActionContext(): ActionContext {
   const activeTab = editorTabsStore.activeTab;
   const activeDoc = editorTabsStore.activeDoc;
   const relPath = activeDoc?.relPath ?? '';
+  const pathForKind = activeDoc?.absPath ?? relPath;
   return {
     activeScope: activeScopes[0] ?? 'main-window',
     activeScopes,
     hasActiveDoc: Boolean(activeDoc),
     hasSelection: Boolean(activeTab?.hasSelection),
-    isMarkdown: relPath.toLowerCase().endsWith('.md'),
+    isMarkdown: /\.(md|markdown)$/i.test(pathForKind),
     isInbox: relPath === 'inbox.md',
   };
 }
@@ -249,7 +250,7 @@ watch(
   () => externalActions.feedback,
   (feedback) => {
     if (feedback) {
-      void notesStore.loadPinnedExternalFiles();
+      void notesStore.refreshPinnedExternalFiles();
     }
   },
 );
@@ -616,6 +617,7 @@ onUnmounted(() => {
         :engine="mainCommandPaletteEngine"
         variant="large"
         :focus-trigger="commandBookFocusTick"
+        @close="commandBookModalOpen = false"
       />
     </QnModalShell>
     <NewNoteTemplateModal />

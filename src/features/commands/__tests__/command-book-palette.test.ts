@@ -1,4 +1,8 @@
-import { createSSRApp } from 'vue';
+import fs from 'node:fs';
+import path from 'node:path';
+import * as vueRuntime from 'vue';
+import { createRenderer, createSSRApp, ssrContextKey } from 'vue';
+import { compileScript, compileTemplate, parse } from 'vue/compiler-sfc';
 import { renderToString } from 'vue/server-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -312,5 +316,187 @@ describe('command-book-palette', () => {
     );
 
     engine.dispose();
+  });
+
+  it('closes large command book palette on Escape when dirPicker is closed', async () => {
+    const onRequestClose = vi.fn();
+    const engine = useCommandPalette({ onRequestClose });
+    await engine.refresh(true);
+
+    class FakeNode {
+      parentNode: FakeNode | null = null;
+      childNodes: FakeNode[] = [];
+      listeners = new Map<string, Set<(e: unknown) => void>>();
+
+      insertBefore(child: FakeNode, anchor: FakeNode | null): FakeNode {
+        child.parentNode = this;
+        if (!anchor) {
+          this.childNodes.push(child);
+        } else {
+          const idx = this.childNodes.indexOf(anchor);
+          this.childNodes.splice(idx >= 0 ? idx : this.childNodes.length, 0, child);
+        }
+        return child;
+      }
+
+      removeChild(child: FakeNode): void {
+        const idx = this.childNodes.indexOf(child);
+        if (idx >= 0) {
+          this.childNodes.splice(idx, 1);
+          child.parentNode = null;
+        }
+      }
+
+      get nextSibling(): FakeNode | null {
+        if (!this.parentNode) return null;
+        const idx = this.parentNode.childNodes.indexOf(this);
+        return idx >= 0 ? (this.parentNode.childNodes[idx + 1] ?? null) : null;
+      }
+
+      addEventListener(type: string, fn: (e: unknown) => void): void {
+        const set = this.listeners.get(type) ?? new Set();
+        set.add(fn);
+        this.listeners.set(type, set);
+      }
+
+      removeEventListener(type: string, fn: (e: unknown) => void): void {
+        this.listeners.get(type)?.delete(fn);
+      }
+
+      dispatchEvent(event: { type: string; bubbles?: boolean; cancelBubble?: boolean }): void {
+        for (const fn of Array.from(this.listeners.get(event.type) ?? [])) {
+          fn(event);
+        }
+        if (event.bubbles && !event.cancelBubble && this.parentNode) {
+          this.parentNode.dispatchEvent(event);
+        }
+      }
+    }
+
+    class FakeEl extends FakeNode {
+      tag: string;
+      attrs = new Map<string, string>();
+      constructor(tag: string) {
+        super();
+        this.tag = tag;
+      }
+      setAttribute(k: string, v: string) {
+        this.attrs.set(k, v);
+      }
+      removeAttribute(k: string) {
+        this.attrs.delete(k);
+      }
+      focus() {}
+      select() {}
+      findByTestId(id: string): FakeEl | null {
+        if (this.attrs.get('data-testid') === id) return this;
+        for (const c of this.childNodes) {
+          if (c instanceof FakeEl) {
+            const found = c.findByTestId(id);
+            if (found) return found;
+          }
+        }
+        return null;
+      }
+    }
+
+    function withDomRender<T extends object>(comp: T, relPath: string): T {
+      const fullPath = path.resolve(process.cwd(), relPath);
+      const { descriptor } = parse(fs.readFileSync(fullPath, 'utf8'));
+      const script = compileScript(descriptor, { id: relPath });
+      const tpl = compileTemplate({
+        source: descriptor.template!.content,
+        id: relPath,
+        filename: relPath,
+        compilerOptions: { mode: 'function', bindingMetadata: script.bindings },
+      });
+      const renderFn = new Function('Vue', tpl.code)(vueRuntime) as unknown;
+      return Object.assign(Object.create(Object.getPrototypeOf(comp)), comp, {
+        ssrRender: undefined,
+        render: renderFn,
+      }) as T;
+    }
+
+    const { createApp } = createRenderer<FakeNode, FakeEl>({
+      createElement: (tag) => new FakeEl(tag),
+      createText: () => new FakeNode(),
+      createComment: () => new FakeNode(),
+      setText: () => undefined,
+      setElementText: () => undefined,
+      insert: (child, parent, anchor) => parent.insertBefore(child, anchor ?? null),
+      remove: (child) => child.parentNode?.removeChild(child),
+      parentNode: (node) => node.parentNode as FakeEl | null,
+      nextSibling: (node) => node.nextSibling,
+      patchProp: (el, key, prev, next) => {
+        if (key.startsWith('on')) {
+          const ev = key.slice(2).toLowerCase();
+          if (prev) el.removeEventListener(ev, prev as (e: unknown) => void);
+          if (next) el.addEventListener(ev, next as (e: unknown) => void);
+        } else if (next == null || next === false) {
+          el.removeAttribute(key);
+        } else {
+          el.setAttribute(key, String(next === true ? '' : next));
+        }
+      },
+    });
+
+    const DomPalette = withDomRender(
+      CommandBookPalette,
+      'src/features/commands/CommandBookPalette.vue',
+    );
+    const root = new FakeEl('div');
+    const app = createApp(DomPalette, {
+      engine,
+      variant: 'large',
+    });
+    app.provide(ssrContextKey, { modules: new Set() });
+
+    try {
+      app.mount(root);
+      const paletteEl = root.findByTestId('command-book-palette');
+      expect(paletteEl).not.toBeNull();
+
+      // When dirPickerOpen is true, Esc closes dirPicker instead of palette
+      await engine.openDirPicker();
+      expect(engine.dirPickerOpen.value).toBe(true);
+      const escInPicker = {
+        type: 'keydown',
+        key: 'Escape',
+        bubbles: true,
+        isComposing: false,
+        keyCode: 27,
+        cancelBubble: false,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(function (this: { cancelBubble: boolean }) {
+          this.cancelBubble = true;
+        }),
+      };
+      paletteEl!.dispatchEvent(escInPicker);
+      expect(escInPicker.preventDefault).toHaveBeenCalledTimes(1);
+      expect(escInPicker.stopPropagation).toHaveBeenCalledTimes(1);
+      expect(engine.dirPickerOpen.value).toBe(false);
+      expect(onRequestClose).not.toHaveBeenCalled();
+
+      // When dirPickerOpen is false, Esc closes the large palette
+      const escPalette = {
+        type: 'keydown',
+        key: 'Escape',
+        bubbles: true,
+        isComposing: false,
+        keyCode: 27,
+        cancelBubble: false,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(function (this: { cancelBubble: boolean }) {
+          this.cancelBubble = true;
+        }),
+      };
+      paletteEl!.dispatchEvent(escPalette);
+      expect(escPalette.preventDefault).toHaveBeenCalledTimes(1);
+      expect(escPalette.stopPropagation).toHaveBeenCalledTimes(1);
+      expect(onRequestClose).toHaveBeenCalledTimes(1);
+    } finally {
+      app.unmount();
+      engine.dispose();
+    }
   });
 });

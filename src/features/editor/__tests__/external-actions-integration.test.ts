@@ -4,14 +4,18 @@ import { renderToString } from 'vue/server-renderer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExternalActionId, ExternalActionState, NoteDoc } from '@/bindings/types';
 
-const { mockResolveExternalActions, mockRunExternalAction } = vi.hoisted(() => ({
-  mockResolveExternalActions: vi.fn(),
-  mockRunExternalAction: vi.fn(),
-}));
+const { mockResolveExternalActions, mockRunExternalAction, mockSearchNotesAndFiles } = vi.hoisted(
+  () => ({
+    mockResolveExternalActions: vi.fn(),
+    mockRunExternalAction: vi.fn(),
+    mockSearchNotesAndFiles: vi.fn(),
+  }),
+);
 
 vi.mock('@/lib/ipc/commands', () => ({
   externalActionsResolve: mockResolveExternalActions,
   externalActionRun: mockRunExternalAction,
+  searchNotesAndFiles: mockSearchNotesAndFiles,
   appOpenExternalUrl: vi.fn(),
   inboxExtractToNote: vi.fn(),
   noteRead: vi.fn(),
@@ -36,6 +40,7 @@ import {
   useEditorTabsStore,
   useExternalActions,
 } from '@/features/editor';
+import { useNotesStore } from '@/features/notes';
 
 function makeDoc(overrides: Partial<NoteDoc> = {}): NoteDoc {
   return {
@@ -325,5 +330,97 @@ describe('external-actions-integration', () => {
     expect(externalActions.resolvedAbsPath).toBe('/Users/demo/Vault/b.md');
     const revealState = externalActions.states.find((item) => item.id === 'external.reveal');
     expect(revealState?.resolvedPath).toBe('/Users/demo/Vault/b.md');
+  });
+
+  it('syncs open tab meta.pinned and notesStore.refreshPinnedExternalFiles on external.pin, and restricts non-Markdown DocHeaderBar editing', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+
+    const confDoc = makeDoc({
+      key: 'abs:/etc/nginx/nginx.conf',
+      absPath: '/etc/nginx/nginx.conf',
+      relPath: null,
+      isLibrary: false,
+      isInbox: false,
+      body: 'worker_processes 1;\n',
+      meta: {
+        ...makeDoc().meta,
+        id: null,
+        title: 'nginx.conf',
+        created: null,
+        pinned: false,
+      },
+    });
+
+    const tabsStore = useEditorTabsStore();
+    tabsStore.tabs = [
+      {
+        key: confDoc.key,
+        absPath: confDoc.absPath,
+        relPath: confDoc.relPath,
+        isPreview: false,
+        isPinned: true,
+        isMissing: false,
+        isDirty: false,
+        saveStatus: 'saved',
+        hasSelection: false,
+        selectionFromLine: 1,
+        selectionToLine: 1,
+        cursorLine: 1,
+        cursorCol: 1,
+        scrollTop: 0,
+        cursorPos: 0,
+        draftBody: confDoc.body,
+        baseBodyHash: confDoc.bodyHash,
+        syncSeq: 1,
+        doc: confDoc,
+        conflictState: null,
+      },
+    ];
+    tabsStore.activeKey = confDoc.key;
+
+    const notesStore = useNotesStore();
+    const refreshSpy = vi.spyOn(notesStore, 'refreshPinnedExternalFiles').mockResolvedValue();
+
+    mockResolveExternalActions.mockResolvedValueOnce(
+      makeStates({
+        'external.pin': {
+          enabled: true,
+          disabledReason: null,
+          resolvedPath: '/etc/nginx/nginx.conf',
+        },
+      }),
+    );
+    mockRunExternalAction.mockResolvedValue(undefined);
+
+    const externalActions = useExternalActions();
+    await externalActions.refreshForDoc(confDoc);
+
+    // 1. Pinning syncs open tab doc.meta.pinned = true and refreshes sidebar pinned list
+    await externalActions.executeAction('external.pin', { pinned: false });
+    expect(tabsStore.activeDoc?.meta.pinned).toBe(true);
+    expect(externalActions.feedback?.message).toBe('已固定到常用文件');
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+
+    // 2. Non-Markdown DocHeaderBar hides frontmatter controls and renders readonly filename + external controls
+    const appPinned = createSSRApp(DocHeaderBar);
+    appPinned.use(pinia);
+    const htmlPinned = await renderToString(appPinned);
+    expect(htmlPinned).toContain('data-testid="doc-header-title-readonly"');
+    expect(htmlPinned).toContain('nginx.conf');
+    expect(htmlPinned).toContain('data-testid="doc-header-external-badge"');
+    expect(htmlPinned).toContain('data-testid="doc-header-pin-external-btn"');
+    expect(htmlPinned).toContain('取消固定');
+    expect(htmlPinned).toContain('data-testid="doc-header-external-btn"');
+    expect(htmlPinned).not.toContain('data-testid="doc-header-title-input"');
+    expect(htmlPinned).not.toContain('data-testid="doc-header-type-select"');
+    expect(htmlPinned).not.toContain('data-testid="doc-header-tag-input"');
+    expect(htmlPinned).not.toContain('data-testid="doc-header-properties-btn"');
+
+    // 3. Unpinning syncs open tab doc.meta.pinned = false
+    await externalActions.executeAction('external.pin', { pinned: true });
+    expect(tabsStore.activeDoc?.meta.pinned).toBe(false);
+    expect(externalActions.feedback?.message).toBe('已取消固定常用文件');
+    expect(refreshSpy).toHaveBeenCalledTimes(2);
   });
 });

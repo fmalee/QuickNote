@@ -15,6 +15,10 @@ const props = withDefaults(defineProps<CommandBookPaletteProps>(), {
   focusTrigger: 0,
 });
 
+const emit = defineEmits<{
+  close: [];
+}>();
+
 const searchInputRef = ref<HTMLInputElement | null>(null);
 const manualDirInputRef = ref<HTMLInputElement | null>(null);
 
@@ -113,6 +117,16 @@ function handleKeydown(event: KeyboardEvent): void {
       event.stopPropagation();
       void props.engine.confirmManualDir();
       return;
+    }
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    if (props.variant === 'large') {
+      event.preventDefault();
+      event.stopPropagation();
+      emit('close');
+      void props.engine.requestClose();
     }
     return;
   }

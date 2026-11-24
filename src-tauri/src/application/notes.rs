@@ -128,6 +128,21 @@ fn expand_input_path(raw: &str) -> PathBuf {
     PathBuf::from(trimmed)
 }
 
+fn normalize_path_for_compare(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn is_external_file_pinned(pm: &PersistenceManager, abs_path: &Path) -> bool {
+    let Ok(pinned_list) = pm.list_pinned_files() else {
+        return false;
+    };
+    let target = normalize_path_for_compare(abs_path);
+    pinned_list.into_iter().any(|item| {
+        let candidate = expand_input_path(&item);
+        normalize_path_for_compare(&candidate) == target
+    })
+}
+
 /// Lists indexed notes filtered by tab, directory, tags, workspace, or search text (`C4.2`).
 pub fn notes_list(
     pm: &PersistenceManager,
@@ -383,6 +398,11 @@ pub fn note_read(pm: &PersistenceManager, args: ReadNoteArgs) -> Result<NoteDoc,
         let meta = NoteMeta {
             title,
             doc_type: NoteType::Note,
+            pinned: if is_library {
+                false
+            } else {
+                is_external_file_pinned(pm, &abs_path)
+            },
             ..NoteMeta::default()
         };
         let body_hash = compute_body_hash(&raw);
@@ -405,7 +425,10 @@ pub fn note_read(pm: &PersistenceManager, args: ReadNoteArgs) -> Result<NoteDoc,
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("untitled");
-    let parsed = parse_note(&raw, stem);
+    let mut parsed = parse_note(&raw, stem);
+    if !is_library && !parsed.meta.pinned {
+        parsed.meta.pinned = is_external_file_pinned(pm, &abs_path);
+    }
 
     let key = if let Some(ref rel) = rel_path {
         pm.with_db(|conn| get_note_key_by_rel_path(conn, rel))?
@@ -695,11 +718,18 @@ pub fn note_update_meta(
     pm: &PersistenceManager,
     args: NoteUpdateMetaArgs,
 ) -> Result<NoteDoc, AppError> {
-    let abs_path = PathBuf::from(args.abs_path.trim());
+    let abs_path = expand_input_path(&args.abs_path);
     if !abs_path.is_file() {
         return Err(AppError::with_detail(
             ErrorCode::NotFound,
             "Note file not found",
+            abs_path.to_string_lossy().to_string(),
+        ));
+    }
+    if !is_markdown_path(&abs_path) {
+        return Err(AppError::with_detail(
+            ErrorCode::ValidationError,
+            "Only Markdown files support frontmatter metadata",
             abs_path.to_string_lossy().to_string(),
         ));
     }

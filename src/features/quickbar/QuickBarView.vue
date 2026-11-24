@@ -84,6 +84,7 @@ function handleWindowStorage(event: StorageEvent): void {
 
 function bindQuickBarActions(): void {
   const canAct = () => !store.isUnconfigured;
+  const canActInCapture = () => canAct() && store.mode === 'capture';
   actionDisposers.push(
     actionRegistry.bindHandler(
       'quickbar.mode.capture',
@@ -111,49 +112,49 @@ function bindQuickBarActions(): void {
       () => {
         store.toggleTargetPicker();
       },
-      { when: canAct },
+      { when: canActInCapture },
     ),
     actionRegistry.bindHandler(
       'quickbar.captureMode.list',
       () => {
         store.setCaptureMode('list');
       },
-      { when: canAct },
+      { when: canActInCapture },
     ),
     actionRegistry.bindHandler(
       'quickbar.captureMode.todo',
       () => {
         store.setCaptureMode('todo');
       },
-      { when: canAct },
+      { when: canActInCapture },
     ),
     actionRegistry.bindHandler(
       'quickbar.captureMode.prose',
       () => {
         store.setCaptureMode('prose');
       },
-      { when: canAct },
+      { when: canActInCapture },
     ),
     actionRegistry.bindHandler(
       'quickbar.submitAppend',
       () => {
         void store.submitAppend(false);
       },
-      { when: canAct },
+      { when: canActInCapture },
     ),
     actionRegistry.bindHandler(
       'quickbar.submitOpenMain',
       () => {
         void store.submitAppend(true);
       },
-      { when: canAct },
+      { when: canActInCapture },
     ),
     actionRegistry.bindHandler(
       'quickbar.saveAsNote',
       () => {
         store.openSaveAsNoteDialog();
       },
-      { when: canAct },
+      { when: canActInCapture },
     ),
   );
 }

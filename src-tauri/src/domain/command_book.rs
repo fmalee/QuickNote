@@ -41,13 +41,8 @@ struct ActiveFence {
 
 /// Parses a `command-book` Markdown body into structured command entries (`v4` §4.8).
 ///
-/// `body_start_line` is the 1-based line number of `body`'s first line in the source file.
-pub fn parse_command_book(
-    note_rel_path: &str,
-    body: &str,
-    body_start_line: u32,
-) -> Vec<CommandEntry> {
-    let base_line = body_start_line.max(1);
+/// `line` is the 1-based line number within `NoteDoc.body` (`D-0006`).
+pub fn parse_command_book(note_rel_path: &str, body: &str) -> Vec<CommandEntry> {
     let mut entries: Vec<CommandEntry> = Vec::new();
     let mut section = "默认".to_string();
     let mut pending_h3: Option<(String, u32)> = None;
@@ -58,7 +53,7 @@ pub fn parse_command_book(
     let mut active_fence: Option<ActiveFence> = None;
 
     for (idx, raw_line) in body.lines().enumerate() {
-        let line_no = base_line + idx as u32;
+        let line_no = idx as u32 + 1;
         let line = raw_line.trim_end_matches('\r');
         let trimmed = line.trim_start();
         let leading_spaces = line.len().saturating_sub(trimmed.len());
