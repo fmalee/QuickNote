@@ -161,6 +161,15 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     scope: 'main-window',
     run: noopAction,
   },
+  {
+    id: 'window.toggleAuxiliary',
+    title: '切换 45% 侧栏辅助模式',
+    category: 'window',
+    defaultKeys: null,
+    scope: 'main-window',
+    menuGroup: 'view',
+    run: noopAction,
+  },
 
   // editor.*
   {

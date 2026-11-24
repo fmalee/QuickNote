@@ -8,7 +8,10 @@ import type {
   SettingsLoadStatus,
   SettingsPatch,
   SettingsSnapshot,
+  WindowMode,
+  WindowState,
 } from '@/bindings/types';
+import { windowShowMain } from '@/lib/ipc/commands';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import { applyThemeToDocument } from '@/lib/utils';
 import {
@@ -50,6 +53,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const backupBusy = ref<boolean>(false);
   const backupError = ref<string | null>(null);
   const backupSuccess = ref<string | null>(null);
+  const mainWindowState = ref<WindowState | null>(null);
 
   let unlistenStatus: UnlistenFn | null = null;
   let unlistenWindowState: UnlistenFn | null = null;
@@ -216,6 +220,9 @@ export const useSettingsStore = defineStore('settings', () => {
       }
       if (!unlistenWindowState) {
         unlistenWindowState = await subscribeWindowState((winState) => {
+          if (winState.windowId === 'main') {
+            mainWindowState.value = winState;
+          }
           if (
             winState.windowId === 'quickbar' ||
             (winState.windowId === 'settings' && winState.visible)
@@ -303,6 +310,39 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  async function setMainWindowMode(mode: WindowMode): Promise<boolean> {
+    return patchSettings({ mainWindow: { mode } });
+  }
+
+  async function setAuxiliaryWidthPercent(percent: number): Promise<boolean> {
+    const normalized = Number.isFinite(percent) ? Math.round(percent) : 45;
+    const clamped = Math.min(60, Math.max(30, normalized));
+    const ok = await patchSettings({ mainWindow: { auxiliaryWidthPercent: clamped } });
+    if (ok && mainWindowState.value?.mode === 'auxiliary') {
+      try {
+        await windowShowMain({ mode: 'auxiliary' });
+      } catch {
+        // 非 Tauri 测试环境容错
+      }
+    }
+    return ok;
+  }
+
+  async function setQuickBarDestroyMinutes(minutes: number): Promise<boolean> {
+    const normalized = Number.isFinite(minutes) ? Math.round(minutes) : 10;
+    const clamped = Math.max(0, normalized);
+    return patchSettings({ quickBar: { destroyAfterHiddenMinutes: clamped } });
+  }
+
+  async function previewAuxiliaryWindow(): Promise<void> {
+    try {
+      const nextState = await windowShowMain({ mode: 'auxiliary' });
+      mainWindowState.value = nextState;
+    } catch {
+      // 非 Tauri 测试环境容错
+    }
+  }
+
   function dispose(): void {
     if (unlistenStatus) {
       unlistenStatus();
@@ -330,12 +370,17 @@ export const useSettingsStore = defineStore('settings', () => {
     backupBusy,
     backupError,
     backupSuccess,
+    mainWindowState,
     loadStatus,
     isSettingsInvalid,
     isHotkeyConflict,
     isUsingBackupHotkey,
     setTheme,
     patchSettings,
+    setMainWindowMode,
+    setAuxiliaryWidthPercent,
+    setQuickBarDestroyMinutes,
+    previewAuxiliaryWindow,
     exportSettings,
     importSettings,
     loadTemplates,

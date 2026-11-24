@@ -334,6 +334,29 @@ impl WindowManager {
         self.bridge.configure_toast_panel(toast_ptr)?;
         Ok(())
     }
+
+    /// Synchronizes main window native fullscreen transitions with `WindowPolicyState` and emits `window:state`.
+    pub fn sync_main_fullscreen_state(
+        &self,
+        app: &AppHandle,
+        fullscreen: bool,
+    ) -> Result<WindowState, AppError> {
+        let (changed, win_state) = {
+            let mut guard = self.policy_state.lock().map_err(|_| {
+                AppError::new(ErrorCode::InternalError, "Window policy lock poisoned")
+            })?;
+            let prev = guard.main_window_state();
+            let next = guard.set_main_fullscreen(fullscreen);
+            let changed = prev.fullscreen != next.fullscreen || prev.mode != next.mode;
+            (changed, next)
+        };
+
+        if changed {
+            let _ = app.emit("window:state", &win_state);
+        }
+
+        Ok(win_state)
+    }
 }
 
 fn window_ns_ptr(app: &AppHandle, label: &str) -> Result<usize, AppError> {

@@ -46,6 +46,7 @@ export const usePanelsStore = defineStore('panels', () => {
   const preferredVisible = ref<boolean>(true);
   const preferredCollapsed = ref<boolean>(false);
   const viewportWidth = ref<number>(1280);
+  const forceOverlayDrawer = ref<boolean>(false);
   const leftSidebarCollapsed = ref<boolean>(false);
   const autoCollapsedByNarrowRight = ref<boolean>(false);
   let hasViewportMeasured = false;
@@ -75,7 +76,9 @@ export const usePanelsStore = defineStore('panels', () => {
     () => isPanelGroupExpanded.value && panelGroup.value.activeId === 'outline',
   );
 
-  const isOverlayDrawer = computed<boolean>(() => viewportWidth.value < BP_OVERLAY_DRAWER);
+  const isOverlayDrawer = computed<boolean>(
+    () => viewportWidth.value < BP_OVERLAY_DRAWER || forceOverlayDrawer.value,
+  );
   const isNarrowLeftBreakpoint = computed<boolean>(
     () => viewportWidth.value < BP_COLLAPSE_LEFT_SIDEBAR,
   );
@@ -309,7 +312,7 @@ export const usePanelsStore = defineStore('panels', () => {
   }
 
   function computeMaxPanelWidth(vpWidth: number): number {
-    if (vpWidth < BP_OVERLAY_DRAWER) {
+    if (vpWidth < BP_OVERLAY_DRAWER || forceOverlayDrawer.value) {
       return Math.max(MIN_PANEL_WIDTH, vpWidth - 48);
     }
     const leftWidth = leftSidebarCollapsed.value
@@ -374,11 +377,33 @@ export const usePanelsStore = defineStore('panels', () => {
     }
 
     // 3. 非抽屉展开状态下确保编辑区 >= 480px
-    if (width >= BP_OVERLAY_DRAWER && isPanelGroupExpanded.value) {
+    if (!isOverlayDrawer.value && isPanelGroupExpanded.value) {
       const maxAllowed = computeMaxPanelWidth(width);
       if (panelGroup.value.width > maxAllowed) {
         panelGroup.value.width = maxAllowed;
       }
+    }
+  }
+
+  function setForceOverlayDrawer(enabled: boolean): void {
+    forceOverlayDrawer.value = enabled;
+    if (enabled) {
+      leftSidebarCollapsed.value = true;
+      if (isPanelGroupExpanded.value) {
+        panelGroup.value.collapsed = true;
+        autoCollapsedByNarrowRight.value = true;
+      }
+      return;
+    }
+
+    if (viewportWidth.value >= BP_COLLAPSE_LEFT_SIDEBAR) {
+      leftSidebarCollapsed.value = false;
+    }
+    if (viewportWidth.value >= BP_COLLAPSE_RIGHT_PANEL && autoCollapsedByNarrowRight.value) {
+      panelGroup.value.visible = preferredVisible.value;
+      panelGroup.value.collapsed = preferredCollapsed.value;
+      autoCollapsedByNarrowRight.value = false;
+      refreshActivePanelData();
     }
   }
 
@@ -398,6 +423,7 @@ export const usePanelsStore = defineStore('panels', () => {
   return {
     panelGroup,
     viewportWidth,
+    forceOverlayDrawer,
     leftSidebarCollapsed,
     outlineItems,
     activeHeadingIndex,
@@ -421,6 +447,7 @@ export const usePanelsStore = defineStore('panels', () => {
     setPanelWidth,
     commitPanelWidth,
     applyViewportWidth,
+    setForceOverlayDrawer,
     toggleLeftSidebar,
     refreshRelatedNotes,
     refreshRecentNotes,

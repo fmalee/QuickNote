@@ -439,4 +439,26 @@ describe('RightPanelGroup & responsive breakpoints', () => {
     expect(collapsedHtml).toContain('data-testid="terminal-active-dot"');
     expect(collapsedHtml).toContain('data-testid="terminal-panel"');
   });
+
+  it('8. forceOverlayDrawer 开启时即使宽屏也强制以覆盖式抽屉展开右侧面板', async () => {
+    const panelsStore = usePanelsStore();
+    await panelsStore.initialize();
+
+    panelsStore.applyViewportWidth(1280);
+    expect(panelsStore.isOverlayDrawer).toBe(false);
+
+    panelsStore.setForceOverlayDrawer(true);
+    expect(panelsStore.isOverlayDrawer).toBe(true);
+    expect(panelsStore.leftSidebarCollapsed).toBe(true);
+    expect(panelsStore.isPanelGroupExpanded).toBe(false);
+
+    panelsStore.selectPanel('outline');
+    const drawerHtml = await renderRightPanelHtml();
+    expect(drawerHtml).toContain('qn-right-panel-group--drawer');
+    expect(drawerHtml).toContain('data-testid="right-panel-drawer-backdrop"');
+
+    panelsStore.setForceOverlayDrawer(false);
+    expect(panelsStore.isOverlayDrawer).toBe(false);
+    expect(panelsStore.leftSidebarCollapsed).toBe(false);
+  });
 });

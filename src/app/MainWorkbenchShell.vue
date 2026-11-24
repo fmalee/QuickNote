@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
+import type { WindowMode, WindowsUiState } from '@/bindings/types';
 import { QnBadge, QnBanner, QnButton, QnModalShell } from '@/components';
 import { CommandBookPalette, useCommandPalette } from '@/features/commands';
 import {
@@ -35,7 +36,7 @@ import {
   type ActionContext,
   type ActionScope,
 } from '@/lib/actions';
-import { appSetMenuAccelerators } from '@/lib/ipc/commands';
+import { appSetMenuAccelerators, uiStateGet, uiStateSet, windowShowMain } from '@/lib/ipc/commands';
 import { onMenuAction, onToastAppendUndo, onWindowState, type UnlistenFn } from '@/lib/ipc/events';
 
 const onboardingStore = useOnboardingStore();
@@ -53,6 +54,12 @@ const quickOpenFocusTick = ref(0);
 const commandBookModalOpen = ref(false);
 const commandBookFocusTick = ref(0);
 const exportPdfModalOpen = ref(false);
+const mainWindowMode = ref<WindowMode>(
+  settingsStore.snapshot?.settings.mainWindow.mode ?? 'standard',
+);
+panelsStore.setForceOverlayDrawer(mainWindowMode.value === 'auxiliary');
+let cachedWindowsUiState: WindowsUiState | null = null;
+let windowModePersistTimer: ReturnType<typeof setTimeout> | null = null;
 let unlistenToastAppendUndo: UnlistenFn | null = null;
 let unlistenMainWindowState: UnlistenFn | null = null;
 let unlistenMenuAction: UnlistenFn | null = null;
@@ -242,6 +249,9 @@ function bindMainWindowActions(): void {
     actionRegistry.bindHandler('window.reopenTab', () => {
       void editorTabsStore.reopenLastClosedTab();
     }),
+    actionRegistry.bindHandler('window.toggleAuxiliary', () => {
+      void toggleAuxiliaryMode();
+    }),
     actionRegistry.bindHandler('panel.toggle.outline', () => {
       panelsStore.togglePanel('outline');
     }),
@@ -360,6 +370,69 @@ function handleWindowStorage(event: StorageEvent): void {
   }
 }
 
+function schedulePersistMainWindowMode(mode: WindowMode): void {
+  if (windowModePersistTimer !== null) {
+    clearTimeout(windowModePersistTimer);
+  }
+  windowModePersistTimer = setTimeout(() => {
+    windowModePersistTimer = null;
+    const baseMain = cachedWindowsUiState?.main ?? {
+      x: 0,
+      y: 0,
+      width: 1280,
+      height: 800,
+      mode,
+      isOpen: true,
+    };
+    const nextWindows: WindowsUiState = {
+      ...(cachedWindowsUiState ?? { main: baseMain }),
+      main: {
+        ...baseMain,
+        mode,
+      },
+    };
+    cachedWindowsUiState = nextWindows;
+    void uiStateSet({ key: 'windows', value: nextWindows }).catch(() => undefined);
+  }, 200);
+}
+
+function applyMainWindowMode(mode: WindowMode): void {
+  mainWindowMode.value = mode;
+  panelsStore.setForceOverlayDrawer(mode === 'auxiliary');
+}
+
+async function restoreMainWindowMode(): Promise<void> {
+  try {
+    const uiState = await uiStateGet();
+    cachedWindowsUiState = uiState.windows;
+    const uiMode = uiState.windows?.main?.mode;
+    const settingsMode = settingsStore.snapshot?.settings.mainWindow.mode;
+    applyMainWindowMode(uiMode ?? settingsMode ?? 'standard');
+  } catch {
+    applyMainWindowMode(settingsStore.snapshot?.settings.mainWindow.mode ?? 'standard');
+  }
+}
+
+async function toggleAuxiliaryMode(): Promise<void> {
+  const targetMode: WindowMode = mainWindowMode.value === 'auxiliary' ? 'standard' : 'auxiliary';
+  try {
+    const nextState = await windowShowMain({ mode: targetMode });
+    if (nextState.mode !== null) {
+      applyMainWindowMode(nextState.mode);
+      schedulePersistMainWindowMode(nextState.mode);
+    }
+  } catch {
+    // 非 Tauri 测试环境容错
+  }
+}
+
+async function exitAuxiliaryMode(): Promise<void> {
+  if (mainWindowMode.value !== 'auxiliary') {
+    return;
+  }
+  await toggleAuxiliaryMode();
+}
+
 async function ensureCrossWindowListeners(): Promise<void> {
   if (crossWindowListenersBound) {
     return;
@@ -370,6 +443,10 @@ async function ensureCrossWindowListeners(): Promise<void> {
       void editorTabsStore.handleQuickBarAppendEvent(appendResult);
     });
     unlistenMainWindowState = await onWindowState((winState) => {
+      if (winState.windowId === 'main' && winState.mode !== null) {
+        applyMainWindowMode(winState.mode);
+        schedulePersistMainWindowMode(winState.mode);
+      }
       if (winState.windowId === 'main' && winState.visible) {
         void notesStore.refreshAll();
         const openedNow = consumeAndOpenPendingFile();
@@ -425,9 +502,7 @@ function ensureMainWindowActionBindings(): void {
   void syncNativeMenuAccelerators();
 }
 
-if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-  ensureMainWindowActionBindings();
-}
+ensureMainWindowActionBindings();
 
 const saveStatusLabel = computed<string>(() => {
   const tab = editorTabsStore.activeTab;
@@ -464,6 +539,7 @@ watch(
         notesStore.initialize(),
         editorTabsStore.restoreTabsFromUiState(),
         panelsStore.initialize(),
+        restoreMainWindowMode(),
         ensureCrossWindowListeners(),
       ]).then(() => {
         consumeAndOpenPendingFile();
@@ -521,6 +597,10 @@ onUnmounted(() => {
     dispose?.();
   }
   mainWindowActionsBound = false;
+  if (windowModePersistTimer !== null) {
+    clearTimeout(windowModePersistTimer);
+    windowModePersistTimer = null;
+  }
   if (unlistenToastAppendUndo) {
     unlistenToastAppendUndo();
     unlistenToastAppendUndo = null;
@@ -558,17 +638,63 @@ onUnmounted(() => {
       <OnboardingView />
     </div>
 
-    <div v-else class="qn-main-shell__workbench" data-testid="main-workbench-unlocked">
+    <div
+      v-else
+      :class="[
+        'qn-main-shell__workbench',
+        { 'qn-main-shell__workbench--auxiliary': mainWindowMode === 'auxiliary' },
+      ]"
+      data-testid="main-workbench-unlocked"
+    >
       <header class="qn-main-shell__titlebar">
         <div class="qn-main-shell__brand">
           <span class="qn-main-shell__title">QuickNote</span>
-          <QnBadge tone="neutral">{{ onboardingStore.libraryInfo?.root }}</QnBadge>
+          <QnBadge
+            v-if="mainWindowMode === 'auxiliary'"
+            tone="accent"
+            data-testid="auxiliary-mode-badge"
+          >
+            侧栏辅助
+          </QnBadge>
+          <QnBadge v-else tone="neutral">{{ onboardingStore.libraryInfo?.root }}</QnBadge>
+          <QnButton
+            v-if="mainWindowMode === 'auxiliary'"
+            variant="ghost"
+            size="sm"
+            data-testid="auxiliary-nav-drawer-btn"
+            @click="panelsStore.toggleLeftSidebar()"
+          >
+            {{ panelsStore.leftSidebarCollapsed ? '拉出导航' : '收起导航' }}
+          </QnButton>
         </div>
         <div class="qn-main-shell__titlebar-actions">
-          <QnButton variant="ghost" size="sm" @click="baselinePreviewOpen = true">
+          <QnButton
+            v-if="mainWindowMode === 'auxiliary'"
+            variant="secondary"
+            size="sm"
+            data-testid="exit-auxiliary-mode-btn"
+            @click="exitAuxiliaryMode"
+          >
+            退出侧栏辅助
+          </QnButton>
+          <QnButton
+            variant="ghost"
+            size="sm"
+            title="切换 45% 侧栏辅助模式"
+            data-testid="toggle-auxiliary-mode-btn"
+            @click="toggleAuxiliaryMode"
+          >
+            {{ mainWindowMode === 'auxiliary' ? '标准窗口' : '45% 侧栏辅助' }}
+          </QnButton>
+          <QnButton
+            v-if="mainWindowMode !== 'auxiliary'"
+            variant="ghost"
+            size="sm"
+            @click="baselinePreviewOpen = true"
+          >
             视觉基线预览
           </QnButton>
-          <QnBadge tone="accent">⌃⌥Space 捕捉</QnBadge>
+          <QnBadge v-if="mainWindowMode !== 'auxiliary'" tone="accent">⌃⌥Space 捕捉</QnBadge>
         </div>
       </header>
 
@@ -580,6 +706,7 @@ onUnmounted(() => {
           @click="panelsStore.toggleLeftSidebar()"
         />
         <NotesSidebar
+          v-if="mainWindowMode !== 'auxiliary' || !panelsStore.leftSidebarCollapsed"
           :collapsed="panelsStore.leftSidebarCollapsed"
           :overlay-drawer="panelsStore.isOverlayDrawer"
           @toggle-collapse="panelsStore.toggleLeftSidebar()"

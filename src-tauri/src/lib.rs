@@ -239,6 +239,10 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
                 .build(app)?,
         )
         .separator()
+        .item(
+            &MenuItemBuilder::with_id("window.toggleAuxiliary", "切换 45% 侧栏辅助模式")
+                .build(app)?,
+        )
         .item(&PredefinedMenuItem::fullscreen(app, Some("进入/退出全屏"))?)
         .build()?;
 
@@ -367,7 +371,8 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
             | "panel.toggle.related"
             | "panel.toggle.recent"
             | "panel.toggle.terminal"
-            | "panel.collapseGroup" => {
+            | "panel.collapseGroup"
+            | "window.toggleAuxiliary" => {
                 let main_focused = app_handle
                     .get_webview_window("main")
                     .and_then(|win| win.is_focused().ok())
@@ -570,6 +575,14 @@ pub fn run() -> Result<(), tauri::Error> {
                     if let Some(wm) = window.app_handle().try_state::<Arc<WindowManager>>() {
                         if let Err(err) = wm.close_settings(window.app_handle()) {
                             eprintln!("[window] close_settings failed: code={:?}", err.code);
+                        }
+                    }
+                }
+            } else if let WindowEvent::Resized(_) = event {
+                if window.label() == "main" {
+                    if let Ok(is_fs) = window.is_fullscreen() {
+                        if let Some(wm) = window.app_handle().try_state::<Arc<WindowManager>>() {
+                            let _ = wm.sync_main_fullscreen_state(window.app_handle(), is_fs);
                         }
                     }
                 }
