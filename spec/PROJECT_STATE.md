@@ -4,13 +4,14 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0（`m0-baseline`）、M1（`m1-baseline`）、M2（`m2-baseline`）与 **M3（`m3-baseline`：快速打开、外部协作、完整命令库与面板组）** 均已正式收官，准备进入 **M4（内嵌终端、高级协作与 1.0 收官）**。
+- **当前阶段**：M0–M3（`m3-baseline`）均已收官；**M4（内嵌终端、高级协作与 1.0 收官）全部 7 张自包含轻量任务卡（`M4-01a`–`M4-06`）已拆卡落盘**，进入逐卡施工阶段。
 - **已完成**：
   - M0 全阶段（`m0-baseline`）。
   - M1 全阶段（`m1-baseline`：`M1-01a`–`M1-05` + M1 独立只读审查与 `fix/M1-audit` 实机点验收官）。
   - M2 全阶段（`m2-baseline`：`M2-01`–`M2-05b` + M2 独立只读审查 + `fix/M2-audit` `be79e07` + `fix/M2-qa` `4d33f0d` 实机点验收官）。
   - M3 全阶段（`m3-baseline`：`M3-01a`–`M3-05b` + M3 独立只读审查 + `fix/M3-audit` `e4b0532` + `fix/M3-qa` `1dd8018` 实机点验收官）。
-- **待执行**：启动 **M4（内嵌终端、高级协作与 1.0 收官）** 阶段自包含轻量任务卡拆分并逐卡推进。
+  - M4 阶段拆卡规划（`M4-01a` / `M4-01b` / `M4-02` / `M4-03` / `M4-04` / `M4-05` / `M4-06`，100% 覆盖 `C4.2` M4 全部 9 条 IPC 命令、`C4.3` 终端流式通道/事件与历史债务）。
+- **待执行**：从 `dev` 拉取 `feat/M4-01a-backend-terminal-pty` 启动首张卡 `M4-01a`，依序串行推进至 `M4-06` 后执行 M4 独立只读审查与 1.0 全量实机点验。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -20,8 +21,8 @@
 | 默认模板（`note/doc/command-book`）格式对齐 | M0 审查 🟢#4 | **M2（已在 `M2-01` `87f1a44` 收口）** | 已在 `domain::template` 单源定义并与 `v4` 附录 B.3 逐字对齐 |
 | `SettingsErrorBanner` “打开 `settings.yaml` 修复”按钮 | M0 审查 🟢#4 | **M3（已在 `M3-02` `455c2ee` 收口）** | 已在 `M3-01b` 落地 `$SETTINGS_YAML` 路由、`M3-02` 接入 `external_action_run`（`D-0008` / `v4` §4.7） |
 | `QuickBarView` 与 `bridge.m` 幂等双 `Esc` | M0 审查 🟢#4 | **保留现状** | 保持不动，避免破坏已实机通过的 Quick Bar 原生焦点与全屏行为 |
-| `collectTodoDecorations` 超长文档单遍扫描优化 | M2 审查 🟢#2 | **M4** | 随 M4 性能压测专项（大文档/万篇压测）统一优化 |
-| 非 Markdown 轻量诊断多行启发式边界（Nginx/YAML） | M3 审查 🟢#5 | **M4（按需）** | Nginx 多行指令与 YAML 跨行引号静态启发式微调，不引入重型解析器 |
+| `collectTodoDecorations` 超长文档单遍扫描优化 | M2 审查 🟢#2 | **M4（已排入 `M4-06`）** | 随 M4 性能压测专项（大文档/万篇压测）统一优化 |
+| 非 Markdown 轻量诊断多行启发式边界（Nginx/YAML） | M3 审查 🟢#5 | **M4（已排入 `M4-06`）** | Nginx 多行指令与 YAML 跨行引号/块标量静态启发式微调，不引入重型解析器 |
 
 ## 3. 已验证实机约定与踩坑备忘
 
@@ -42,5 +43,5 @@
 
 ## 5. 下一步动作
 
-1. 新开主控会话基于 `m3-baseline` 拆分 **M4（内嵌终端、高级协作与 1.0 收官）** 自包含轻量任务卡（涵盖 `C4.2` M4 全部 9 条 IPC 命令：`settings_export`/`settings_import`、`note_export_pdf`、`terminal_spawn`/`write`/`resize`/`set_visibility`/`kill`/`list_sessions`、`D-0005` 折叠保活与 30 分钟空闲回收、CM6 `MergeView` 冲突并排合并、复制富文本、45% 侧栏辅助窗口、性能压测与 1.0 收官）。
-2. 从 `dev` 拉取 `M4-01` 分支并依卡逐个推进。
+1. 新开独立施工会话，从 `dev` 拉取 `feat/M4-01a-backend-terminal-pty` 执行 `spec/cards/M4-01a-backend-terminal-pty-and-lifecycle.md`。
+2. 严格串行推进 `M4-01a → M4-01b → M4-02 → M4-03 → M4-04 → M4-05 → M4-06`，全部合入 `dev` 后启动 M4 独立只读审查与 1.0 全量人工点验。

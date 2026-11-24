@@ -1,10 +1,28 @@
-# 分阶段任务卡调度总览（M0–M3）
+# 分阶段任务卡调度总览（M0–M4）
 
 > 本目录存放按里程碑动态滚动拆分的施工任务卡（严格遵循 `C12` 标准模板）。每张卡片对应一个独立新 AI 会话，严格串行推进并以 `pnpm check:all` 全绿收工。
 
 ---
 
-## 1. M3 阶段任务卡（已收官 · 基线标签 `m3-baseline`）
+## 1. M4 阶段任务卡（规划完成 · 待启动施工）
+
+> 阶段目标：100% 补齐 `C4.2` 标为 `M4` 的全部 9 条 IPC 命令（`terminal_spawn`、`terminal_write`、`terminal_resize`、`terminal_set_visibility`、`terminal_kill`、`terminal_list_sessions`、`settings_export`、`settings_import`、`note_export_pdf`）与 `C4.3` 流式通道/事件（`Channel<TerminalData>`、`terminal:session-state`、`terminal:exit`）；落地内嵌 `xterm.js` + `portable-pty` 终端全链路（每工作区 1 会话/全局上限 3、折叠保活 + 1MB 环形缓冲、10MB 背压暂停、`tcgetpgrp` 前台子进程指示点 `●`、无前台子进程闲置 30 分钟自动回收、`SIGHUP→SIGKILL` 零僵尸、`⌥⌘C` 显式吞键与 `⌘C` 有无选区分流）；交付 CM6 `MergeView` 冲突并排合并、复制为富文本（双 MIME）与原生离屏 `WKWebView` 导出 PDF、设置窗口配置导入导出、45% 侧栏辅助窗口模式（`WindowMode::Auxiliary`）与全屏工作台完善；完成万篇文档 FTS5 `< 50ms` 压测、收口 M2 `collectTodoDecorations` 单遍扫描与 M3 Nginx/YAML 多行诊断债务，并执行 1.0 发布前核验。
+
+M4 阶段共拆分为 7 张轻量、自包含、严格串行推进的任务卡（`M4-01a → M4-01b → M4-02 → M4-03 → M4-04 → M4-05 → M4-06`）：
+
+| 序号 | 卡号与文件 | 核心主题 | 覆盖契约、IPC 命令与事件 | 状态 / 人工点验 |
+| --- | --- | --- | --- | --- |
+| 1 | [M4-01a-backend-terminal-pty-and-lifecycle.md](M4-01a-backend-terminal-pty-and-lifecycle.md) | 后端 M4（上）：内嵌终端 PTY 引擎、1MB 折叠保活、10MB 背压暂停、前台子进程检测与 30 分钟空闲回收 | `C1.3`、`C1.4`、`C2.1`、`C2.3`、`C3.4`、`C4.2`、`C4.3`、`C8.7`、`D-0005`；`terminal_spawn`/`write`/`resize`/`set_visibility`/`kill`/`list_sessions`、`Channel<TerminalData>`、`terminal:session-state`、`terminal:exit` | **待执行** |
+| 2 | [M4-01b-backend-settings-backup-pdf-and-auxiliary-window.md](M4-01b-backend-settings-backup-pdf-and-auxiliary-window.md) | 后端 M4（下）：配置导出备份/导入恢复、macOS 原生离屏 `WKWebView` PDF 导出与 45% 侧栏辅助窗口桥接 | `C1.3`、`C1.4`、`C2.3`、`C2.4`、`C3.4`、`C4.2`、`C6.2`、`D-0003`、`D-0008`、`D-0011`；`settings_export`、`settings_import`、`note_export_pdf`、`WindowMode::Auxiliary` | **待执行** |
+| 3 | [M4-02-embedded-xterm-terminal-panel-and-key-isolation.md](M4-02-embedded-xterm-terminal-panel-and-key-isolation.md) | 内嵌 `xterm.js` 终端面板（替换占位）、折叠保活、运行指示点 `●`、10MB 暂停横幅、IME 与 `⌥⌘C`/`⌘C` 隔离 | `C1.2`、`C1.3`、`C2.2`、`C4.2`、`C4.3`、`C7.1`–`C7.4`、`C8.7`、`C9.3`、`D-0005`、`v4` §5.6.7 | **待执行（含原生/IME 点验）** |
+| 4 | [M4-03-cm6-merge-view-conflict-resolution.md](M4-03-cm6-merge-view-conflict-resolution.md) | CM6 `@codemirror/merge` `MergeView` 冲突并排对比、逐块合并采纳与乐观并发写回 | `C1.2`、`C1.3`、`C2.2`、`C7.1`、`C8.5`、`D-0006`、`v4` §5.5 / §5.7 | **待执行（含交互点验）** |
+| 5 | [M4-04-rich-text-pdf-export-and-settings-backup-ui.md](M4-04-rich-text-pdf-export-and-settings-backup-ui.md) | 复制为富文本（双 MIME HTML+纯文本）、打印级 PDF 导出弹窗、设置窗口备份导入导出与内嵌终端参数配置 | `C1.2`、`C2.2`、`C2.3`、`C4.2`、`C6.2`、`C7.1`、`C7.2`、`D-0008`、`v4` §5.5 / §5.11；消费 `note_export_pdf`、`settings_export`、`settings_import` | **待执行（含 PDF/剪贴板点验）** |
+| 6 | [M4-05-auxiliary-window-mode-and-fullscreen-workbench.md](M4-05-auxiliary-window-mode-and-fullscreen-workbench.md) | 45% 侧栏辅助窗口前端形态（隐藏导航+覆盖式抽屉）、`window.toggleAuxiliary` 菜单/设置联动与全屏工作台完善 | `C1.2`、`C2.2`、`C4.2`、`C4.3`、`C6.2`、`C6.3`、`C7.1`–`C7.4`、`C9.3`、`D-0003`、`v4` §3.1 / §3.2 / §5.8 | **待执行（含全屏覆盖点验）** |
+| 7 | [M4-06-performance-benchmark-debt-cleanup-and-v1-readiness.md](M4-06-performance-benchmark-debt-cleanup-and-v1-readiness.md) | 万篇文档 FTS5 `< 50ms` 性能压测、`collectTodoDecorations` 单遍扫描与 Nginx/YAML 诊断债务收口、1.0 发布前核验 | `C2.3`、`C5.3`、`C9.1`–`C9.3`、`v4` §5.12–§5.14；收口 M2 🟢#2 与 M3 🟢#5 挂起债务 | **待执行（1.0 收官总检）** |
+
+---
+
+## 2. M3 阶段任务卡（已收官 · 基线标签 `m3-baseline`）
 
 > 阶段目标：100% 补齐 `C4.2` 全部 7 条 M3 IPC 命令（`commands_search`、`notes_get_related`、`tags_batch_rename`、`search_spotlight`、`path_complete`、`external_actions_resolve`、`external_action_run`）；落地命令书全形态解析与 `note_links` 索引、可取消 `mdfind` Spotlight（黑名单/50 条硬上限）、统一外部动作（库内无配置严禁回退）并收口 `SettingsErrorBanner` “打开 `settings.yaml` 修复”债务（`D-0008`）；交付 Quick Bar 打开/命令双模式与主窗口大尺寸 `⌘K`/`⌘⇧K`、外部文件标签页与常用文件固定、完整右侧面板组（大纲/终端占位/相关文档前 20/最近编辑前 20 + 宽度持久化 + `<1200`/`<1000`/`<900` 响应式抽屉）、非 Markdown 15 语言高亮与轻量诊断（>2MB 关诊断/>5MB 退纯文本）及全库标签重命名/批量合并。全部 7 卡及 `fix/M3-audit`（`e4b0532`）、`fix/M3-qa`（`1dd8018`）实机点验均已收官。
 
@@ -22,7 +40,7 @@ M3 阶段共拆分为 7 张轻量、自包含、严格串行推进的任务卡�
 
 ---
 
-## 2. M2 阶段任务卡（已收官 · 基线标签 `m2-baseline`）
+## 3. M2 阶段任务卡（已收官 · 基线标签 `m2-baseline`）
 
 > 阶段目标：补全 M2 后端 3 条 IPC 命令（`settings_update`、`note_save_image`、`inbox_extract_to_note`）并收口 `fs.rs` 默认模板与 `v4` 附录 B.3 对齐债务；落地前端统一动作注册表（`C7.2`/`C7.3` 作用域优先级、`when` 放行、终端 `⌥⌘C` 显式吞键）、右键菜单与原生系统菜单同源桥接；升级设置窗口双向绑定与快捷键录制/冲突检测；实现文档头内联编辑 + `[属性]` Popover（含外部无 frontmatter 二次确认）、模板系统（`_templates/` + `⌘N` + Quick Bar `⌥⌘↵`）与收件箱“移到新笔记…”；以及 CM6 全套 Markdown 增强（上下文 Tab 缩进、行首 `Decoration.widget` 待办复选框、全套格式动作、语法树链接与 `C8.4` 中文 Slug 锚点跳转、图片粘贴/拖入落盘 `assets/YYYY-MM/`）。全部 6 卡及 `fix/M2-audit`（`be79e07`）、`fix/M2-qa`（`4d33f0d`）实机点验均已收官。
 
@@ -39,7 +57,7 @@ M2 阶段共拆分为 6 张轻量、自包含、严格串行推进的任务卡�
 
 ---
 
-## 3. M1 阶段任务卡（已收官 · 基线标签 `m1-baseline`）
+## 4. M1 阶段任务卡（已收官 · 基线标签 `m1-baseline`）
 
 | 序号 | 卡号与文件 | 核心主题 | 覆盖契约、IPC 命令与事件 | 状态 |
 | --- | --- | --- | --- | --- |
@@ -53,7 +71,7 @@ M2 阶段共拆分为 6 张轻量、自包含、严格串行推进的任务卡�
 
 ---
 
-## 4. M0 阶段任务卡（已收官 · 基线标签 `m0-baseline`）
+## 5. M0 阶段任务卡（已收官 · 基线标签 `m0-baseline`）
 
 | 序号 | 卡号与文件 | 核心主题 | 状态 |
 | --- | --- | --- | --- |
@@ -64,7 +82,7 @@ M2 阶段共拆分为 6 张轻量、自包含、严格串行推进的任务卡�
 
 ---
 
-## 5. 单卡施工规程（严格执行 `C10` 与省流规矩）
+## 6. 单卡施工规程（严格执行 `C10` 与省流规矩）
 
 1. **一卡一干净会话（零大文档整篇读取）**：每张卡在独立会话中执行；开场**只读** [AGENTS.md](../../AGENTS.md) 与当期任务卡，任务卡已内联所需契约签名与边界，**除非遇到未定义冲突，禁止整篇读取 1150 行的 `quicknote-design-v4.md` 与 745 行的 `engineering-contract.md`**。
 2. **分支隔离与白名单**：从 `dev` 拉取对应功能分支，严守卡片文件白名单与 `C1.3` 共享串行文件声明。
