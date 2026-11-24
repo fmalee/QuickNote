@@ -19,6 +19,21 @@ interface FlatTagItem {
   expanded: boolean;
 }
 
+const props = withDefaults(
+  defineProps<{
+    collapsed?: boolean;
+    overlayDrawer?: boolean;
+  }>(),
+  {
+    collapsed: false,
+    overlayDrawer: false,
+  },
+);
+
+const emit = defineEmits<{
+  (e: 'toggle-collapse'): void;
+}>();
+
 const notesStore = useNotesStore();
 const editorTabsStore = useEditorTabsStore();
 
@@ -209,7 +224,44 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
 
 <template>
   <aside
-    class="qn-notes-sidebar"
+    v-if="props.collapsed"
+    class="qn-notes-sidebar-strip"
+    data-testid="notes-sidebar-collapsed-strip"
+    tabindex="-1"
+    @keydown="onSidebarKeydown"
+  >
+    <button
+      type="button"
+      class="qn-notes-sidebar-strip__btn"
+      title="展开左侧导航"
+      data-testid="notes-sidebar-expand-btn"
+      @click="emit('toggle-collapse')"
+    >
+      ›
+    </button>
+    <div class="qn-notes-sidebar-strip__divider" />
+    <button
+      v-for="item in navItems"
+      :key="item.id"
+      type="button"
+      :class="[
+        'qn-notes-sidebar-strip__btn',
+        { 'qn-notes-sidebar-strip__btn--active': notesStore.activeTab === item.id },
+      ]"
+      :title="item.label"
+      :data-testid="`notes-sidebar-strip-${item.id}`"
+      @click="
+        emit('toggle-collapse');
+        handleSelectTab(item.id);
+      "
+    >
+      {{ item.label.slice(0, 1) }}
+    </button>
+  </aside>
+
+  <aside
+    v-else
+    :class="['qn-notes-sidebar', { 'qn-notes-sidebar--drawer': props.overlayDrawer }]"
     data-testid="notes-sidebar"
     tabindex="-1"
     @keydown="onSidebarKeydown"
@@ -232,6 +284,15 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
         <QnBadge v-if="item.id === 'inbox'" tone="neutral" data-testid="inbox-count-badge">
           {{ notesStore.navTree.inboxCount }}
         </QnBadge>
+      </button>
+      <button
+        type="button"
+        class="qn-notes-sidebar__collapse-btn"
+        title="收起左侧导航"
+        data-testid="notes-sidebar-collapse-btn"
+        @click="emit('toggle-collapse')"
+      >
+        ‹
       </button>
     </div>
 
@@ -539,6 +600,52 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
 </template>
 
 <style scoped>
+.qn-notes-sidebar-strip {
+  width: 36px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--qn-border-subtle);
+  background-color: var(--qn-bg-sidebar);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--qn-space-1);
+  padding: var(--qn-space-2) 0;
+  min-height: 0;
+  outline: none;
+}
+
+.qn-notes-sidebar-strip__divider {
+  width: 20px;
+  height: 1px;
+  background-color: var(--qn-border-subtle);
+  margin: 2px 0;
+}
+
+.qn-notes-sidebar-strip__btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--qn-radius-sm);
+  background: transparent;
+  color: var(--qn-text-secondary);
+  font-size: var(--qn-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.qn-notes-sidebar-strip__btn:hover {
+  background-color: var(--qn-bg-hover);
+  color: var(--qn-text-primary);
+}
+
+.qn-notes-sidebar-strip__btn--active {
+  background-color: var(--qn-bg-active);
+  color: var(--qn-accent);
+}
+
 .qn-notes-sidebar {
   width: 300px;
   flex-shrink: 0;
@@ -552,10 +659,39 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
   outline: none;
 }
 
+.qn-notes-sidebar--drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: var(--qn-z-drawer);
+  box-shadow: var(--qn-shadow-lg);
+}
+
 .qn-notes-sidebar__nav-tabs {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--qn-space-1);
+}
+
+.qn-notes-sidebar__collapse-btn {
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--qn-radius-sm);
+  background: transparent;
+  color: var(--qn-text-muted);
+  cursor: pointer;
+}
+
+.qn-notes-sidebar__collapse-btn:hover {
+  background-color: var(--qn-bg-hover);
+  color: var(--qn-text-primary);
 }
 
 .qn-notes-sidebar__nav-btn {

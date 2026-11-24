@@ -15,7 +15,7 @@ import {
 } from '@/features/editor';
 import { NewNoteTemplateModal, NotesSidebar, useNotesStore } from '@/features/notes';
 import { OnboardingView, useOnboardingStore } from '@/features/onboarding';
-import { OutlinePanel, usePanelsStore } from '@/features/panels';
+import { RightPanelGroup, usePanelsStore } from '@/features/panels';
 import {
   PENDING_OPEN_FILE_STORAGE_KEY,
   QuickOpenPalette,
@@ -41,6 +41,7 @@ const editorTabsStore = useEditorTabsStore();
 const externalActions = useExternalActions();
 const panelsStore = usePanelsStore();
 
+const shellRef = ref<HTMLElement | null>(null);
 const baselinePreviewOpen = ref(false);
 const quickOpenModalOpen = ref(false);
 const quickOpenFocusTick = ref(0);
@@ -50,6 +51,7 @@ let unlistenToastAppendUndo: UnlistenFn | null = null;
 let unlistenMainWindowState: UnlistenFn | null = null;
 let unlistenMenuAction: UnlistenFn | null = null;
 let crossWindowListenersBound = false;
+let viewportResizeObserver: ResizeObserver | null = null;
 const actionDisposers: Array<() => void> = [];
 
 function resolveActiveScopes(): ActionScope[] {
@@ -195,7 +197,16 @@ function bindMainWindowActions(): void {
       void editorTabsStore.reopenLastClosedTab();
     }),
     actionRegistry.bindHandler('panel.toggle.outline', () => {
-      panelsStore.toggleOutlinePanel();
+      panelsStore.togglePanel('outline');
+    }),
+    actionRegistry.bindHandler('panel.toggle.terminal', () => {
+      panelsStore.togglePanel('terminal');
+    }),
+    actionRegistry.bindHandler('panel.toggle.related', () => {
+      panelsStore.togglePanel('related');
+    }),
+    actionRegistry.bindHandler('panel.toggle.recent', () => {
+      panelsStore.togglePanel('recent');
     }),
     actionRegistry.bindHandler('panel.collapseGroup', () => {
       panelsStore.toggleCollapseAll();
@@ -308,6 +319,8 @@ async function ensureCrossWindowListeners(): Promise<void> {
         mappedActionId = 'window.quickOpen';
       } else if (actionId === 'menu_command_book' || actionId === 'menu_tools_commands') {
         mappedActionId = 'window.commandBook';
+      } else if (actionId === 'menu_view_terminal') {
+        mappedActionId = 'panel.toggle.terminal';
       }
       const ctx = buildActionContext();
       if (
@@ -386,8 +399,46 @@ watch(
   { immediate: true },
 );
 
+function syncViewportWidth(): void {
+  const rectWidth = shellRef.value?.getBoundingClientRect().width ?? 0;
+  const width = rectWidth > 0 ? rectWidth : typeof window !== 'undefined' ? window.innerWidth : 0;
+  if (width > 0) {
+    panelsStore.applyViewportWidth(width);
+  }
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('resize', syncViewportWidth);
+  syncViewportWidth();
+}
+
+watch(shellRef, (el) => {
+  if (viewportResizeObserver) {
+    viewportResizeObserver.disconnect();
+    viewportResizeObserver = null;
+  }
+  if (!el) {
+    return;
+  }
+  syncViewportWidth();
+  if (typeof ResizeObserver !== 'undefined') {
+    viewportResizeObserver = new ResizeObserver((entries) => {
+      const entryWidth = entries[0]?.contentRect.width;
+      if (entryWidth && entryWidth > 0) {
+        panelsStore.applyViewportWidth(entryWidth);
+      }
+    });
+    viewportResizeObserver.observe(el);
+  }
+});
+
 onUnmounted(() => {
+  if (viewportResizeObserver) {
+    viewportResizeObserver.disconnect();
+    viewportResizeObserver = null;
+  }
   if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+    window.removeEventListener('resize', syncViewportWidth);
     window.removeEventListener('keydown', handleWindowKeyDown);
     window.removeEventListener('storage', handleWindowStorage);
   }
@@ -418,7 +469,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="qn-main-shell" data-testid="main-workbench-shell">
+  <div ref="shellRef" class="qn-main-shell" data-testid="main-workbench-shell">
     <div v-if="settingsStore.isSettingsInvalid" class="qn-main-shell__top-banner">
       <SettingsErrorBanner :status="settingsStore.loadStatus" />
     </div>
@@ -446,7 +497,17 @@ onUnmounted(() => {
       </header>
 
       <div class="qn-main-shell__body">
-        <NotesSidebar />
+        <div
+          v-if="panelsStore.isOverlayDrawer && !panelsStore.leftSidebarCollapsed"
+          class="qn-main-shell__left-backdrop"
+          data-testid="left-sidebar-drawer-backdrop"
+          @click="panelsStore.toggleLeftSidebar()"
+        />
+        <NotesSidebar
+          :collapsed="panelsStore.leftSidebarCollapsed"
+          :overlay-drawer="panelsStore.isOverlayDrawer"
+          @toggle-collapse="panelsStore.toggleLeftSidebar()"
+        />
 
         <section class="qn-main-shell__editor-col">
           <EditorTabBar />
@@ -490,7 +551,7 @@ onUnmounted(() => {
                 <p class="qn-main-shell__placeholder-text">从左侧选择或新建一篇笔记。</p>
               </div>
             </div>
-            <OutlinePanel />
+            <RightPanelGroup />
           </div>
         </section>
       </div>
@@ -620,14 +681,22 @@ onUnmounted(() => {
 }
 
 .qn-main-shell__body {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
 }
 
+.qn-main-shell__left-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: var(--qn-bg-backdrop);
+  z-index: var(--qn-z-drawer);
+}
+
 .qn-main-shell__editor-col {
   flex: 1;
-  min-width: 0;
+  min-width: min(480px, 100%);
   display: flex;
   flex-direction: column;
 }
@@ -639,6 +708,7 @@ onUnmounted(() => {
 }
 
 .qn-main-shell__workspace {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
