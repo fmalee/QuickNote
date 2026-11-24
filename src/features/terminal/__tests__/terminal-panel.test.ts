@@ -490,4 +490,51 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
     const roundtrip = encodeUtf8ToBase64('ls -la\n');
     expect(atob(roundtrip)).toBe('ls -la\n');
   });
+
+  it('8. 多工作区新建终端会话时旧活跃会话自动触发 terminal_set_visibility(prevId, false) 并转入 hidden_alive', async () => {
+    const store = useTerminalStore();
+    await store.syncPanelVisibility(true);
+
+    const sessionA: TerminalSessionInfo = {
+      sessionId: 'term-ws-a',
+      workspaceKey: 'ws-a',
+      cwd: '/tmp/ws-a',
+      state: 'active',
+      hasActiveForegroundChild: false,
+      outputPaused: false,
+    };
+    const sessionB: TerminalSessionInfo = {
+      sessionId: 'term-ws-b',
+      workspaceKey: 'ws-b',
+      cwd: '/tmp/ws-b',
+      state: 'active',
+      hasActiveForegroundChild: false,
+      outputPaused: false,
+    };
+
+    mockTerminalSpawn.mockResolvedValueOnce(sessionA).mockResolvedValueOnce(sessionB);
+
+    await store.spawnOrFocusContext({
+      workspaceKey: 'ws-a',
+      workspaceLabel: 'ws-a',
+      cwd: '/tmp/ws-a',
+      source: 'workspace-root',
+    });
+    expect(store.activeSessionId).toBe('term-ws-a');
+    expect(mockTerminalSetVisibility).not.toHaveBeenCalled();
+
+    await store.spawnOrFocusContext({
+      workspaceKey: 'ws-b',
+      workspaceLabel: 'ws-b',
+      cwd: '/tmp/ws-b',
+      source: 'workspace-root',
+    });
+    expect(store.activeSessionId).toBe('term-ws-b');
+    expect(mockTerminalSetVisibility).toHaveBeenCalledWith({
+      sessionId: 'term-ws-a',
+      visible: false,
+    });
+    expect(store.sessions['term-ws-a']?.state).toBe('hidden_alive');
+    expect(store.sessions['term-ws-b']?.state).toBe('active');
+  });
 });

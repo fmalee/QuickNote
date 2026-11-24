@@ -589,9 +589,9 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
 .qn-settings__number-input {
   height: 32px;
   padding: 0 var(--qn-space-2);
-  border: 1px solid var(--qn-border-default);
+  border: 1px solid var(--qn-border-strong);
   border-radius: var(--qn-radius-sm);
-  background-color: var(--qn-bg-surface);
+  background-color: var(--qn-bg-elevated);
   color: var(--qn-text-primary);
   font-size: var(--qn-text-sm);
 }

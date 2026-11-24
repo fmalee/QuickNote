@@ -215,3 +215,59 @@ fn auxiliary_width_clamping_frame_calculation_and_window_policy() {
     assert!(!aux_state.fullscreen);
     assert_eq!(aux_state.mode, Some(WindowMode::Auxiliary));
 }
+
+#[test]
+fn window_policy_with_initial_auxiliary_and_none_show_main_preserves_mode() {
+    let mut policy = WindowPolicyState::with_initial(true, WindowMode::Auxiliary);
+    assert_eq!(policy.activation_policy(), ActivationPolicy::Regular);
+    assert_eq!(policy.main_mode(), WindowMode::Auxiliary);
+    assert_eq!(policy.main_window_state().mode, Some(WindowMode::Auxiliary));
+    assert!(!policy.main_window_state().fullscreen);
+
+    let (state_after_none, activation) = policy.show_main(None);
+    assert_eq!(activation, ActivationPolicy::Regular);
+    assert_eq!(state_after_none.mode, Some(WindowMode::Auxiliary));
+    assert!(state_after_none.visible);
+
+    let fs_policy = WindowPolicyState::with_initial(false, WindowMode::Fullscreen);
+    assert_eq!(fs_policy.activation_policy(), ActivationPolicy::Accessory);
+    assert!(fs_policy.main_window_state().fullscreen);
+    assert_eq!(fs_policy.main_mode(), WindowMode::Fullscreen);
+}
+
+#[test]
+fn settings_import_syncs_ui_state_hotkey_backup_combo() {
+    use quicknote_lib::application::hotkey::HotkeyManager;
+    use quicknote_lib::commands::settings::sync_hotkeys_after_import;
+    use std::sync::Arc;
+
+    let dir = temp_dir("import-hotkey-sync");
+    let pm = Arc::new(PersistenceManager::open(dir.clone()).expect("open persistence"));
+    let hm = Arc::new(HotkeyManager::new(
+        Arc::new(NoopNativeBridge),
+        Arc::clone(&pm),
+    ));
+
+    let prev = pm.settings_get().expect("prev settings").settings.hotkey;
+    let initial_yaml = fs::read_to_string(pm.settings_path()).expect("read settings.yaml");
+    let updated_yaml = initial_yaml.replace("ctrl+alt+cmd+space", "ctrl+shift+space");
+    let import_path = dir.join("imported.yaml");
+    fs::write(&import_path, updated_yaml).expect("write imported yaml");
+
+    let snapshot = pm
+        .settings_import(&import_path.to_string_lossy())
+        .expect("import yaml");
+    sync_hotkeys_after_import(
+        &pm,
+        &hm,
+        Some(&prev),
+        &snapshot,
+        quicknote_lib::on_hotkey_pressed,
+    )
+    .expect("sync hotkeys");
+
+    let ui_state = pm.ui_state_get().expect("ui_state_get");
+    assert_eq!(ui_state.hotkey.backup_combo, "ctrl+shift+space");
+
+    let _ = fs::remove_dir_all(&dir);
+}

@@ -9,6 +9,7 @@ use crate::application::hotkey::HotkeyManager;
 use crate::application::persistence::PersistenceManager;
 use crate::application::terminal::{TauriTerminalEventSink, TerminalManager};
 use crate::application::window::WindowManager;
+use crate::domain::settings::WindowMode;
 use crate::domain::window::HideReason;
 use crate::infra::external_open::{ExternalLauncher, MacosExternalLauncher};
 use crate::infra::macos::{NativeWindowBridge, NoopNativeBridge};
@@ -467,10 +468,32 @@ pub fn run() -> Result<(), tauri::Error> {
                 .get_webview_window("main")
                 .and_then(|w| w.is_visible().ok())
                 .unwrap_or(true);
+            let settings_snapshot = pm.settings_get().ok();
+            let has_persisted_ui_state = pm.app_data_dir().join("ui-state.json").exists();
+            let initial_main_mode = if has_persisted_ui_state {
+                pm.ui_state_get()
+                    .map(|u| u.windows.main.mode)
+                    .unwrap_or_else(|_| {
+                        settings_snapshot
+                            .as_ref()
+                            .map(|s| s.settings.main_window.mode)
+                            .unwrap_or(WindowMode::Standard)
+                    })
+            } else {
+                settings_snapshot
+                    .as_ref()
+                    .map(|s| s.settings.main_window.mode)
+                    .unwrap_or(WindowMode::Standard)
+            };
+            let initial_aux_width_percent = settings_snapshot
+                .as_ref()
+                .map(|s| s.settings.main_window.auxiliary_width_percent)
+                .unwrap_or(crate::domain::window::DEFAULT_AUXILIARY_WIDTH_PERCENT);
 
             let wm = Arc::new(WindowManager::new(
                 Arc::clone(&bridge),
                 main_initially_visible,
+                initial_main_mode,
             ));
             app.manage(Arc::clone(&wm));
 
@@ -509,6 +532,19 @@ pub fn run() -> Result<(), tauri::Error> {
                 .current_activation_policy()
                 .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
             wm.apply_activation_policy(app.handle(), policy);
+
+            if main_initially_visible && initial_main_mode == WindowMode::Auxiliary {
+                if let Err(err) = wm.show_main(
+                    app.handle(),
+                    Some(WindowMode::Auxiliary),
+                    initial_aux_width_percent,
+                ) {
+                    eprintln!(
+                        "[window] initial auxiliary apply failed: code={:?}",
+                        err.code
+                    );
+                }
+            }
 
             let handle = app.handle().clone();
             let pm_for_watch = Arc::clone(&pm);

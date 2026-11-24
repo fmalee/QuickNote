@@ -339,6 +339,7 @@ describe('M4-05 auxiliary window mode & settings binding', () => {
     // 再次触发 -> 切回 standard
     await actionRegistry.executeById('window.toggleAuxiliary', { activeScope: 'main-window' });
     expect(mockWindowShowMain).toHaveBeenCalledWith({ mode: 'standard' });
+    await new Promise((resolve) => setTimeout(resolve, 230));
   });
 
   it('3. 设置窗口渲染形态卡片并修改 mainWindow.mode、auxiliaryWidthPercent(夹取30-60) 与 destroyAfterHiddenMinutes', async () => {
@@ -362,6 +363,12 @@ describe('M4-05 auxiliary window mode & settings binding', () => {
     // 修改默认窗口模式
     await settingsStore.setMainWindowMode('auxiliary');
     expect(mockSettingsUpdate).toHaveBeenCalledWith({ mainWindow: { mode: 'auxiliary' } });
+    expect(mockUiStateSet).toHaveBeenCalledWith({
+      key: 'windows',
+      value: expect.objectContaining({
+        main: expect.objectContaining({ mode: 'auxiliary' }),
+      }),
+    });
 
     // 修改辅助宽度（超出上限 90 -> 夹取为 60；低于下限 10 -> 夹取为 30）
     await settingsStore.setAuxiliaryWidthPercent(90);
@@ -388,6 +395,22 @@ describe('M4-05 auxiliary window mode & settings binding', () => {
     await settingsStore.setQuickBarDestroyMinutes(15);
     expect(mockSettingsUpdate).toHaveBeenCalledWith({
       quickBar: { destroyAfterHiddenMinutes: 15 },
+    });
+  });
+
+  it('4. 冷启动恢复 auxiliary 模式时主动调用 windowShowMain({ mode: auxiliary }) 同步原生窗口', async () => {
+    mockUiStateGet.mockResolvedValue(makeUiState('auxiliary'));
+
+    const { default: MainWorkbenchShell } = await import('@/app/MainWorkbenchShell.vue');
+    const pinia = createPinia();
+    setActivePinia(pinia);
+
+    const app = createSSRApp(MainWorkbenchShell);
+    app.use(pinia);
+    await renderToString(app);
+
+    await vi.waitFor(() => {
+      expect(mockWindowShowMain).toHaveBeenCalledWith({ mode: 'auxiliary' });
     });
   });
 });

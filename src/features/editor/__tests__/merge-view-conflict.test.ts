@@ -554,4 +554,46 @@ describe('CM6 MergeView conflict resolution', () => {
     });
     expect(store.activeTab?.draftBody).toBe('A 本地草稿');
   });
+
+  it('syncs diskMeta to tab.doc.meta when commitConflictMerge succeeds with updatedMeta === null', async () => {
+    const store = useEditorTabsStore();
+    await store.ensureExternalChangeListener();
+
+    const doc = makeDoc({
+      key: '01JTESTMERGE0000000000000C',
+      relPath: 'notes/meta-sync.md',
+      absPath: '/vault/notes/meta-sync.md',
+      body: '本地正文',
+      bodyHash: 'hash-meta-1',
+    });
+    mockNoteRead.mockResolvedValueOnce(doc);
+    await store.openNote(doc.key, { preview: false });
+
+    store.updateTabBody(doc.key, '本地编辑正文');
+    const newDiskMeta = {
+      ...doc.meta,
+      title: '外部更新后的标题',
+      tags: ['external', 'merged'],
+    };
+    externalChangeHandler!({
+      absPath: doc.absPath,
+      kind: 'modified',
+      newBody: '磁盘正文',
+      newBodyHash: 'hash-meta-2',
+      newMeta: newDiskMeta,
+    });
+
+    store.enterConflictMerge(doc.key);
+    mockNoteWrite.mockResolvedValueOnce({
+      bodyHash: 'hash-meta-3',
+      mtimeMs: 6000,
+      updatedMeta: null,
+    } satisfies WriteResult);
+
+    const ok = await store.commitConflictMerge(doc.key, '合并后正文');
+    expect(ok).toBe(true);
+    expect(store.activeTab?.doc?.meta.title).toBe('外部更新后的标题');
+    expect(store.activeTab?.doc?.meta.tags).toEqual(['external', 'merged']);
+    expect(mockNotesGetTreeAndTags).toHaveBeenCalled();
+  });
 });

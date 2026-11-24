@@ -67,6 +67,8 @@ static QuickNoteToastPanel *g_toast_panel = nil;
 static BOOL g_has_saved_standard_frame = NO;
 static NSRect g_saved_standard_frame;
 static BOOL g_is_auxiliary_mode = NO;
+static id g_pending_exit_fullscreen_observer = nil;
+static uint64_t g_pending_exit_fullscreen_token = 0;
 
 @interface QnPdfNavigationDelegate : NSObject <WKNavigationDelegate>
 @property (nonatomic, assign) BOOL finished;
@@ -572,6 +574,41 @@ int32_t qn_render_html_to_pdf(
     return result;
 }
 
+static void qn_cancel_pending_exit_fullscreen_observer(void) {
+    g_pending_exit_fullscreen_token++;
+    if (g_pending_exit_fullscreen_observer != nil) {
+        [[NSNotificationCenter defaultCenter] removeObserver:g_pending_exit_fullscreen_observer];
+        g_pending_exit_fullscreen_observer = nil;
+    }
+}
+
+static void qn_apply_auxiliary_docking(NSWindow *win, uint8_t auxiliary_width_percent) {
+    if (win == nil) {
+        return;
+    }
+    g_is_auxiliary_mode = YES;
+    win.collectionBehavior = NSWindowCollectionBehaviorFullScreenAuxiliary;
+    win.level = NSFloatingWindowLevel;
+
+    NSScreen *screen = qn_active_screen();
+    if (screen != nil) {
+        uint8_t clamped = auxiliary_width_percent < 30
+            ? 30
+            : (auxiliary_width_percent > 60 ? 60 : auxiliary_width_percent);
+        NSRect visible = screen.visibleFrame;
+        CGFloat w = round(visible.size.width * ((CGFloat)clamped / 100.0));
+        if (w < 480.0) {
+            w = 480.0;
+        }
+        if (w > visible.size.width) {
+            w = visible.size.width;
+        }
+        CGFloat x = visible.origin.x + (visible.size.width - w);
+        NSRect target = NSMakeRect(x, visible.origin.y, w, visible.size.height);
+        [win setFrame:target display:YES animate:YES];
+    }
+}
+
 void qn_set_main_window_mode(
     void *ns_window_ptr,
     uint8_t mode,
@@ -589,7 +626,10 @@ void qn_set_main_window_mode(
             return;
         }
 
+        BOOL isFullScreen = (win.styleMask & NSWindowStyleMaskFullScreen) != 0;
+
         if (mode == 0) {
+            qn_cancel_pending_exit_fullscreen_observer();
             win.level = NSNormalWindowLevel;
             win.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
             if (g_is_auxiliary_mode && g_has_saved_standard_frame) {
@@ -607,34 +647,47 @@ void qn_set_main_window_mode(
             }
             g_is_auxiliary_mode = NO;
         } else if (mode == 1) {
+            qn_cancel_pending_exit_fullscreen_observer();
             win.level = NSNormalWindowLevel;
             win.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
             g_is_auxiliary_mode = NO;
         } else if (mode == 2) {
-            if (!g_is_auxiliary_mode) {
+            qn_cancel_pending_exit_fullscreen_observer();
+            if (!g_is_auxiliary_mode && !isFullScreen) {
                 g_saved_standard_frame = win.frame;
                 g_has_saved_standard_frame = YES;
-                g_is_auxiliary_mode = YES;
             }
-            win.collectionBehavior = NSWindowCollectionBehaviorFullScreenAuxiliary;
-            win.level = NSFloatingWindowLevel;
-
-            NSScreen *screen = qn_active_screen();
-            if (screen != nil) {
-                uint8_t clamped = auxiliary_width_percent < 30
-                    ? 30
-                    : (auxiliary_width_percent > 60 ? 60 : auxiliary_width_percent);
-                NSRect visible = screen.visibleFrame;
-                CGFloat w = round(visible.size.width * ((CGFloat)clamped / 100.0));
-                if (w < 480.0) {
-                    w = 480.0;
-                }
-                if (w > visible.size.width) {
-                    w = visible.size.width;
-                }
-                CGFloat x = visible.origin.x + (visible.size.width - w);
-                NSRect target = NSMakeRect(x, visible.origin.y, w, visible.size.height);
-                [win setFrame:target display:YES animate:YES];
+            if (isFullScreen) {
+                g_is_auxiliary_mode = YES;
+                uint64_t token = ++g_pending_exit_fullscreen_token;
+                __weak NSWindow *weakWin = win;
+                g_pending_exit_fullscreen_observer = [[NSNotificationCenter defaultCenter]
+                    addObserverForName:NSWindowDidExitFullScreenNotification
+                                object:win
+                                 queue:[NSOperationQueue mainQueue]
+                            usingBlock:^(NSNotification *note) {
+                                (void)note;
+                                if (token != g_pending_exit_fullscreen_token) {
+                                    return;
+                                }
+                                qn_cancel_pending_exit_fullscreen_observer();
+                                NSWindow *strongWin = weakWin;
+                                if (strongWin != nil) {
+                                    qn_apply_auxiliary_docking(strongWin, auxiliary_width_percent);
+                                }
+                            }];
+                dispatch_after(
+                    dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
+                    dispatch_get_main_queue(),
+                    ^{
+                        if (token == g_pending_exit_fullscreen_token) {
+                            qn_cancel_pending_exit_fullscreen_observer();
+                        }
+                    }
+                );
+                [win toggleFullScreen:nil];
+            } else {
+                qn_apply_auxiliary_docking(win, auxiliary_width_percent);
             }
         }
 

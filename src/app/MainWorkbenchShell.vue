@@ -402,14 +402,23 @@ function applyMainWindowMode(mode: WindowMode): void {
 }
 
 async function restoreMainWindowMode(): Promise<void> {
+  let resolvedMode: WindowMode = 'standard';
   try {
     const uiState = await uiStateGet();
     cachedWindowsUiState = uiState.windows;
     const uiMode = uiState.windows?.main?.mode;
     const settingsMode = settingsStore.snapshot?.settings.mainWindow.mode;
-    applyMainWindowMode(uiMode ?? settingsMode ?? 'standard');
+    resolvedMode = uiMode ?? settingsMode ?? 'standard';
   } catch {
-    applyMainWindowMode(settingsStore.snapshot?.settings.mainWindow.mode ?? 'standard');
+    resolvedMode = settingsStore.snapshot?.settings.mainWindow.mode ?? 'standard';
+  }
+  applyMainWindowMode(resolvedMode);
+  if (resolvedMode === 'auxiliary') {
+    try {
+      await windowShowMain({ mode: 'auxiliary' });
+    } catch {
+      // 非 Tauri 测试环境容错
+    }
   }
 }
 

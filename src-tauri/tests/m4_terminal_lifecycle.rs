@@ -694,3 +694,111 @@ fn idle_recycle_rules_and_exemptions() {
     let _ = std::fs::remove_dir_all(&app_dir);
     let _ = std::fs::remove_dir_all(&work_dir);
 }
+
+#[test]
+fn backpressure_accumulates_across_one_second_and_resets_on_user_input_or_quiet_gap() {
+    let app_dir = temp_dir("backpressure-sustained");
+    let work_dir = temp_dir("backpressure-sustained-cwd");
+    let pm = Arc::new(PersistenceManager::open(app_dir.clone()).expect("open pm"));
+    let backend = MockPtyBackend::new();
+    let manager =
+        TerminalManager::with_backend_and_interval(backend.clone(), pm, Duration::from_secs(60));
+    let sink = RecordingDataSink::new();
+
+    let info = manager
+        .spawn_session(
+            TerminalSpawnArgs {
+                workspace_key: "ws-bp-sustained".to_string(),
+                cwd: work_dir.to_string_lossy().to_string(),
+                cols: 80,
+                rows: 24,
+                shell: None,
+            },
+            sink,
+        )
+        .expect("spawn");
+    let handle = backend.last_handle();
+
+    let six_mb = vec![b'A'; 6 * 1024 * 1024];
+    for chunk in six_mb.chunks(256 * 1024) {
+        handle.push_output(chunk);
+    }
+    thread::sleep(Duration::from_millis(80));
+
+    // User input resets continuous counter when not paused.
+    manager
+        .write_session(TerminalWriteArgs {
+            session_id: info.session_id.clone(),
+            data_base64: "bHMK".to_string(),
+        })
+        .expect("write input");
+
+    for chunk in six_mb.chunks(256 * 1024) {
+        handle.push_output(chunk);
+    }
+    thread::sleep(Duration::from_millis(100));
+    assert!(
+        manager
+            .list_sessions()
+            .expect("list")
+            .iter()
+            .any(|s| s.session_id == info.session_id && !s.output_paused),
+        "user input should have reset continuous output counter"
+    );
+
+    // Wait 1.1s (< 2s quiet threshold) then push 5MB -> total 11MB >= 10MB, must pause.
+    thread::sleep(Duration::from_millis(1_100));
+    let five_mb = vec![b'B'; 5 * 1024 * 1024];
+    for chunk in five_mb.chunks(256 * 1024) {
+        handle.push_output(chunk);
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut paused = false;
+    while Instant::now() < deadline {
+        if manager
+            .list_sessions()
+            .expect("list")
+            .iter()
+            .any(|s| s.session_id == info.session_id && s.output_paused)
+        {
+            paused = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        paused,
+        "sustained output across 1s without >=2s quiet gap must trigger backpressure"
+    );
+
+    // Resume visibility, push 6MB, wait >=2.1s quiet gap, push another 6MB -> must NOT pause.
+    manager
+        .set_visibility(TerminalVisibilityArgs {
+            session_id: info.session_id.clone(),
+            visible: true,
+        })
+        .expect("resume");
+
+    for chunk in six_mb.chunks(256 * 1024) {
+        handle.push_output(chunk);
+    }
+    thread::sleep(Duration::from_millis(2_150));
+    for chunk in six_mb.chunks(256 * 1024) {
+        handle.push_output(chunk);
+    }
+    thread::sleep(Duration::from_millis(120));
+
+    assert!(
+        manager
+            .list_sessions()
+            .expect("list")
+            .iter()
+            .any(|s| s.session_id == info.session_id && !s.output_paused),
+        "quiet gap >= 2s should reset continuous output counter"
+    );
+
+    manager.shutdown_all();
+    let _ = std::fs::remove_dir_all(&app_dir);
+    let _ = std::fs::remove_dir_all(&work_dir);
+}

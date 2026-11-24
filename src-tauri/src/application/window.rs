@@ -20,9 +20,16 @@ pub struct WindowManager {
 }
 
 impl WindowManager {
-    pub fn new(bridge: Arc<dyn NativeWindowBridge>, main_initially_visible: bool) -> Self {
+    pub fn new(
+        bridge: Arc<dyn NativeWindowBridge>,
+        main_initially_visible: bool,
+        initial_main_mode: WindowMode,
+    ) -> Self {
         Self {
-            policy_state: Mutex::new(WindowPolicyState::with_main_visible(main_initially_visible)),
+            policy_state: Mutex::new(WindowPolicyState::with_initial(
+                main_initially_visible,
+                initial_main_mode,
+            )),
             bridge,
             toast_generation: AtomicU64::new(0),
         }
@@ -79,8 +86,10 @@ impl WindowManager {
             let _ = win.show();
             let _ = win.unminimize();
             let _ = win.set_focus();
-            if let Some(target_mode) = mode {
-                if target_mode == WindowMode::Fullscreen {
+            let effective_mode =
+                mode.unwrap_or_else(|| win_state.mode.unwrap_or(WindowMode::Standard));
+            if mode.is_some() || effective_mode == WindowMode::Auxiliary {
+                if effective_mode == WindowMode::Fullscreen {
                     if let Ok(ns_ptr) = window_ns_ptr(app, "main") {
                         let _ = self.bridge.configure_main_window_mode(
                             ns_ptr,
@@ -90,11 +99,16 @@ impl WindowManager {
                     }
                     let _ = win.set_fullscreen(true);
                 } else {
-                    let _ = win.set_fullscreen(false);
+                    let is_fullscreen = win.is_fullscreen().unwrap_or(false);
+                    if effective_mode == WindowMode::Standard && is_fullscreen {
+                        let _ = win.set_fullscreen(false);
+                    }
+                    // When transitioning from Fullscreen -> Auxiliary, `bridge.configure_main_window_mode`
+                    // handles graceful async exit-fullscreen + docking to avoid AppKit frame races.
                     if let Ok(ns_ptr) = window_ns_ptr(app, "main") {
                         if let Ok(diag) = self.bridge.configure_main_window_mode(
                             ns_ptr,
-                            target_mode,
+                            effective_mode,
                             auxiliary_width_percent,
                         ) {
                             log_native_event(

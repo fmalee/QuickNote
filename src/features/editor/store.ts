@@ -839,6 +839,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
 
     const diskHash = tab.conflictState.diskBodyHash;
+    const diskMeta = tab.conflictState.diskMeta;
     tab.draftBody = mergedBody;
     tab.conflictState = {
       ...tab.conflictState,
@@ -872,6 +873,9 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           migrateTimerKeys(oldKey, newKey);
           persistTabsDebounced();
         }
+        notifyNotesRefresh();
+      } else if (diskMeta !== null) {
+        tab.doc.meta = diskMeta;
         notifyNotesRefresh();
       }
 

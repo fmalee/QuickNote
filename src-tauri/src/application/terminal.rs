@@ -22,8 +22,8 @@ use crate::infra::pty::{
     PtySpawnConfig,
 };
 
-/// Backpressure measurement window in milliseconds (1 second).
-const BACKPRESSURE_WINDOW_MS: i64 = 1_000;
+/// Quiet gap threshold in milliseconds after which continuous output counter resets (2 seconds).
+const BACKPRESSURE_QUIET_RESET_MS: i64 = 2_000;
 
 /// Sink for streaming PTY output chunks (`Channel<TerminalData>` in production).
 pub trait TerminalDataSink: Send + Sync {
@@ -95,8 +95,8 @@ struct SessionMutableState {
     has_active_foreground_child: bool,
     output_paused: bool,
     last_io_at_ms: i64,
-    window_started_at_ms: i64,
-    unconsumed_bytes_in_window: usize,
+    last_output_at_ms: i64,
+    continuous_output_bytes: usize,
     ring_buffer: TerminalRingBuffer,
     exited: bool,
 }
@@ -325,8 +325,8 @@ impl TerminalManager {
                 has_active_foreground_child: has_fg,
                 output_paused: false,
                 last_io_at_ms: now,
-                window_started_at_ms: now,
-                unconsumed_bytes_in_window: 0,
+                last_output_at_ms: now,
+                continuous_output_bytes: 0,
                 ring_buffer: TerminalRingBuffer::new(),
                 exited: false,
             }),
@@ -448,14 +448,15 @@ impl TerminalManager {
                         // Drop overflow bytes while paused so PTY fd never deadlocks.
                         return;
                     }
-                    if now.saturating_sub(guard.window_started_at_ms) >= BACKPRESSURE_WINDOW_MS {
-                        guard.window_started_at_ms = now;
-                        guard.unconsumed_bytes_in_window = 0;
+                    let prev_output_at_ms = guard.last_output_at_ms;
+                    guard.last_output_at_ms = now;
+                    if now.saturating_sub(prev_output_at_ms) >= BACKPRESSURE_QUIET_RESET_MS {
+                        guard.continuous_output_bytes = 0;
                     }
-                    guard.unconsumed_bytes_in_window =
-                        guard.unconsumed_bytes_in_window.saturating_add(bytes.len());
+                    guard.continuous_output_bytes =
+                        guard.continuous_output_bytes.saturating_add(bytes.len());
 
-                    if guard.unconsumed_bytes_in_window >= TERMINAL_BACKPRESSURE_LIMIT_BYTES {
+                    if guard.continuous_output_bytes >= TERMINAL_BACKPRESSURE_LIMIT_BYTES {
                         guard.output_paused = true;
                         should_emit_state = Some(entry.snapshot(&guard));
                     } else {
@@ -544,6 +545,9 @@ impl TerminalManager {
                 ));
             }
             guard.last_io_at_ms = now_ms();
+            if !guard.output_paused {
+                guard.continuous_output_bytes = 0;
+            }
         }
         entry.pty.write_all(&decoded)?;
         self.refresh_session_foreground(&entry);
@@ -580,8 +584,8 @@ impl TerminalManager {
             if args.visible {
                 guard.state = TerminalLifecycleState::Active;
                 guard.output_paused = false;
-                guard.unconsumed_bytes_in_window = 0;
-                guard.window_started_at_ms = now;
+                guard.continuous_output_bytes = 0;
+                guard.last_output_at_ms = now;
                 let drained = guard.ring_buffer.drain_all();
                 (entry.snapshot(&guard), Some(drained))
             } else {

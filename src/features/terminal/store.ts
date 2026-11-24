@@ -408,6 +408,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     const configuredShell = normalizeNonEmpty(
       settingsStore.snapshot?.settings.panels.terminal.shell ?? null,
     );
+    const prevId = activeSessionId.value;
 
     try {
       const info = await spawnTerminalSession(
@@ -420,13 +421,28 @@ export const useTerminalStore = defineStore('terminal', () => {
         },
         handleIncomingData,
       );
-      sessions.value = {
+      const nextSessions = {
         ...sessions.value,
-        [info.sessionId]: info,
+        [info.sessionId]: !isPanelVisible.value
+          ? { ...info, state: 'hidden_alive' as const }
+          : info,
       };
+      if (prevId && prevId !== info.sessionId && nextSessions[prevId]) {
+        nextSessions[prevId] = {
+          ...nextSessions[prevId],
+          state: 'hidden_alive',
+        };
+        void setTerminalVisibility({ sessionId: prevId, visible: false }).catch(() => undefined);
+      }
+      if (!isPanelVisible.value) {
+        void setTerminalVisibility({ sessionId: info.sessionId, visible: false }).catch(
+          () => undefined,
+        );
+      }
+      sessions.value = nextSessions;
       activeSessionId.value = info.sessionId;
       hasAutoStartedOnce.value = true;
-      return info;
+      return nextSessions[info.sessionId] ?? info;
     } catch (error) {
       errorMessage.value = extractTerminalErrorMessage(error);
       return null;

@@ -11,7 +11,7 @@ import type {
   WindowMode,
   WindowState,
 } from '@/bindings/types';
-import { windowShowMain } from '@/lib/ipc/commands';
+import { uiStateSet, windowShowMain } from '@/lib/ipc/commands';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import { applyThemeToDocument } from '@/lib/utils';
 import {
@@ -300,6 +300,7 @@ export const useSettingsStore = defineStore('settings', () => {
       applyThemeLocal(imported.settings.editor.theme);
       saveError.value = null;
       lastSavedAt.value = Date.now();
+      await refreshUiState();
       backupSuccess.value = '配置已成功导入并热更新生效。';
       return true;
     } catch (error) {
@@ -311,7 +312,28 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   async function setMainWindowMode(mode: WindowMode): Promise<boolean> {
-    return patchSettings({ mainWindow: { mode } });
+    const ok = await patchSettings({ mainWindow: { mode } });
+    if (ok) {
+      try {
+        const currentUi = await fetchUiState();
+        const prevWindows = currentUi.windows ?? {
+          main: { x: 120, y: 80, width: 1200, height: 800, mode, isOpen: true },
+        };
+        await uiStateSet({
+          key: 'windows',
+          value: {
+            ...prevWindows,
+            main: {
+              ...prevWindows.main,
+              mode,
+            },
+          },
+        });
+      } catch {
+        // 非 Tauri 测试环境容错
+      }
+    }
+    return ok;
   }
 
   async function setAuxiliaryWidthPercent(percent: number): Promise<boolean> {

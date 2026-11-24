@@ -75,10 +75,10 @@ const qnHighlightStyle = HighlightStyle.define([
   { tag: tags.url, color: 'var(--qn-text-secondary)' },
   { tag: tags.monospace, fontFamily: 'var(--qn-font-mono)', color: 'var(--qn-text-primary)' },
   { tag: tags.quote, color: 'var(--qn-text-secondary)', fontStyle: 'italic' },
-  { tag: tags.meta, color: 'var(--qn-text-tertiary)' },
+  { tag: tags.meta, color: 'var(--qn-text-muted)' },
   { tag: tags.keyword, color: 'var(--qn-accent)' },
   { tag: tags.string, color: 'var(--qn-success)' },
-  { tag: tags.comment, color: 'var(--qn-text-tertiary)', fontStyle: 'italic' },
+  { tag: tags.comment, color: 'var(--qn-text-muted)', fontStyle: 'italic' },
 ]);
 
 const qnMergeEditorTheme = EditorView.theme({
@@ -96,8 +96,8 @@ const qnMergeEditorTheme = EditorView.theme({
     caretColor: 'var(--qn-accent)',
   },
   '.cm-gutters': {
-    backgroundColor: 'var(--qn-bg-surface)',
-    color: 'var(--qn-text-tertiary)',
+    backgroundColor: 'var(--qn-bg-sidebar)',
+    color: 'var(--qn-text-muted)',
     borderRight: '1px solid var(--qn-border-subtle)',
   },
   '.cm-cursor': {
@@ -330,7 +330,7 @@ onUnmounted(() => {
   gap: var(--qn-space-3);
   padding: var(--qn-space-2) var(--qn-space-4);
   border-bottom: 1px solid var(--qn-border-subtle);
-  background-color: var(--qn-bg-surface);
+  background-color: var(--qn-bg-sidebar);
   flex-shrink: 0;
 }
 
@@ -342,7 +342,7 @@ onUnmounted(() => {
 }
 
 .qn-merge-view__sep {
-  color: var(--qn-text-tertiary);
+  color: var(--qn-text-muted);
   font-size: var(--qn-text-sm);
 }
 
@@ -408,7 +408,7 @@ onUnmounted(() => {
 }
 
 .qn-merge-view__container :deep(.cm-merge-revert) {
-  background-color: var(--qn-bg-surface);
+  background-color: var(--qn-bg-sidebar);
   border-left: 1px solid var(--qn-border-subtle);
   border-right: 1px solid var(--qn-border-subtle);
 }
@@ -427,8 +427,8 @@ onUnmounted(() => {
 }
 
 .qn-merge-view__container :deep(.cm-collapsedLines) {
-  background-color: var(--qn-bg-surface);
-  color: var(--qn-text-tertiary);
+  background-color: var(--qn-bg-sidebar);
+  color: var(--qn-text-muted);
   border-top: 1px solid var(--qn-border-subtle);
   border-bottom: 1px solid var(--qn-border-subtle);
   padding: var(--qn-space-1) var(--qn-space-3);

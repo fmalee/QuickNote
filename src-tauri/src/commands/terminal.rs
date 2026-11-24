@@ -7,7 +7,7 @@ use crate::application::persistence::PersistenceManager;
 use crate::application::terminal::{
     TauriTerminalDataSink, TauriTerminalEventSink, TerminalManager,
 };
-use crate::domain::error::AppError;
+use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::terminal::{
     TerminalData, TerminalKillArgs, TerminalResizeArgs, TerminalSessionInfo, TerminalSpawnArgs,
     TerminalVisibilityArgs, TerminalWriteArgs,
@@ -57,11 +57,20 @@ pub fn terminal_set_visibility(
 
 /// Manually kills an embedded terminal session and reaps its process group (`C4.2`, `C8.7`).
 #[tauri::command]
-pub fn terminal_kill(
+pub async fn terminal_kill(
     state: State<'_, Arc<TerminalManager>>,
     args: TerminalKillArgs,
 ) -> Result<(), AppError> {
-    state.kill_session(args)
+    let manager = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || manager.kill_session(args))
+        .await
+        .map_err(|err| {
+            AppError::with_detail(
+                ErrorCode::InternalError,
+                "Terminal kill background task failed",
+                err.to_string(),
+            )
+        })?
 }
 
 /// Lists all alive embedded terminal sessions (`C4.2`).

@@ -236,17 +236,20 @@ impl PtySessionHandle for PortablePtySession {
             thread::sleep(Duration::from_millis(25));
         }
 
-        thread::sleep(Duration::from_millis(200));
-        if let Some(code) = self.try_wait()? {
-            return Ok(Some(code));
-        }
-
         #[cfg(unix)]
         if let Some(pid) = self.shell_pid {
             let pgid = -(pid as libc::pid_t);
             unsafe {
                 libc::kill(pgid, libc::SIGKILL);
             }
+        }
+
+        let kill_deadline = Instant::now() + Duration::from_millis(200);
+        while Instant::now() < kill_deadline {
+            if let Some(code) = self.try_wait()? {
+                return Ok(Some(code));
+            }
+            thread::sleep(Duration::from_millis(20));
         }
 
         let mut child = self

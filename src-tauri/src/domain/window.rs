@@ -83,8 +83,15 @@ impl Default for WindowPolicyState {
 impl WindowPolicyState {
     /// Creates a policy state with explicit initial visibility for main window.
     pub fn with_main_visible(main_visible: bool) -> Self {
+        Self::with_initial(main_visible, WindowMode::Standard)
+    }
+
+    /// Creates a policy state with explicit initial visibility and mode for main window (`M4-audit`).
+    pub fn with_initial(main_visible: bool, main_mode: WindowMode) -> Self {
         Self {
             main_visible,
+            main_mode,
+            main_fullscreen: main_mode == WindowMode::Fullscreen,
             ..Self::default()
         }
     }

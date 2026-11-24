@@ -28,6 +28,8 @@ vi.mock('@/lib/ipc/commands', () => ({
   settingsExport: mockSettingsExport,
   settingsImport: mockSettingsImport,
   uiStateGet: mockUiStateGet,
+  uiStateSet: vi.fn(),
+  windowShowMain: vi.fn(),
   externalActionRun: vi.fn(),
   hotkeyUpdate: vi.fn(),
   librarySetRoot: vi.fn(),
@@ -189,6 +191,14 @@ describe('M4-04 settings backup export/import & embedded terminal panel config',
       },
     });
     mockSettingsImport.mockResolvedValueOnce(updatedSnapshot);
+    mockUiStateGet.mockResolvedValueOnce({
+      ...makeUiState(),
+      hotkey: {
+        combo: 'ctrl+alt+space',
+        backupCombo: 'ctrl+shift+space',
+        selfCheck: 'ok',
+      },
+    } satisfies UiState);
 
     const succeeded = await store.importSettings('/tmp/valid-backup.yaml');
     expect(succeeded).toBe(true);
@@ -196,6 +206,7 @@ describe('M4-04 settings backup export/import & embedded terminal panel config',
     expect(store.backupSuccess).toContain('导入');
     expect(store.snapshot?.settings.panels.terminal.shell).toBe('/bin/bash');
     expect(store.snapshot?.settings.panels.terminal.maxConcurrentSessions).toBe(5);
+    expect(store.hotkeyStatus?.backupCombo).toBe('ctrl+shift+space');
   });
 
   it('renders embedded terminal panel config card and triggers settings_update on patch', async () => {
