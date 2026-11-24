@@ -4,14 +4,11 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0–M3（`m3-baseline`）均已收官；**M4（内嵌终端、高级协作与 1.0 收官）全部 7 张自包含轻量任务卡（`M4-01a`–`M4-06`）已拆卡落盘**，进入逐卡施工阶段。
+- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4（内嵌终端、高级协作与 1.0 收官）施工推进中（已完成 `M4-01a` `e8c661e`）**。
 - **已完成**：
-  - M0 全阶段（`m0-baseline`）。
-  - M1 全阶段（`m1-baseline`：`M1-01a`–`M1-05` + M1 独立只读审查与 `fix/M1-audit` 实机点验收官）。
-  - M2 全阶段（`m2-baseline`：`M2-01`–`M2-05b` + M2 独立只读审查 + `fix/M2-audit` `be79e07` + `fix/M2-qa` `4d33f0d` 实机点验收官）。
-  - M3 全阶段（`m3-baseline`：`M3-01a`–`M3-05b` + M3 独立只读审查 + `fix/M3-audit` `e4b0532` + `fix/M3-qa` `1dd8018` 实机点验收官）。
-  - M4 阶段拆卡规划（`M4-01a` / `M4-01b` / `M4-02` / `M4-03` / `M4-04` / `M4-05` / `M4-06`，100% 覆盖 `C4.2` M4 全部 9 条 IPC 命令、`C4.3` 终端流式通道/事件与历史债务）。
-- **待执行**：从 `dev` 拉取 `feat/M4-01a-backend-terminal-pty` 启动首张卡 `M4-01a`，依序串行推进至 `M4-06` 后执行 M4 独立只读审查与 1.0 全量实机点验。
+  - M0–M3 全阶段（`m0-baseline` / `m1-baseline` / `m2-baseline` / `m3-baseline`）。
+  - M4 阶段拆卡规划（`M4-01a`–`M4-06`）及 `M4-01a`（`e8c661e`：后端内嵌终端 PTY 引擎、6 条终端 IPC、`Channel<TerminalData>`、折叠保活与 30 分钟空闲回收）。
+- **待执行**：从 `dev` 拉取 `feat/M4-01b-backend-export-and-auxiliary-window` 执行 `M4-01b`，依序串行推进至 `M4-06` 后执行 M4 独立只读审查与 1.0 全量实机点验。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -43,5 +40,5 @@
 
 ## 5. 下一步动作
 
-1. 新开独立施工会话，从 `dev` 拉取 `feat/M4-01a-backend-terminal-pty` 执行 `spec/cards/M4-01a-backend-terminal-pty-and-lifecycle.md`。
-2. 严格串行推进 `M4-01a → M4-01b → M4-02 → M4-03 → M4-04 → M4-05 → M4-06`，全部合入 `dev` 后启动 M4 独立只读审查与 1.0 全量人工点验。
+1. 新开独立施工会话，从 `dev` 拉取 `feat/M4-01b-backend-export-and-auxiliary-window` 执行 `spec/cards/M4-01b-backend-settings-backup-pdf-and-auxiliary-window.md`。
+2. 严格串行推进 `M4-01b → M4-02 → M4-03 → M4-04 → M4-05 → M4-06`，全部合入 `dev` 后启动 M4 独立只读审查与 1.0 全量人工点验。
