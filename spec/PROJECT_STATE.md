@@ -4,11 +4,11 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4 施工接近尾声（已完成 `M4-01a`–`M4-05`，仅余收官卡 `M4-06`）**。
+- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4 全部 7 张任务卡（`M4-01a`–`M4-06`）已全部合入 `dev`，进入 M4 独立只读审查与 1.0 全量实机点验阶段**。
 - **已完成**：
   - M0–M3 全阶段（`m0-baseline` / `m1-baseline` / `m2-baseline` / `m3-baseline`）。
-  - M4 已完卡片：`M4-01a`（`e8c661e`）、`M4-01b`（`62e3d6c`）、`M4-02`（`8461999`）、`M4-03`（`342060b`）、`M4-04`（`f68542c`）、`M4-05`（`fcc91bb`：45% 侧栏辅助窗口布局、`window.toggleAuxiliary` 菜单联动与全屏状态同步）。
-- **待执行**：从 `dev` 拉取 `feat/M4-06-perf-debt-and-v1-readiness` 执行收官卡 `M4-06`，完成后启动 M4 独立只读审查与 1.0 全量实机点验。
+  - M4 全部 7 张卡片：`M4-01a`（`e8c661e`）、`M4-01b`（`62e3d6c`）、`M4-02`（`8461999`）、`M4-03`（`342060b`）、`M4-04`（`f68542c`）、`M4-05`（`fcc91bb`）、`M4-06`（`67dd3a9`：万篇 FTS5 实测 2.7–6.1ms、本地搜索 3.17ms、原子保存 31.42ms，全部达标并收口 M2/M3 债务）。
+- **待执行**：另开独立只读审查会话审计 `git diff m3-baseline..dev`，分拣并完成必要修复后执行 1.0 全量 macOS 实机点验，最后打 `m4-baseline` / 确认 1.0 发版。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -18,8 +18,8 @@
 | 默认模板（`note/doc/command-book`）格式对齐 | M0 审查 🟢#4 | **M2（已在 `M2-01` `87f1a44` 收口）** | 已在 `domain::template` 单源定义并与 `v4` 附录 B.3 逐字对齐 |
 | `SettingsErrorBanner` “打开 `settings.yaml` 修复”按钮 | M0 审查 🟢#4 | **M3（已在 `M3-02` `455c2ee` 收口）** | 已在 `M3-01b` 落地 `$SETTINGS_YAML` 路由、`M3-02` 接入 `external_action_run`（`D-0008` / `v4` §4.7） |
 | `QuickBarView` 与 `bridge.m` 幂等双 `Esc` | M0 审查 🟢#4 | **保留现状** | 保持不动，避免破坏已实机通过的 Quick Bar 原生焦点与全屏行为 |
-| `collectTodoDecorations` 超长文档单遍扫描优化 | M2 审查 🟢#2 | **M4（已排入 `M4-06`）** | 随 M4 性能压测专项（大文档/万篇压测）统一优化 |
-| 非 Markdown 轻量诊断多行启发式边界（Nginx/YAML） | M3 审查 🟢#5 | **M4（已排入 `M4-06`）** | Nginx 多行指令与 YAML 跨行引号/块标量静态启发式微调，不引入重型解析器 |
+| `collectTodoDecorations` 超长文档单遍扫描优化 | M2 审查 🟢#2 | **M4（已在 `M4-06` `67dd3a9` 收口）** | 已改为 $O(N)$ 单遍围栏扫描并补充 10,000 行大文档基准测试 |
+| 非 Markdown 轻量诊断多行启发式边界（Nginx/YAML） | M3 审查 🟢#5 | **M4（已在 `M4-06` `67dd3a9` 收口）** | 已微调 Nginx 多行指令与 YAML 块标量/跨行引号静态启发式 |
 
 ## 3. 已验证实机约定与踩坑备忘
 
@@ -40,5 +40,5 @@
 
 ## 5. 下一步动作
 
-1. 新开独立施工会话，从 `dev` 拉取 `feat/M4-06-perf-debt-and-v1-readiness` 执行收官卡 `spec/cards/M4-06-performance-benchmark-debt-cleanup-and-v1-readiness.md`。
-2. `M4-06` 合入 `dev` 后，启动 M4 独立只读审查会话（基于 `git diff m3-baseline..dev`），再按 `C9.3` 执行 1.0 全量实机点验。
+1. 新开独立只读审查会话，对照 `spec/quicknote-design-v4.md`、`spec/engineering-contract.md`、`DECISIONS.md` 增量审查 `git diff m3-baseline..dev`，将报告回传本主控会话分拣。
+2. 完成审查修复（如有）及 `C9.3` + M4 专项全量 macOS 实机点验，收官打 `m4-baseline` 标签并确认 1.0 发布事宜。
