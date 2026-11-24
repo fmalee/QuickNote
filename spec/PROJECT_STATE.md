@@ -4,12 +4,12 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0（`m0-baseline`）、M1（`m1-baseline`）与 **M2（`m2-baseline`：Markdown 完整编辑、模板与文档属性）** 均已正式收官，准备进入 **M3（快速打开、外部协作、完整命令库与面板组）**。
+- **当前阶段**：M0（`m0-baseline`）、M1（`m1-baseline`）与 M2（`m2-baseline`）均已正式收官；**M3（快速打开、外部协作、完整命令库与面板组）** 已完成 7 张自包含轻量任务卡拆分（`M3-01a → M3-01b → M3-02 → M3-03 → M3-04 → M3-05a → M3-05b`），准备按卡逐一施工。
 - **已完成**：
   - M0 全阶段（`m0-baseline`）。
   - M1 全阶段（`m1-baseline`：`M1-01a`–`M1-05` + M1 独立只读审查与 `fix/M1-audit` 实机点验收官）。
   - M2 全阶段（`m2-baseline`：`M2-01`–`M2-05b` + M2 独立只读审查 + `fix/M2-audit` `be79e07` + `fix/M2-qa` `4d33f0d` 实机点验收官）。
-- **待执行**：启动 **M3（快速打开、外部协作、完整命令库与面板组）** 阶段自包含轻量任务卡拆分并逐卡推进。
+- **待执行**：按 `spec/cards/README.md` 顺序串行推进 `M3-01a` 至 `M3-05b`，随后进行 M3 独立只读审查与 macOS 实机点验。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -17,7 +17,7 @@
 | --- | --- | --- | --- |
 | `ToastAppendUndoPayload` 手写类型收口 | M0 审查 🟡#4 | **M1（已在 `M1-02` `b8d6018` 收口）** | 已随 `AppendResult` 收归 Rust 生成并接入 `src/lib/ipc/events.ts` |
 | 默认模板（`note/doc/command-book`）格式对齐 | M0 审查 🟢#4 | **M2（已在 `M2-01` `87f1a44` 收口）** | 已在 `domain::template` 单源定义并与 `v4` 附录 B.3 逐字对齐 |
-| `SettingsErrorBanner` “打开 `settings.yaml` 修复”按钮 | M0 审查 🟢#4 | **M3** | 接入 `external_action_run`（`D-0008` / `v4` §4.7） |
+| `SettingsErrorBanner` “打开 `settings.yaml` 修复”按钮 | M0 审查 🟢#4 | **M3（已排入 `M3-01b` + `M3-02`）** | `M3-01b` 落地 `$SETTINGS_YAML` 路由、`M3-02` 按钮接入 `external_action_run`（`D-0008` / `v4` §4.7） |
 | `QuickBarView` 与 `bridge.m` 幂等双 `Esc` | M0 审查 🟢#4 | **保留现状** | 保持不动，避免破坏已实机通过的 Quick Bar 原生焦点与全屏行为 |
 | `collectTodoDecorations` 超长文档单遍扫描优化 | M2 审查 🟢#2 | **M4** | 随 M4 性能压测专项（大文档/万篇压测）统一优化 |
 
@@ -39,5 +39,5 @@
 
 ## 5. 下一步动作
 
-1. 新开主控会话基于 `m2-baseline` 与 M3 挂起债务（`SettingsErrorBanner` 打开 `settings.yaml` 接入 `external_action_run`），拆分 **M3（快速打开、外部协作、完整命令库与面板组）** 自包含轻量任务卡。
-2. 从 `dev` 拉出 `M3-01` 分支并依卡逐个推进。
+1. 新开干净施工会话从 `dev` 拉取 `feat/M3-01a-backend-commands-related-tags` 执行首张卡 `M3-01a`（命令书解析、`note_links` 索引、`commands_search`、`notes_get_related`、`tags_batch_rename` 与非 Markdown 安全读写）。
+2. 逐卡串行推进至 `M3-05b` 全部合入 `dev` 后，执行 M3 增量独立只读审查与 macOS 实机点验并打 `m3-baseline` 标签。
