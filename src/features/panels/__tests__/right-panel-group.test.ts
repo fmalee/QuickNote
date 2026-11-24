@@ -2,7 +2,13 @@ import { createPinia, setActivePinia } from 'pinia';
 import { createSSRApp } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NoteDoc, NoteSummary, RelatedNoteItem, UiState } from '@/bindings/types';
+import type {
+  NoteDoc,
+  NoteSummary,
+  RelatedNoteItem,
+  TerminalSessionInfo,
+  UiState,
+} from '@/bindings/types';
 
 const {
   mockNoteRead,
@@ -12,6 +18,11 @@ const {
   mockUiStateGet,
   mockUiStateSet,
   mockOnFsExternalChange,
+  mockTerminalSetVisibility,
+  mockTerminalKill,
+  mockTerminalListSessions,
+  mockOnTerminalSessionState,
+  mockOnTerminalExit,
 } = vi.hoisted(() => ({
   mockNoteRead: vi.fn(),
   mockNoteWrite: vi.fn(),
@@ -20,6 +31,11 @@ const {
   mockUiStateGet: vi.fn(),
   mockUiStateSet: vi.fn(),
   mockOnFsExternalChange: vi.fn(),
+  mockTerminalSetVisibility: vi.fn(),
+  mockTerminalKill: vi.fn(),
+  mockTerminalListSessions: vi.fn(),
+  mockOnTerminalSessionState: vi.fn(),
+  mockOnTerminalExit: vi.fn(),
 }));
 
 vi.mock('@/lib/ipc/commands', () => ({
@@ -30,10 +46,18 @@ vi.mock('@/lib/ipc/commands', () => ({
   notesGetRelated: mockNotesGetRelated,
   uiStateGet: mockUiStateGet,
   uiStateSet: mockUiStateSet,
+  terminalSpawn: vi.fn(),
+  terminalWrite: vi.fn(),
+  terminalResize: vi.fn(),
+  terminalSetVisibility: mockTerminalSetVisibility,
+  terminalKill: mockTerminalKill,
+  terminalListSessions: mockTerminalListSessions,
 }));
 
 vi.mock('@/lib/ipc/events', () => ({
   onFsExternalChange: mockOnFsExternalChange,
+  onTerminalSessionState: mockOnTerminalSessionState,
+  onTerminalExit: mockOnTerminalExit,
 }));
 
 import { useEditorTabsStore } from '@/features/editor';
@@ -47,6 +71,7 @@ import {
   RightPanelGroup,
   usePanelsStore,
 } from '@/features/panels';
+import { useTerminalStore } from '@/features/terminal';
 import { actionRegistry } from '@/lib/actions';
 
 function makeUiState(): UiState {
@@ -374,7 +399,7 @@ describe('RightPanelGroup & responsive breakpoints', () => {
     const drawerHtml = await renderRightPanelHtml();
     expect(drawerHtml).toContain('qn-right-panel-group--drawer');
     expect(drawerHtml).toContain('data-testid="right-panel-drawer-backdrop"');
-    expect(drawerHtml).toContain('data-testid="terminal-placeholder-panel"');
+    expect(drawerHtml).toContain('data-testid="terminal-panel"');
 
     // 回到 1280px：左右栏均恢复常规展开
     panelsStore.applyViewportWidth(1280);
@@ -383,5 +408,35 @@ describe('RightPanelGroup & responsive breakpoints', () => {
     expect(panelsStore.isOverlayDrawer).toBe(false);
     const restoredHtml = await renderRightPanelHtml();
     expect(restoredHtml).not.toContain('qn-right-panel-group--drawer');
+  });
+
+  it('7. 有存活终端会话时折叠保活且显示前台运行指示点 ●', async () => {
+    const panelsStore = usePanelsStore();
+    const terminalStore = useTerminalStore();
+    await panelsStore.initialize();
+
+    const activeSession: TerminalSessionInfo = {
+      sessionId: 'term-1',
+      workspaceKey: 'quicknote',
+      cwd: '/repo/quicknote',
+      hasActiveForegroundChild: true,
+      outputPaused: false,
+      state: 'active',
+    };
+    terminalStore.handleSessionStateEvent(activeSession);
+    terminalStore.activeSessionId = 'term-1';
+
+    // 展开态下，选项卡显示指示点 ●，且切到 outline 时终端面板仍挂载保活
+    panelsStore.selectPanel('outline');
+    const expandedHtml = await renderRightPanelHtml();
+    expect(expandedHtml).toContain('data-testid="terminal-active-dot"');
+    expect(expandedHtml).toContain('data-testid="terminal-panel"');
+
+    // 折叠态下，窄图标条显示指示点 ●，且终端面板仍挂载保活
+    panelsStore.toggleCollapseAll();
+    const collapsedHtml = await renderRightPanelHtml();
+    expect(collapsedHtml).toContain('data-testid="right-panel-collapsed-strip"');
+    expect(collapsedHtml).toContain('data-testid="terminal-active-dot"');
+    expect(collapsedHtml).toContain('data-testid="terminal-panel"');
   });
 });

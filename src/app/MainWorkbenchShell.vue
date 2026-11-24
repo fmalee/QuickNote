@@ -23,6 +23,7 @@ import {
   useQuickOpen,
 } from '@/features/quickopen';
 import { SettingsErrorBanner, VisualBaselinePreview, useSettingsStore } from '@/features/settings';
+import { useTerminalStore } from '@/features/terminal';
 import {
   ACTION_KEYBINDINGS_STORAGE_KEY,
   actionRegistry,
@@ -40,6 +41,7 @@ const notesStore = useNotesStore();
 const editorTabsStore = useEditorTabsStore();
 const externalActions = useExternalActions();
 const panelsStore = usePanelsStore();
+const terminalStore = useTerminalStore();
 
 const shellRef = ref<HTMLElement | null>(null);
 const baselinePreviewOpen = ref(false);
@@ -97,6 +99,7 @@ function buildActionContext(): ActionContext {
     activeScopes,
     hasActiveDoc: Boolean(activeDoc),
     hasSelection: Boolean(activeTab?.hasSelection),
+    hasTerminalSelection: terminalStore.hasSelection,
     isMarkdown: /\.(md|markdown)$/i.test(pathForKind),
     isInbox: relPath === 'inbox.md',
   };
@@ -224,6 +227,15 @@ function bindMainWindowActions(): void {
     actionRegistry.bindHandler('panel.collapseGroup', () => {
       panelsStore.toggleCollapseAll();
     }),
+    actionRegistry.bindHandler(
+      'terminal.copySelection',
+      async () => {
+        await terminalStore.copyActiveSelection();
+      },
+      {
+        when: (ctx) => Boolean(ctx.hasTerminalSelection),
+      },
+    ),
     ...EXTERNAL_ACTION_SPECS.map((spec) =>
       actionRegistry.bindHandler(
         spec.id,
@@ -254,6 +266,14 @@ watch(
   },
   () => {
     void externalActions.refreshForDoc(editorTabsStore.activeDoc);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => panelsStore.isPanelGroupExpanded && panelsStore.panelGroup.activeId === 'terminal',
+  (terminalVisible) => {
+    void terminalStore.syncPanelVisibility(terminalVisible);
   },
   { immediate: true },
 );

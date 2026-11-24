@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, onUnmounted } from 'vue';
+import { TerminalPanel, useTerminalStore } from '@/features/terminal';
 import { formatKeyComboDisplay } from '@/lib/actions';
 import RecentNotesPanel from './RecentNotesPanel.vue';
 import RelatedNotesPanel from './RelatedNotesPanel.vue';
-import TerminalPlaceholderPanel from './TerminalPlaceholderPanel.vue';
 import { COLLAPSED_PANEL_STRIP_WIDTH, RIGHT_PANEL_REGISTRY, getRightPanelDef } from './registry';
 import { usePanelsStore } from './store';
 
 const panelsStore = usePanelsStore();
+const terminalStore = useTerminalStore();
 
 const activeDef = computed(() => getRightPanelDef(panelsStore.panelGroup.activeId));
 
@@ -87,19 +88,26 @@ onUnmounted(() => {
       :data-testid="`right-panel-strip-${panel.id}`"
       @click="panelsStore.selectPanel(panel.id)"
     >
-      {{ panel.shortLabel }}
+      <span>{{ panel.shortLabel }}</span>
+      <span
+        v-if="panel.id === 'terminal' && terminalStore.hasAnyActiveForegroundChild"
+        class="qn-right-panel-strip__dot"
+        data-testid="terminal-active-dot"
+        aria-label="终端有前台进程运行"
+      />
     </button>
   </aside>
 
-  <!-- 展开态：常规右侧栏或 <900px 覆盖式抽屉 -->
-  <template v-else>
+  <!-- 展开态：常规右侧栏或 <900px 覆盖式抽屉（有存活终端会话时折叠态仍保持挂载保活） -->
+  <template v-if="panelsStore.isPanelGroupExpanded || terminalStore.hasAnySession">
     <div
-      v-if="panelsStore.isOverlayDrawer"
+      v-if="panelsStore.isPanelGroupExpanded && panelsStore.isOverlayDrawer"
       class="qn-right-panel-backdrop"
       data-testid="right-panel-drawer-backdrop"
       @click="panelsStore.toggleCollapseAll()"
     />
     <aside
+      v-show="panelsStore.isPanelGroupExpanded"
       :class="[
         'qn-right-panel-group',
         { 'qn-right-panel-group--drawer': panelsStore.isOverlayDrawer },
@@ -134,7 +142,13 @@ onUnmounted(() => {
             ]"
             @click="panelsStore.selectPanel(panel.id)"
           >
-            {{ panel.title }}
+            <span>{{ panel.title }}</span>
+            <span
+              v-if="panel.id === 'terminal' && terminalStore.hasAnyActiveForegroundChild"
+              class="qn-right-panel-group__tab-dot"
+              data-testid="terminal-active-dot"
+              aria-label="终端有前台进程运行"
+            />
           </button>
         </div>
 
@@ -184,11 +198,14 @@ onUnmounted(() => {
           </ul>
         </div>
 
-        <!-- 终端占位 -->
-        <TerminalPlaceholderPanel v-else-if="panelsStore.panelGroup.activeId === 'terminal'" />
+        <!-- 内嵌终端（有存活会话时保持挂载以实现折叠保活） -->
+        <TerminalPanel
+          v-if="panelsStore.panelGroup.activeId === 'terminal' || terminalStore.hasAnySession"
+          v-show="panelsStore.panelGroup.activeId === 'terminal'"
+        />
 
         <!-- 相关文档 -->
-        <RelatedNotesPanel v-else-if="panelsStore.panelGroup.activeId === 'related'" />
+        <RelatedNotesPanel v-if="panelsStore.panelGroup.activeId === 'related'" />
 
         <!-- 最近编辑 -->
         <RecentNotesPanel v-else-if="panelsStore.panelGroup.activeId === 'recent'" />
@@ -217,6 +234,7 @@ onUnmounted(() => {
 }
 
 .qn-right-panel-strip__btn {
+  position: relative;
   width: 26px;
   height: 26px;
   display: inline-flex;
@@ -229,6 +247,16 @@ onUnmounted(() => {
   font-size: var(--qn-text-xs);
   font-weight: 600;
   cursor: pointer;
+}
+
+.qn-right-panel-strip__dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--qn-radius-full);
+  background-color: var(--qn-success);
 }
 
 .qn-right-panel-strip__btn:hover {
@@ -299,6 +327,9 @@ onUnmounted(() => {
 }
 
 .qn-right-panel-group__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: none;
   background: transparent;
   padding: 3px 6px;
@@ -308,6 +339,14 @@ onUnmounted(() => {
   color: var(--qn-text-secondary);
   white-space: nowrap;
   cursor: pointer;
+}
+
+.qn-right-panel-group__tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--qn-radius-full);
+  background-color: var(--qn-success);
+  flex-shrink: 0;
 }
 
 .qn-right-panel-group__tab:hover {

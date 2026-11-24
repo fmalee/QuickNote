@@ -2,7 +2,6 @@ export { default as OutlinePanel } from './OutlinePanel.vue';
 export { default as RecentNotesPanel } from './RecentNotesPanel.vue';
 export { default as RelatedNotesPanel } from './RelatedNotesPanel.vue';
 export { default as RightPanelGroup } from './RightPanelGroup.vue';
-export { default as TerminalPlaceholderPanel } from './TerminalPlaceholderPanel.vue';
 export {
   type OutlineItem,
   extractMarkdownOutline,

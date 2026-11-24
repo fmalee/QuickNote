@@ -1,4 +1,6 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
+
+export { Channel };
 import type {
   AppError,
   AppInfo,
