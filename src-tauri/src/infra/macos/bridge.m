@@ -1,7 +1,9 @@
 #import <Cocoa/Cocoa.h>
 #import <Carbon/Carbon.h>
+#import <WebKit/WebKit.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 typedef void (*QnVoidCallback)(void);
 
@@ -62,6 +64,47 @@ static uint32_t g_registered_modifiers = 0;
 
 static QuickNotePanel *g_quickbar_panel = nil;
 static QuickNoteToastPanel *g_toast_panel = nil;
+static BOOL g_has_saved_standard_frame = NO;
+static NSRect g_saved_standard_frame;
+static BOOL g_is_auxiliary_mode = NO;
+
+@interface QnPdfNavigationDelegate : NSObject <WKNavigationDelegate>
+@property (nonatomic, assign) BOOL finished;
+@property (nonatomic, strong) NSError *navError;
+@end
+
+@implementation QnPdfNavigationDelegate
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    (void)webView;
+    (void)navigation;
+    self.finished = YES;
+}
+
+- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+    (void)webView;
+    (void)navigation;
+    self.navError = error;
+    self.finished = YES;
+}
+
+- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+    (void)webView;
+    (void)navigation;
+    self.navError = error;
+    self.finished = YES;
+}
+@end
+
+static void qn_write_err(char *err_buf, size_t err_buf_len, const char *msg) {
+    if (err_buf == NULL || err_buf_len == 0) {
+        return;
+    }
+    if (msg == NULL) {
+        err_buf[0] = '\0';
+        return;
+    }
+    snprintf(err_buf, err_buf_len, "%s", msg);
+}
 
 static void qn_run_on_main_thread(dispatch_block_t block) {
     if ([NSThread isMainThread]) {
@@ -418,4 +461,187 @@ int32_t qn_register_carbon_hotkey(
     g_registered_modifiers = modifiers;
     g_hotkey_cb = on_hotkey;
     return (int32_t)reg_status;
+}
+
+int32_t qn_render_html_to_pdf(
+    const char *html_utf8,
+    const char *dest_path_utf8,
+    char *err_buf,
+    size_t err_buf_len
+) {
+    if (html_utf8 == NULL || html_utf8[0] == '\0') {
+        qn_write_err(err_buf, err_buf_len, "HTML document must not be empty");
+        return -1;
+    }
+    if (dest_path_utf8 == NULL || dest_path_utf8[0] == '\0') {
+        qn_write_err(err_buf, err_buf_len, "Destination path must not be empty");
+        return -1;
+    }
+
+    NSString *html = [NSString stringWithUTF8String:html_utf8];
+    NSString *destPath = [NSString stringWithUTF8String:dest_path_utf8];
+    if (html == nil || destPath == nil) {
+        qn_write_err(err_buf, err_buf_len, "Invalid UTF-8 input for PDF export");
+        return -1;
+    }
+
+    __block int32_t result = 0;
+    qn_run_on_main_thread(^{
+        if (@available(macOS 11.0, *)) {
+            WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+            WKWebView *webView = [[WKWebView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 794.0, 1123.0)
+                                                    configuration:config];
+            QnPdfNavigationDelegate *delegate = [[QnPdfNavigationDelegate alloc] init];
+            webView.navigationDelegate = delegate;
+
+            [webView loadHTMLString:html baseURL:nil];
+
+            NSDate *loadDeadline = [NSDate dateWithTimeIntervalSinceNow:15.0];
+            while (!delegate.finished && [loadDeadline timeIntervalSinceNow] > 0.0) {
+                CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.02, true);
+            }
+
+            if (!delegate.finished) {
+                webView.navigationDelegate = nil;
+                qn_write_err(err_buf, err_buf_len, "Timed out waiting for WKWebView HTML navigation");
+                result = -2;
+                return;
+            }
+
+            if (delegate.navError != nil) {
+                webView.navigationDelegate = nil;
+                qn_write_err(err_buf, err_buf_len, delegate.navError.localizedDescription.UTF8String);
+                result = -3;
+                return;
+            }
+
+            __block BOOL pdfDone = NO;
+            __block NSData *capturedPdf = nil;
+            __block NSError *capturedErr = nil;
+
+            WKPDFConfiguration *pdfConfig = [[WKPDFConfiguration alloc] init];
+            [webView createPDFWithConfiguration:pdfConfig
+                              completionHandler:^(NSData *pdfData, NSError *error) {
+                capturedPdf = pdfData;
+                capturedErr = error;
+                pdfDone = YES;
+            }];
+
+            NSDate *pdfDeadline = [NSDate dateWithTimeIntervalSinceNow:15.0];
+            while (!pdfDone && [pdfDeadline timeIntervalSinceNow] > 0.0) {
+                CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.02, true);
+            }
+
+            webView.navigationDelegate = nil;
+
+            if (!pdfDone) {
+                qn_write_err(err_buf, err_buf_len, "Timed out waiting for WKWebView PDF generation");
+                result = -4;
+                return;
+            }
+
+            if (capturedErr != nil || capturedPdf == nil || capturedPdf.length == 0) {
+                const char *msg = capturedErr != nil
+                    ? capturedErr.localizedDescription.UTF8String
+                    : "WKWebView produced empty PDF data";
+                qn_write_err(err_buf, err_buf_len, msg);
+                result = -5;
+                return;
+            }
+
+            NSError *writeErr = nil;
+            BOOL written = [capturedPdf writeToFile:destPath
+                                            options:NSDataWritingAtomic
+                                              error:&writeErr];
+            if (!written) {
+                const char *msg = writeErr != nil
+                    ? writeErr.localizedDescription.UTF8String
+                    : "Failed to write PDF file";
+                qn_write_err(err_buf, err_buf_len, msg);
+                result = -6;
+                return;
+            }
+
+            result = 0;
+        } else {
+            qn_write_err(err_buf, err_buf_len, "PDF export requires macOS 11.0 or later");
+            result = -7;
+        }
+    });
+
+    return result;
+}
+
+void qn_set_main_window_mode(
+    void *ns_window_ptr,
+    uint8_t mode,
+    uint8_t auxiliary_width_percent,
+    QnPanelDiag *out_diag
+) {
+    if (ns_window_ptr == NULL) {
+        return;
+    }
+
+    __block QnPanelDiag diag = {0, false};
+    qn_run_on_main_thread(^{
+        NSWindow *win = (__bridge NSWindow *)ns_window_ptr;
+        if (win == nil) {
+            return;
+        }
+
+        if (mode == 0) {
+            win.level = NSNormalWindowLevel;
+            win.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
+            if (g_is_auxiliary_mode && g_has_saved_standard_frame) {
+                NSScreen *screen = win.screen != nil ? win.screen : qn_active_screen();
+                NSRect restored = g_saved_standard_frame;
+                if (screen != nil) {
+                    NSRect visible = screen.visibleFrame;
+                    CGFloat w = MIN(restored.size.width, visible.size.width);
+                    CGFloat h = MIN(restored.size.height, visible.size.height);
+                    CGFloat x = MAX(visible.origin.x, MIN(restored.origin.x, visible.origin.x + visible.size.width - w));
+                    CGFloat y = MAX(visible.origin.y, MIN(restored.origin.y, visible.origin.y + visible.size.height - h));
+                    restored = NSMakeRect(x, y, w, h);
+                }
+                [win setFrame:restored display:YES animate:YES];
+            }
+            g_is_auxiliary_mode = NO;
+        } else if (mode == 1) {
+            win.level = NSNormalWindowLevel;
+            win.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
+            g_is_auxiliary_mode = NO;
+        } else if (mode == 2) {
+            if (!g_is_auxiliary_mode) {
+                g_saved_standard_frame = win.frame;
+                g_has_saved_standard_frame = YES;
+                g_is_auxiliary_mode = YES;
+            }
+            win.collectionBehavior = NSWindowCollectionBehaviorFullScreenAuxiliary;
+            win.level = NSFloatingWindowLevel;
+
+            NSScreen *screen = qn_active_screen();
+            if (screen != nil) {
+                uint8_t clamped = auxiliary_width_percent < 30
+                    ? 30
+                    : (auxiliary_width_percent > 60 ? 60 : auxiliary_width_percent);
+                NSRect visible = screen.visibleFrame;
+                CGFloat w = round(visible.size.width * ((CGFloat)clamped / 100.0));
+                if (w < 480.0) {
+                    w = 480.0;
+                }
+                if (w > visible.size.width) {
+                    w = visible.size.width;
+                }
+                CGFloat x = visible.origin.x + (visible.size.width - w);
+                NSRect target = NSMakeRect(x, visible.origin.y, w, visible.size.height);
+                [win setFrame:target display:YES animate:YES];
+            }
+        }
+
+        diag = qn_read_diag(win);
+    });
+
+    if (out_diag != NULL) {
+        *out_diag = diag;
+    }
 }

@@ -1,8 +1,12 @@
+use std::path::Path;
+
 use crate::domain::app::ActivationPolicy;
-use crate::domain::error::AppError;
+use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::hotkey::ParsedHotkey;
+use crate::domain::settings::WindowMode;
 use crate::domain::ui_state::HotkeySelfCheck;
 use crate::domain::window::HideReason;
+use crate::infra::fs::atomic_write_bytes;
 
 /// Diagnostics captured from native panel operations (`C2.4`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +68,17 @@ pub trait NativeWindowBridge: Send + Sync {
         hotkey: &ParsedHotkey,
         on_hotkey: extern "C" fn(),
     ) -> Result<HotkeySelfCheck, AppError>;
+    fn render_html_to_pdf(&self, _html_document: &str, _dest_path: &Path) -> Result<(), AppError> {
+        Ok(())
+    }
+    fn configure_main_window_mode(
+        &self,
+        _ns_window_ptr: usize,
+        _mode: WindowMode,
+        _auxiliary_width_percent: u8,
+    ) -> Result<PanelDiagnostics, AppError> {
+        Ok(PanelDiagnostics::default())
+    }
 }
 
 /// Headless / non-macOS no-op bridge for automated tests.
@@ -114,16 +129,37 @@ impl NativeWindowBridge for NoopNativeBridge {
     ) -> Result<HotkeySelfCheck, AppError> {
         Ok(HotkeySelfCheck::Pending)
     }
+
+    fn render_html_to_pdf(&self, html_document: &str, dest_path: &Path) -> Result<(), AppError> {
+        if html_document.trim().is_empty() {
+            return Err(AppError::new(
+                ErrorCode::ValidationError,
+                "HTML document must not be empty",
+            ));
+        }
+        atomic_write_bytes(dest_path, b"%PDF-1.4\n%%EOF\n")
+    }
+
+    fn configure_main_window_mode(
+        &self,
+        _ns_window_ptr: usize,
+        _mode: WindowMode,
+        _auxiliary_width_percent: u8,
+    ) -> Result<PanelDiagnostics, AppError> {
+        Ok(PanelDiagnostics::default())
+    }
 }
 
 #[cfg(target_os = "macos")]
 pub mod darwin {
-    use std::ffi::c_void;
+    use std::ffi::{c_char, c_void, CStr, CString};
+    use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::{NativeWindowBridge, PanelDiagnostics};
-    use crate::domain::error::AppError;
+    use crate::domain::error::{AppError, ErrorCode};
     use crate::domain::hotkey::ParsedHotkey;
+    use crate::domain::settings::WindowMode;
     use crate::domain::ui_state::HotkeySelfCheck;
 
     #[repr(C)]
@@ -159,6 +195,18 @@ pub mod darwin {
             modifiers: u32,
             on_hotkey: Option<extern "C" fn()>,
         ) -> i32;
+        fn qn_render_html_to_pdf(
+            html_utf8: *const c_char,
+            dest_path_utf8: *const c_char,
+            err_buf: *mut c_char,
+            err_buf_len: usize,
+        ) -> i32;
+        fn qn_set_main_window_mode(
+            ns_window_ptr: *mut c_void,
+            mode: u8,
+            auxiliary_width_percent: u8,
+            out_diag: *mut QnPanelDiag,
+        );
     }
 
     static ESC_CALLBACK_PTR: AtomicUsize = AtomicUsize::new(0);
@@ -265,6 +313,90 @@ pub mod darwin {
             } else {
                 Ok(HotkeySelfCheck::Conflict)
             }
+        }
+
+        fn render_html_to_pdf(
+            &self,
+            html_document: &str,
+            dest_path: &Path,
+        ) -> Result<(), AppError> {
+            if html_document.trim().is_empty() {
+                return Err(AppError::new(
+                    ErrorCode::ValidationError,
+                    "HTML document must not be empty",
+                ));
+            }
+            let html_c = CString::new(html_document).map_err(|_| {
+                AppError::new(
+                    ErrorCode::ValidationError,
+                    "HTML document contains invalid NUL byte",
+                )
+            })?;
+            let dest_str = dest_path.to_str().ok_or_else(|| {
+                AppError::new(
+                    ErrorCode::ValidationError,
+                    "Destination path must be valid UTF-8",
+                )
+            })?;
+            let dest_c = CString::new(dest_str).map_err(|_| {
+                AppError::new(
+                    ErrorCode::ValidationError,
+                    "Destination path contains invalid NUL byte",
+                )
+            })?;
+
+            let mut err_buf = [0 as c_char; 512];
+            let rc = unsafe {
+                qn_render_html_to_pdf(
+                    html_c.as_ptr(),
+                    dest_c.as_ptr(),
+                    err_buf.as_mut_ptr(),
+                    err_buf.len(),
+                )
+            };
+            if rc == 0 {
+                return Ok(());
+            }
+
+            let detail = unsafe { CStr::from_ptr(err_buf.as_ptr()) }
+                .to_string_lossy()
+                .trim()
+                .to_string();
+            if detail.is_empty() {
+                Err(AppError::new(
+                    ErrorCode::InternalError,
+                    "Failed to export PDF via WKWebView",
+                ))
+            } else {
+                Err(AppError::with_detail(
+                    ErrorCode::InternalError,
+                    "Failed to export PDF via WKWebView",
+                    detail,
+                ))
+            }
+        }
+
+        fn configure_main_window_mode(
+            &self,
+            ns_window_ptr: usize,
+            mode: WindowMode,
+            auxiliary_width_percent: u8,
+        ) -> Result<PanelDiagnostics, AppError> {
+            let mode_code = match mode {
+                WindowMode::Standard => 0,
+                WindowMode::Fullscreen => 1,
+                WindowMode::Auxiliary => 2,
+            };
+            let mut diag = QnPanelDiag::default();
+            unsafe {
+                qn_set_main_window_mode(
+                    ns_window_ptr as *mut c_void,
+                    mode_code,
+                    auxiliary_width_percent,
+                    &mut diag,
+                );
+            }
+            Ok(diag.into())
         }
     }
 }

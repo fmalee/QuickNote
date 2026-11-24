@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::State;
@@ -9,12 +10,16 @@ use crate::application::notes::{
     notes_list as list_uc, tags_batch_rename as tag_rename_uc,
 };
 use crate::application::persistence::PersistenceManager;
-use crate::domain::error::AppError;
+use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::note::{
-    CreateNoteArgs, NavTreeSnapshot, NoteDoc, NoteSummary, NoteUpdateMetaArgs, NotesFilterArgs,
-    ReadNoteArgs, RelPathArgs, RelatedNoteItem, RenameNoteArgs, SaveImageArgs, SavedImageResult,
-    TagRenameArgs, TagRenameResult, WriteNoteArgs, WriteResult,
+    CreateNoteArgs, ExportPdfArgs, NavTreeSnapshot, NoteDoc, NoteSummary, NoteUpdateMetaArgs,
+    NotesFilterArgs, ReadNoteArgs, RelPathArgs, RelatedNoteItem, RenameNoteArgs, SaveImageArgs,
+    SavedImageResult, TagRenameArgs, TagRenameResult, WriteNoteArgs, WriteResult,
 };
+use crate::infra::fs::{expand_tilde, map_io_error};
+use crate::infra::macos::NativeWindowBridge;
+
+const MAX_EXPORT_HTML_BYTES: usize = 20 * 1024 * 1024;
 
 #[tauri::command]
 pub fn notes_list(
@@ -101,4 +106,60 @@ pub fn tags_batch_rename(
     args: TagRenameArgs,
 ) -> Result<TagRenameResult, AppError> {
     tag_rename_uc(&pm, args)
+}
+
+/// Validates and exports an HTML document to PDF via the native bridge (`C4.2`, `C2.3`).
+pub fn export_pdf_with_bridge(
+    bridge: &dyn NativeWindowBridge,
+    args: ExportPdfArgs,
+) -> Result<PathBuf, AppError> {
+    if args.html_document.trim().is_empty() {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "HTML document must not be empty",
+        ));
+    }
+    if args.html_document.len() > MAX_EXPORT_HTML_BYTES {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "HTML document exceeds maximum 20MB export limit",
+        ));
+    }
+
+    let trimmed_dest = args.dest_path.trim();
+    if trimmed_dest.is_empty() {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "Destination path must not be empty",
+        ));
+    }
+
+    let mut dest = expand_tilde(trimmed_dest);
+    let has_pdf_ext = dest
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"));
+    if !has_pdf_ext {
+        let mut os = dest.into_os_string();
+        os.push(".pdf");
+        dest = PathBuf::from(os);
+    }
+
+    if let Some(parent) = dest.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| map_io_error(e, "Failed to create PDF export directory"))?;
+        }
+    }
+
+    bridge.render_html_to_pdf(&args.html_document, &dest)?;
+    Ok(dest)
+}
+
+#[tauri::command]
+pub fn note_export_pdf(
+    bridge: State<'_, Arc<dyn NativeWindowBridge>>,
+    args: ExportPdfArgs,
+) -> Result<(), AppError> {
+    export_pdf_with_bridge(bridge.inner().as_ref(), args).map(|_| ())
 }

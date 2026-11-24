@@ -64,6 +64,7 @@ impl WindowManager {
         &self,
         app: &AppHandle,
         mode: Option<WindowMode>,
+        auxiliary_width_percent: u8,
     ) -> Result<WindowState, AppError> {
         let (win_state, policy) = {
             let mut guard = self.policy_state.lock().map_err(|_| {
@@ -78,10 +79,34 @@ impl WindowManager {
             let _ = win.show();
             let _ = win.unminimize();
             let _ = win.set_focus();
-            if mode == Some(WindowMode::Fullscreen) {
-                let _ = win.set_fullscreen(true);
-            } else if mode == Some(WindowMode::Standard) {
-                let _ = win.set_fullscreen(false);
+            if let Some(target_mode) = mode {
+                if target_mode == WindowMode::Fullscreen {
+                    if let Ok(ns_ptr) = window_ns_ptr(app, "main") {
+                        let _ = self.bridge.configure_main_window_mode(
+                            ns_ptr,
+                            WindowMode::Fullscreen,
+                            auxiliary_width_percent,
+                        );
+                    }
+                    let _ = win.set_fullscreen(true);
+                } else {
+                    let _ = win.set_fullscreen(false);
+                    if let Ok(ns_ptr) = window_ns_ptr(app, "main") {
+                        if let Ok(diag) = self.bridge.configure_main_window_mode(
+                            ns_ptr,
+                            target_mode,
+                            auxiliary_width_percent,
+                        ) {
+                            log_native_event(
+                                "main_mode_switch",
+                                policy,
+                                diag.collection_behavior,
+                                diag.is_key_window,
+                                None,
+                            );
+                        }
+                    }
+                }
             }
         }
 

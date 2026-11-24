@@ -16,7 +16,9 @@ use crate::domain::settings::{
 };
 use crate::domain::ui_state::{UiState, UiStatePatchKey};
 use crate::domain::watch::{QuickBarDraft, RecoverySnapshot, SelfWriteGuard};
-use crate::infra::fs::{atomic_write_str, init_app_data_dir, map_io_error, prune_backups};
+use crate::infra::fs::{
+    atomic_write_str, expand_tilde, init_app_data_dir, map_io_error, prune_backups,
+};
 use crate::infra::sqlite::{get_library_meta, init_sqlite};
 
 /// Normalizes a filesystem path for `SelfWriteGuard` and watcher comparisons (`C8.5`).
@@ -440,6 +442,124 @@ impl PersistenceManager {
         Ok(SettingsSnapshot {
             settings: next_settings,
             status: next_status,
+        })
+    }
+
+    /// Exports the current valid settings to `dest_path` as canonical YAML (`C4.2`).
+    pub fn settings_export(&self, dest_path: &str) -> Result<(), AppError> {
+        let trimmed = dest_path.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::new(
+                ErrorCode::ValidationError,
+                "Export destination path must not be empty",
+            ));
+        }
+
+        let current = self
+            .settings
+            .read()
+            .map_err(|_| AppError::new(ErrorCode::InternalError, "Settings lock poisoned"))?
+            .clone();
+        let yaml = serialize_settings_yaml(&current)?;
+        let expanded = expand_tilde(trimmed);
+        if let Some(parent) = expanded.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| map_io_error(e, "Failed to create export directory"))?;
+            }
+        }
+        atomic_write_str(&expanded, &yaml)
+    }
+
+    /// Imports and validates a YAML file from `src_path` (`C4.2`, `D-0008`).
+    /// If invalid, preserves existing `settings.yaml` and in-memory settings untouched.
+    pub fn settings_import(&self, src_path: &str) -> Result<SettingsSnapshot, AppError> {
+        let trimmed = src_path.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::new(
+                ErrorCode::ValidationError,
+                "Import source path must not be empty",
+            ));
+        }
+
+        let expanded = expand_tilde(trimmed);
+        if !expanded.exists() {
+            return Err(AppError::with_detail(
+                ErrorCode::NotFound,
+                "Settings file not found",
+                expanded.to_string_lossy().to_string(),
+            ));
+        }
+
+        let raw = fs::read_to_string(&expanded)
+            .map_err(|e| map_io_error(e, "Failed to read import settings file"))?;
+        let (next_settings, next_status) = parse_settings_yaml(&raw, None);
+
+        if !next_status.valid {
+            let msg = next_status
+                .error_message
+                .clone()
+                .unwrap_or_else(|| "Invalid settings YAML".to_string());
+            let detail = match (next_status.error_line, next_status.error_column) {
+                (Some(line), Some(col)) => format!("line {line}, column {col}: {msg}"),
+                _ => msg.clone(),
+            };
+            return Err(AppError::with_detail(
+                ErrorCode::SettingsParseError,
+                msg,
+                detail,
+            ));
+        }
+
+        let settings_path = self.settings_path();
+        if settings_path.exists() {
+            if let Ok(existing_raw) = fs::read_to_string(&settings_path) {
+                let backups_dir = self.backups_dir();
+                fs::create_dir_all(&backups_dir)
+                    .map_err(|e| map_io_error(e, "Failed to create backups directory"))?;
+                let stamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
+                let backup_name = format_backup_filename("settings.yaml", &stamp);
+                let backup_path = backups_dir.join(backup_name);
+                atomic_write_str(&backup_path, &existing_raw)?;
+                let _ = prune_backups(&backups_dir, Utc::now().timestamp());
+            }
+        }
+
+        let canonical_yaml = serialize_settings_yaml(&next_settings)?;
+        atomic_write_str(&settings_path, &canonical_yaml)?;
+
+        let final_status = SettingsLoadStatus {
+            valid: true,
+            active_source: "file".to_string(),
+            error_line: None,
+            error_column: None,
+            error_message: None,
+        };
+
+        {
+            let mut guard = self
+                .settings
+                .write()
+                .map_err(|_| AppError::new(ErrorCode::InternalError, "Settings lock poisoned"))?;
+            *guard = next_settings.clone();
+        }
+        {
+            let mut last_guard = self
+                .last_valid_settings
+                .write()
+                .map_err(|_| AppError::new(ErrorCode::InternalError, "Last valid lock poisoned"))?;
+            *last_guard = Some(next_settings.clone());
+        }
+        {
+            let mut status_guard = self.settings_status.write().map_err(|_| {
+                AppError::new(ErrorCode::InternalError, "Settings status lock poisoned")
+            })?;
+            *status_guard = final_status.clone();
+        }
+
+        Ok(SettingsSnapshot {
+            settings: next_settings,
+            status: final_status,
         })
     }
 

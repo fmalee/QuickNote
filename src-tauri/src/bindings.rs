@@ -15,8 +15,8 @@ use crate::domain::external::{
 };
 use crate::domain::hotkey::HotkeyUpdateArgs;
 use crate::domain::note::{
-    ConflictInfo, CreateNoteArgs, DirNode, IndexPhase, IndexStatus, NavTreeSnapshot, NoteDoc,
-    NoteMeta, NoteMetaPatch, NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs,
+    ConflictInfo, CreateNoteArgs, DirNode, ExportPdfArgs, IndexPhase, IndexStatus, NavTreeSnapshot,
+    NoteDoc, NoteMeta, NoteMetaPatch, NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs,
     PathCompleteArgs, PathEntry, ReadNoteArgs, RelPathArgs, RelatedNoteItem, RelatedReason,
     RenameNoteArgs, SaveImageArgs, SavedImageResult, SearchItemKind, SearchQueryArgs,
     SearchResponse, SearchResultItem, SearchSource, SpotlightArgs, TagNode, TagRenameArgs,
@@ -24,11 +24,12 @@ use crate::domain::note::{
 };
 use crate::domain::settings::{
     EditorSettings, EditorSettingsPatch, EditorTheme, EditorsSettings, EditorsSettingsPatch,
-    ExternalAppConfig, ExternalAppConfigPatch, HotkeySettings, HotkeySettingsPatch, InboxSettings,
-    InboxSettingsPatch, LibraryInfo, MainWindowSettings, MainWindowSettingsPatch, PanelId,
-    PanelsSettings, PanelsSettingsPatch, QuickBarSettings, QuickBarSettingsPatch, SetRootArgs,
-    Settings, SettingsLoadStatus, SettingsPatch, SettingsSnapshot, TerminalPanelSettings,
-    TerminalPanelSettingsPatch, WindowMode, WorkspaceConfig,
+    ExportPathArgs, ExternalAppConfig, ExternalAppConfigPatch, HotkeySettings, HotkeySettingsPatch,
+    ImportPathArgs, InboxSettings, InboxSettingsPatch, LibraryInfo, MainWindowSettings,
+    MainWindowSettingsPatch, PanelId, PanelsSettings, PanelsSettingsPatch, QuickBarSettings,
+    QuickBarSettingsPatch, SetRootArgs, Settings, SettingsLoadStatus, SettingsPatch,
+    SettingsSnapshot, TerminalPanelSettings, TerminalPanelSettingsPatch, WindowMode,
+    WorkspaceConfig,
 };
 use crate::domain::terminal::{
     TerminalData, TerminalExitPayload, TerminalExitReason, TerminalKillArgs,
@@ -169,6 +170,9 @@ pub fn collect_types() -> Types {
         .register::<TerminalSessionInfo>()
         .register::<TerminalData>()
         .register::<TerminalExitPayload>()
+        .register::<ExportPathArgs>()
+        .register::<ImportPathArgs>()
+        .register::<ExportPdfArgs>()
 }
 
 /// Renders the full TypeScript bindings content deterministically.

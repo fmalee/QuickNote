@@ -127,6 +127,17 @@ export type EditorsSettingsPatch = {
 /**  Unified application error code for all Tauri IPC responses (`C3.3`). */
 export type ErrorCode = "validationError" | "libraryNotConfigured" | "notFound" | "permissionDenied" | "conflict" | "undoUnavailable" | "invalidFrontmatter" | "settingsParseError" | "externalAppMissing" | "workspaceDirMissing" | "terminalLimitReached" | "terminalSpawnFailed" | "internalError";
 
+/**  Arguments for `settings_export` (`C4.2`). */
+export type ExportPathArgs = {
+	destPath: string,
+};
+
+/**  Arguments for `note_export_pdf` (`C3.4`, `C4.2`). */
+export type ExportPdfArgs = {
+	htmlDocument: string,
+	destPath: string,
+};
+
 /**  Fixed action identifiers for external OS operations (`C3.4`). */
 export type ExternalActionId = "external.reveal" | "external.terminal" | "external.vscode" | "external.sublime" | "external.workspace" | "external.default" | "external.copyPath" | "external.pin";
 
@@ -203,6 +214,11 @@ export type HotkeyStatus = {
 /**  Arguments for `hotkey_update` (`C4.2`). */
 export type HotkeyUpdateArgs = {
 	combo: string,
+};
+
+/**  Arguments for `settings_import` (`C4.2`). */
+export type ImportPathArgs = {
+	srcPath: string,
 };
 
 /**  Arguments for `inbox_extract_to_note` (`C3.4`, `C4.2`, `v4` §4.11). */

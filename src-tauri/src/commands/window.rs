@@ -3,11 +3,14 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 use crate::application::hotkey::HotkeyManager;
+use crate::application::persistence::PersistenceManager;
 use crate::application::window::WindowManager;
 use crate::domain::error::AppError;
 use crate::domain::hotkey::HotkeyUpdateArgs;
 use crate::domain::ui_state::HotkeyStatus;
-use crate::domain::window::{HideQuickBarArgs, MainWindowArgs, QuickBarArgs, WindowState};
+use crate::domain::window::{
+    HideQuickBarArgs, MainWindowArgs, QuickBarArgs, WindowState, DEFAULT_AUXILIARY_WIDTH_PERCENT,
+};
 use crate::on_hotkey_pressed;
 
 /// Shows the main workspace window and switches activation policy to `.regular` (`C4.2`, `D-0003`).
@@ -15,9 +18,14 @@ use crate::on_hotkey_pressed;
 pub fn window_show_main(
     app: AppHandle,
     wm: State<'_, Arc<WindowManager>>,
+    pm: State<'_, Arc<PersistenceManager>>,
     args: Option<MainWindowArgs>,
 ) -> Result<WindowState, AppError> {
-    wm.show_main(&app, args.and_then(|a| a.mode))
+    let aux_pct = pm
+        .settings_get()
+        .map(|s| s.settings.main_window.auxiliary_width_percent)
+        .unwrap_or(DEFAULT_AUXILIARY_WIDTH_PERCENT);
+    wm.show_main(&app, args.and_then(|a| a.mode), aux_pct)
 }
 
 /// Hides the main workspace window and switches activation policy to `.accessory` if settings is also closed (`C4.2`, `D-0003`).

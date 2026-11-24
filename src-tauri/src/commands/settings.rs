@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, State};
 
+use crate::application::hotkey::HotkeyManager;
 use crate::application::persistence::PersistenceManager;
 use crate::domain::error::AppError;
-use crate::domain::settings::{SettingsPatch, SettingsSnapshot};
+use crate::domain::settings::{ExportPathArgs, ImportPathArgs, SettingsPatch, SettingsSnapshot};
 use crate::domain::ui_state::{UiState, UiStateArgs};
+use crate::on_hotkey_pressed;
 
 /// Returns the current settings snapshot and load status (`C4.2`, `D-0008`).
 #[tauri::command]
@@ -40,4 +42,30 @@ pub fn ui_state_set(
     args: UiStateArgs,
 ) -> Result<UiState, AppError> {
     state.ui_state_set(args.key, args.value)
+}
+
+/// Exports current valid settings as canonical YAML to `dest_path` (`C4.2`).
+#[tauri::command]
+pub fn settings_export(
+    state: State<'_, Arc<PersistenceManager>>,
+    args: ExportPathArgs,
+) -> Result<(), AppError> {
+    state.settings_export(&args.dest_path)
+}
+
+/// Imports and validates settings YAML from `src_path`, backing up existing `settings.yaml` (`C4.2`, `D-0008`).
+#[tauri::command]
+pub fn settings_import(
+    app: AppHandle,
+    state: State<'_, Arc<PersistenceManager>>,
+    hm: State<'_, Arc<HotkeyManager>>,
+    args: ImportPathArgs,
+) -> Result<SettingsSnapshot, AppError> {
+    let prev_hotkeys = state.settings_get().ok().map(|s| s.settings.hotkey);
+    let snapshot = state.settings_import(&args.src_path)?;
+    let _ = app.emit("settings:status", &snapshot.status);
+    if prev_hotkeys.as_ref() != Some(&snapshot.settings.hotkey) {
+        let _ = hm.update_hotkey(&snapshot.settings.hotkey.quick_bar, on_hotkey_pressed);
+    }
+    Ok(snapshot)
 }

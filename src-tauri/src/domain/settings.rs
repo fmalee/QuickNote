@@ -54,6 +54,20 @@ pub struct SetRootArgs {
     pub create_if_missing: bool,
 }
 
+/// Arguments for `settings_export` (`C4.2`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPathArgs {
+    pub dest_path: String,
+}
+
+/// Arguments for `settings_import` (`C4.2`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPathArgs {
+    pub src_path: String,
+}
+
 /// Workspace configuration entry (`C3.4`, `C6.2`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]

@@ -307,7 +307,12 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
                 }
             }
             "tray_show_main" | "menu_show_main" => {
-                if let Err(err) = wm.show_main(app_handle, None) {
+                let aux_pct = app_handle
+                    .try_state::<Arc<PersistenceManager>>()
+                    .and_then(|pm| pm.settings_get().ok())
+                    .map(|s| s.settings.main_window.auxiliary_width_percent)
+                    .unwrap_or(crate::domain::window::DEFAULT_AUXILIARY_WIDTH_PERCENT);
+                if let Err(err) = wm.show_main(app_handle, None, aux_pct) {
                     eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
                 }
             }
@@ -426,7 +431,12 @@ pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(wm) = app.try_state::<Arc<WindowManager>>() {
-                if let Err(err) = wm.show_main(app, None) {
+                let aux_pct = app
+                    .try_state::<Arc<PersistenceManager>>()
+                    .and_then(|pm| pm.settings_get().ok())
+                    .map(|s| s.settings.main_window.auxiliary_width_percent)
+                    .unwrap_or(crate::domain::window::DEFAULT_AUXILIARY_WIDTH_PERCENT);
+                if let Err(err) = wm.show_main(app, None, aux_pct) {
                     eprintln!("[single-instance] show_main failed: code={:?}", err.code);
                 }
             }
@@ -442,6 +452,7 @@ pub fn run() -> Result<(), tauri::Error> {
             app.manage(Arc::clone(&pm));
 
             let bridge = create_native_bridge();
+            app.manage(Arc::clone(&bridge));
             let main_initially_visible = app
                 .get_webview_window("main")
                 .and_then(|w| w.is_visible().ok())
@@ -565,6 +576,8 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::app::app_set_menu_accelerators,
             commands::settings::settings_get,
             commands::settings::settings_update,
+            commands::settings::settings_export,
+            commands::settings::settings_import,
             commands::settings::ui_state_get,
             commands::settings::ui_state_set,
             commands::library::library_get_info,
@@ -588,6 +601,7 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::notes::note_save_image,
             commands::notes::notes_get_related,
             commands::notes::tags_batch_rename,
+            commands::notes::note_export_pdf,
             commands::search::search_notes_and_files,
             commands::search::commands_search,
             commands::search::search_spotlight,

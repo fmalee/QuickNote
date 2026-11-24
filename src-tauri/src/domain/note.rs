@@ -993,3 +993,11 @@ pub fn rewrite_tags_for_rename(
         None
     }
 }
+
+/// Arguments for `note_export_pdf` (`C3.4`, `C4.2`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPdfArgs {
+    pub html_document: String,
+    pub dest_path: String,
+}

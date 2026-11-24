@@ -8,10 +8,13 @@ import type {
   CommandSearchArgs,
   CreateNoteArgs,
   ErrorCode,
+  ExportPathArgs,
+  ExportPdfArgs,
   ExternalActionState,
   HideQuickBarArgs,
   HotkeyStatus,
   HotkeyUpdateArgs,
+  ImportPathArgs,
   InboxExtractArgs,
   IndexStatus,
   LibraryInfo,
@@ -275,4 +278,16 @@ export function terminalKill(args: TerminalKillArgs): Promise<void> {
 
 export function terminalListSessions(): Promise<TerminalSessionInfo[]> {
   return invoke<TerminalSessionInfo[]>('terminal_list_sessions');
+}
+
+export function settingsExport(args: ExportPathArgs): Promise<void> {
+  return invoke<void>('settings_export', { args });
+}
+
+export function settingsImport(args: ImportPathArgs): Promise<SettingsSnapshot> {
+  return invoke<SettingsSnapshot>('settings_import', { args });
+}
+
+export function noteExportPdf(args: ExportPdfArgs): Promise<void> {
+  return invoke<void>('note_export_pdf', { args });
 }

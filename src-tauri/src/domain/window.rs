@@ -206,3 +206,29 @@ impl WindowPolicyState {
         }
     }
 }
+
+/// Default auxiliary sidebar width percentage (`v4` §3.1).
+pub const DEFAULT_AUXILIARY_WIDTH_PERCENT: u8 = 45;
+
+/// Clamps auxiliary sidebar width percentage to `[30, 60]` (`v4` §3.1).
+pub fn clamp_auxiliary_width_percent(percent: u8) -> u8 {
+    percent.clamp(30, 60)
+}
+
+/// Computes the right-docked auxiliary window frame `(x, y, w, h)` in AppKit coordinates
+/// given the target screen's visible frame and desired width percentage (`v4` §3.1).
+pub fn compute_auxiliary_frame(
+    screen_x: f64,
+    screen_y: f64,
+    screen_w: f64,
+    screen_h: f64,
+    width_percent: u8,
+) -> (f64, f64, f64, f64) {
+    let clamped = clamp_auxiliary_width_percent(width_percent);
+    let w = (screen_w * (clamped as f64 / 100.0))
+        .round()
+        .max(480.0)
+        .min(screen_w);
+    let x = screen_x + (screen_w - w);
+    (x, screen_y, w, screen_h)
+}

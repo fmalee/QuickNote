@@ -22,9 +22,12 @@ import {
   externalActionRun,
   externalActionsResolve,
   isAppError,
+  noteExportPdf,
   notesGetRelated,
   pathComplete,
   searchSpotlight,
+  settingsExport,
+  settingsImport,
   tagsBatchRename,
   terminalKill,
   terminalListSessions,
@@ -193,6 +196,43 @@ describe('IPC smoke wrapper', () => {
     await terminalKill({ sessionId: 'term-1-1' });
     expect(mockInvoke).toHaveBeenCalledWith('terminal_kill', {
       args: { sessionId: 'term-1-1' },
+    });
+  });
+
+  it('invokes M4-01b settingsExport, settingsImport, and noteExportPdf wrappers', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await settingsExport({ destPath: '~/Desktop/quicknote-settings.yaml' });
+    expect(mockInvoke).toHaveBeenCalledWith('settings_export', {
+      args: { destPath: '~/Desktop/quicknote-settings.yaml' },
+    });
+
+    const snapshot = {
+      settings: {},
+      status: {
+        valid: true,
+        activeSource: 'file',
+        errorLine: null,
+        errorColumn: null,
+        errorMessage: null,
+      },
+    };
+    mockInvoke.mockResolvedValueOnce(snapshot);
+    const imported = await settingsImport({ srcPath: '~/Desktop/quicknote-settings.yaml' });
+    expect(imported).toEqual(snapshot);
+    expect(mockInvoke).toHaveBeenCalledWith('settings_import', {
+      args: { srcPath: '~/Desktop/quicknote-settings.yaml' },
+    });
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await noteExportPdf({
+      htmlDocument: '<html><body><h1>Hello</h1></body></html>',
+      destPath: '~/Desktop/note.pdf',
+    });
+    expect(mockInvoke).toHaveBeenCalledWith('note_export_pdf', {
+      args: {
+        htmlDocument: '<html><body><h1>Hello</h1></body></html>',
+        destPath: '~/Desktop/note.pdf',
+      },
     });
   });
 });
