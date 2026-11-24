@@ -4,11 +4,11 @@
 
 ## 1. 当前精确进度
 
-- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4 全部 7 张任务卡（`M4-01a`–`M4-06`）已全部合入 `dev`，进入 M4 独立只读审查与 1.0 全量实机点验阶段**。
+- **当前阶段**：M0–M3（`m3-baseline`）已收官；**M4 全部 7 张卡片与独立只读审查均已完成，待执行 `fix/M4-audit`（2 项 🔴 + 6 项 🟡 清零）与 1.0 全量实机点验**。
 - **已完成**：
   - M0–M3 全阶段（`m0-baseline` / `m1-baseline` / `m2-baseline` / `m3-baseline`）。
-  - M4 全部 7 张卡片：`M4-01a`（`e8c661e`）、`M4-01b`（`62e3d6c`）、`M4-02`（`8461999`）、`M4-03`（`342060b`）、`M4-04`（`f68542c`）、`M4-05`（`fcc91bb`）、`M4-06`（`67dd3a9`：万篇 FTS5 实测 2.7–6.1ms、本地搜索 3.17ms、原子保存 31.42ms，全部达标并收口 M2/M3 债务）。
-- **待执行**：另开独立只读审查会话审计 `git diff m3-baseline..dev`，分拣并完成必要修复后执行 1.0 全量 macOS 实机点验，最后打 `m4-baseline` / 确认 1.0 发版。
+  - M4 全部 7 张卡片（`M4-01a`–`M4-06`，万篇 FTS5 2.7–6.1ms 达标、M2/M3 债务清零）及 M4 独立只读审查与分拣（`M4-audit-fixes.md`）。
+- **待执行**：从 `dev` 拉取 `fix/M4-audit` 清零审查问题并跑通 `pnpm check:all`，随后执行 `C9.3` + M4 专项 1.0 实机点验并打 `m4-baseline`。
 
 ## 2. 跨里程碑挂起债务（拆卡必查）
 
@@ -19,7 +19,8 @@
 | `SettingsErrorBanner` “打开 `settings.yaml` 修复”按钮 | M0 审查 🟢#4 | **M3（已在 `M3-02` `455c2ee` 收口）** | 已在 `M3-01b` 落地 `$SETTINGS_YAML` 路由、`M3-02` 接入 `external_action_run`（`D-0008` / `v4` §4.7） |
 | `QuickBarView` 与 `bridge.m` 幂等双 `Esc` | M0 审查 🟢#4 | **保留现状** | 保持不动，避免破坏已实机通过的 Quick Bar 原生焦点与全屏行为 |
 | `collectTodoDecorations` 超长文档单遍扫描优化 | M2 审查 🟢#2 | **M4（已在 `M4-06` `67dd3a9` 收口）** | 已改为 $O(N)$ 单遍围栏扫描并补充 10,000 行大文档基准测试 |
-| 非 Markdown 轻量诊断多行启发式边界（Nginx/YAML） | M3 审查 🟢#5 | **M4（已在 `M4-06` `67dd3a9` 收口）** | 已微调 Nginx 多行指令与 YAML 块标量/跨行引号静态启发式 |
+| PDF 导出库内相对路径图片解析（`WKWebView` `baseURL` 沙箱评估） | M4 审查 🟢#1 | **M5（1.0 之后）** | 保持 1.0 离屏 `WKWebView` 最小沙箱面，M5 评估安全白名单内联 |
+| `check-architecture.mjs` 增加全仓 CSS Token 定义校验 | M4 审查 🟢#3 | **M5（1.0 之后）** | 随 M5 统一清理历史未定义 Token（M4 增量在 `fix/M4-audit` 清零） |
 
 ## 3. 已验证实机约定与踩坑备忘
 
@@ -40,5 +41,5 @@
 
 ## 5. 下一步动作
 
-1. 新开独立只读审查会话，对照 `spec/quicknote-design-v4.md`、`spec/engineering-contract.md`、`DECISIONS.md` 增量审查 `git diff m3-baseline..dev`，将报告回传本主控会话分拣。
-2. 完成审查修复（如有）及 `C9.3` + M4 专项全量 macOS 实机点验，收官打 `m4-baseline` 标签并确认 1.0 发布事宜。
+1. 新开独立施工会话，从 `dev` 拉取 `fix/M4-audit` 执行 `spec/cards/M4-audit-fixes.md`（清零 2 项 🔴 + 6 项 🟡 + 真实 `MergeView` 烟测）。
+2. `fix/M4-audit` 合入 `dev` 后执行 `C9.3` + M4 专项全量 macOS 实机点验，确认无误后打 `m4-baseline` 并安排 1.0 发布。
