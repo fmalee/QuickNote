@@ -4,7 +4,7 @@
 
 ---
 
-## 1. M4 阶段任务卡（7 卡完工 + 独立只读审查完成 · 待执行 `fix/M4-audit`）
+## 1. M4 阶段任务卡（7 卡 + 独立只读审查 + `fix/M4-audit` 全部完工 · 待 1.0 实机点验）
 
 > 阶段目标：100% 补齐 `C4.2` 标为 `M4` 的全部 9 条 IPC 命令（`terminal_spawn`、`terminal_write`、`terminal_resize`、`terminal_set_visibility`、`terminal_kill`、`terminal_list_sessions`、`settings_export`、`settings_import`、`note_export_pdf`）与 `C4.3` 流式通道/事件（`Channel<TerminalData>`、`terminal:session-state`、`terminal:exit`）；落地内嵌 `xterm.js` + `portable-pty` 终端全链路（每工作区 1 会话/全局上限 3、折叠保活 + 1MB 环形缓冲、10MB 背压暂停、`tcgetpgrp` 前台子进程指示点 `●`、无前台子进程闲置 30 分钟自动回收、`SIGHUP→SIGKILL` 零僵尸、`⌥⌘C` 显式吞键与 `⌘C` 有无选区分流）；交付 CM6 `MergeView` 冲突并排合并、复制为富文本（双 MIME）与原生离屏 `WKWebView` 导出 PDF、设置窗口配置导入导出、45% 侧栏辅助窗口模式（`WindowMode::Auxiliary`）与全屏工作台完善；完成万篇文档 FTS5 `< 50ms` 压测、收口 M2 `collectTodoDecorations` 单遍扫描与 M3 Nginx/YAML 多行诊断债务，并执行 1.0 发布前核验。
 
@@ -19,7 +19,7 @@ M4 阶段共拆分为 7 张轻量、自包含、严格串行推进的任务卡�
 | 5 | [M4-04-rich-text-pdf-export-and-settings-backup-ui.md](M4-04-rich-text-pdf-export-and-settings-backup-ui.md) | 复制为富文本（双 MIME HTML+纯文本）、打印级 PDF 导出弹窗、设置窗口备份导入导出与内嵌终端参数配置 | `C1.2`、`C2.2`、`C2.3`、`C4.2`、`C6.2`、`C7.1`、`C7.2`、`D-0008`、`v4` §5.5 / §5.11；消费 `note_export_pdf`、`settings_export`、`settings_import` | **已完成（`f68542c`）** |
 | 6 | [M4-05-auxiliary-window-mode-and-fullscreen-workbench.md](M4-05-auxiliary-window-mode-and-fullscreen-workbench.md) | 45% 侧栏辅助窗口前端形态（隐藏导航+覆盖式抽屉）、`window.toggleAuxiliary` 菜单/设置联动与全屏工作台完善 | `C1.2`、`C2.2`、`C4.2`、`C4.3`、`C6.2`、`C6.3`、`C7.1`–`C7.4`、`C9.3`、`D-0003`、`v4` §3.1 / §3.2 / §5.8 | **已完成（`fcc91bb`）** |
 | 7 | [M4-06-performance-benchmark-debt-cleanup-and-v1-readiness.md](M4-06-performance-benchmark-debt-cleanup-and-v1-readiness.md) | 万篇文档 FTS5 `< 50ms` 性能压测、`collectTodoDecorations` 单遍扫描与 Nginx/YAML 诊断债务收口、1.0 发布前核验 | `C2.3`、`C5.3`、`C9.1`–`C9.3`、`v4` §5.12–§5.14；收口 M2 🟢#2 与 M3 🟢#5 挂起债务 | **已完成（`67dd3a9`）** |
-| 8 | [M4-audit-fixes.md](M4-audit-fixes.md) | M4 独立只读审查问题清零（2 项 🔴 阻断 + 6 项 🟡 边界隐患 + 真实 `MergeView` 烟测） | `C2.1`、`C4.2`、`C6.2`、`C6.3`、`C7.1`、`C8.5`、`C8.7`、`D-0003`、`D-0005`、`D-0008` | **待执行（`fix/M4-audit`）** |
+| 8 | [M4-audit-fixes.md](M4-audit-fixes.md) | M4 独立只读审查问题清零（2 项 🔴 阻断 + 6 项 🟡 边界隐患 + 真实 `MergeView` 烟测） | `C2.1`、`C4.2`、`C6.2`、`C6.3`、`C7.1`、`C8.5`、`C8.7`、`D-0003`、`D-0005`、`D-0008` | **已完成（`6cf8114`）** |
 
 ---
 
