@@ -42,13 +42,16 @@
      - 确认 CSP 严格配置、生产构建关闭 DevTools（不启用 `devtools` feature）、无遥测上报；
      - 确认 `src-tauri/capabilities/default.json` 仍维持最小权限集 `["core:default"]`；
      - 确认 `bundle` 配置就绪（保留 `active: false` 或按 `tauri.conf.json` 安全打包元信息核查，**不擅自把版本号改为 `1.0.0`**——版本号变更若需升级由用户在最终发布前拍板，本卡只确保构建与 `tauri.conf.json` 合法零告警）。
-   - 执行全仓静态隐私与安全自检（复核 `C2.3` 日志脱敏、无调试残留 `console.log`、无测试遗留临时文件），确保 `pnpm build` 与 `pnpm check:all` 全绿。
+   - 执行全仓静态隐私与安全自检（复核 `C2.3` 日志脱敏、无调试残留 `console.log`、无测试遗留临时文件），并顺手在 `src/styles/tokens.css` 补全 `--qn-radius-full: 9999px;`（`M4-02` 终端运行指示点 `●` 使用了 `var(--qn-radius-full)`，补全后确保圆点为正圆），确保 `pnpm build` 与 `pnpm check:all` 全绿。
 
 ### 明确不做
 - 不擅自改动产品功能交互或版本号（`0.1.0 → 1.0.0` 留待 M4 独立审查通过与实机全量点验后再由用户确认打 `v1.0.0`）。
 - 不把动态生成的万篇压测样本提交进仓库。
 
 ## 2. 允许修改文件白名单
+
+### 共享串行文件（`C1.3` 显式声明）
+- `src/styles/tokens.css`（仅补全 `--qn-radius-full: 9999px;`）
 
 ### 业务与测试文件
 - `src/features/editor/extensions/markdownTodo.ts`
