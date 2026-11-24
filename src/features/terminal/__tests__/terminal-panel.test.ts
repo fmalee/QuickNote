@@ -10,6 +10,7 @@ import type {
 } from '@/bindings/types';
 
 const {
+  mockExternalActionRun,
   mockTerminalSpawn,
   mockTerminalWrite,
   mockTerminalResize,
@@ -24,6 +25,7 @@ const {
   const stateHandlers: Array<(info: TerminalSessionInfo) => void> = [];
   const exitHandlers: Array<(payload: TerminalExitPayload) => void> = [];
   return {
+    mockExternalActionRun: vi.fn(),
     mockTerminalSpawn: vi.fn(),
     mockTerminalWrite: vi.fn(),
     mockTerminalResize: vi.fn(),
@@ -49,6 +51,7 @@ vi.mock('@/lib/ipc/commands', () => ({
   },
   isAppError: (err: unknown): err is { code: string; message: string } =>
     typeof err === 'object' && err !== null && 'code' in err && 'message' in err,
+  externalActionRun: mockExternalActionRun,
   terminalSpawn: mockTerminalSpawn,
   terminalWrite: mockTerminalWrite,
   terminalResize: mockTerminalResize,
@@ -70,6 +73,7 @@ import {
   resolveTerminalLaunchContext,
   useTerminalStore,
 } from '@/features/terminal';
+import { handleTerminalCustomKeyEvent } from '../store';
 import { createActionRegistry, registerDefaultActionCatalog } from '@/lib/actions';
 
 function makeDoc(
@@ -130,6 +134,7 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
     exitListeners.length = 0;
     vi.clearAllMocks();
 
+    mockExternalActionRun.mockResolvedValue(undefined);
     mockTerminalSpawn.mockResolvedValue({
       sessionId: 'term-1-1',
       workspaceKey: 'quicknote',
@@ -320,6 +325,7 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
 
     const pausedHtml = await renderTerminalPanelHtml();
     expect(pausedHtml).toContain('data-testid="terminal-output-paused-banner"');
+    expect(pausedHtml).toContain('qn-banner--warning');
     expect(pausedHtml).toContain('输出过大，已暂停显示');
     expect(pausedHtml).toContain('data-testid="terminal-resume-output-btn"');
 
@@ -536,5 +542,79 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
     });
     expect(store.sessions['term-ws-a']?.state).toBe('hidden_alive');
     expect(store.sessions['term-ws-b']?.state).toBe('active');
+  });
+
+  it('9. Cmd+V 交由原生 paste 链路：不阻止默认事件且不调用 navigator.clipboard.readText()', () => {
+    const readTextSpy = vi.fn();
+    vi.stubGlobal('navigator', { clipboard: { readText: readTextSpy } });
+    try {
+      const preventDefault = vi.fn();
+      const stopPropagation = vi.fn();
+      const copySelection = vi.fn();
+
+      const event = {
+        type: 'keydown',
+        key: 'v',
+        metaKey: true,
+        altKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        preventDefault,
+        stopPropagation,
+      };
+
+      expect(evaluateTerminalKeyEvent(event, false)).toBe('paste_clipboard');
+      const passToXterm = handleTerminalCustomKeyEvent(event, false, { copySelection });
+
+      expect(passToXterm).toBe(false);
+      expect(preventDefault).not.toHaveBeenCalled();
+      expect(stopPropagation).not.toHaveBeenCalled();
+      expect(copySelection).not.toHaveBeenCalled();
+      expect(readTextSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('10. 外部终端按钮：活跃会话直接携带 cwd 调用 external_action_run，失败时在 danger 横幅展示提示', async () => {
+    const store = useTerminalStore();
+
+    // 无活跃会话且无可用 cwd 时，写入明确错误提示而非静默无反应
+    const noDirOk = await store.openExternalTerminalForActiveSession();
+    expect(noDirOk).toBe(false);
+    expect(store.errorMessage).toContain('未解析到可用目录');
+    expect(mockExternalActionRun).not.toHaveBeenCalled();
+
+    // 启动活跃会话后，直接携带 activeSession.cwd 调用 external_action_run
+    await store.spawnOrFocusContext({
+      workspaceKey: 'quicknote',
+      workspaceLabel: 'QuickNote',
+      cwd: '/repos/quicknote/scripts',
+      source: 'workspace-terminal-dir',
+    });
+
+    const ok = await store.openExternalTerminalForActiveSession();
+    expect(ok).toBe(true);
+    expect(store.errorMessage).toBeNull();
+    expect(mockExternalActionRun).toHaveBeenCalledWith({
+      id: 'external.terminal',
+      absPath: null,
+      dirPath: '/repos/quicknote/scripts',
+    });
+
+    // 模拟未安装 iTerm2 等外部终端缺失错误，验证顶部 danger 横幅展示可读提示
+    mockExternalActionRun.mockRejectedValueOnce({
+      code: 'externalAppMissing',
+      message: 'iTerm',
+    });
+    const failedOk = await store.openExternalTerminalForActiveSession();
+    expect(failedOk).toBe(false);
+    expect(store.errorMessage).toContain('iTerm');
+    expect(store.errorMessage).toContain('设置 > 外部与搜索 > 外部终端');
+
+    const errorHtml = await renderTerminalPanelHtml();
+    expect(errorHtml).toContain('data-testid="terminal-error-banner"');
+    expect(errorHtml).toContain('qn-banner--danger');
+    expect(errorHtml).toContain('设置 &gt; 外部与搜索 &gt; 外部终端');
   });
 });

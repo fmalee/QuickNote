@@ -4,10 +4,8 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { QnBanner, QnButton } from '@/components';
-import { useEditorTabsStore } from '@/features/editor';
 import { useSettingsStore } from '@/features/settings';
-import { actionRegistry } from '@/lib/actions';
-import { evaluateTerminalKeyEvent, useTerminalStore } from './store';
+import { handleTerminalCustomKeyEvent, useTerminalStore } from './store';
 import { buildTerminalTheme, observeTerminalThemeChange } from './theme';
 
 interface MountedXtermInstance {
@@ -25,7 +23,6 @@ interface MountedXtermInstance {
 const RESIZE_DEBOUNCE_MS = 50;
 
 const terminalStore = useTerminalStore();
-const editorTabsStore = useEditorTabsStore();
 const settingsStore = useSettingsStore();
 
 const containerElements = new Map<string, HTMLElement>();
@@ -47,7 +44,6 @@ const canCreateNewSession = computed<boolean>(() => {
   );
   return !hasSameWorkspace && Boolean(launchContext.value.cwd);
 });
-const hasActiveDoc = computed<boolean>(() => Boolean(editorTabsStore.activeDoc));
 
 function setContainerRef(sessionId: string, el: unknown): void {
   if (el instanceof HTMLElement) {
@@ -125,44 +121,13 @@ function ensureInstanceMounted(sessionId: string, container: HTMLElement): void 
     return;
   }
 
-  term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
-    const decision = evaluateTerminalKeyEvent(event, term.hasSelection());
-    if (decision === 'swallow_alt_cmd_c') {
-      if (event.type === 'keydown') {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-      return false;
-    }
-    if (decision === 'copy_selection') {
-      if (event.type === 'keydown') {
-        event.preventDefault();
-        event.stopPropagation();
+  term.attachCustomKeyEventHandler((event: KeyboardEvent) =>
+    handleTerminalCustomKeyEvent(event, term.hasSelection(), {
+      copySelection: () => {
         void terminalStore.copyActiveSelection();
-      }
-      return false;
-    }
-    if (decision === 'pass_cmd_c_no_selection') {
-      return false;
-    }
-    if (decision === 'paste_clipboard') {
-      if (
-        event.type === 'keydown' &&
-        typeof navigator !== 'undefined' &&
-        typeof navigator.clipboard?.readText === 'function'
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        void terminalStore.pasteFromClipboardToSession(sessionId);
-        return false;
-      }
-      return true;
-    }
-    if (decision === 'pass_to_outer_actions') {
-      return false;
-    }
-    return true;
-  });
+      },
+    }),
+  );
 
   const disposeData = term.onData((data) => {
     void terminalStore.sendInput(sessionId, data);
@@ -252,16 +217,7 @@ async function handleResumePausedOutput(): Promise<void> {
 }
 
 async function openExternalTerminal(): Promise<void> {
-  const activeDoc = editorTabsStore.activeDoc;
-  const relPath = activeDoc?.relPath ?? '';
-  await actionRegistry.executeById('external.terminal', {
-    activeScope: 'main-window',
-    activeScopes: ['main-window', 'global'],
-    hasActiveDoc: Boolean(activeDoc),
-    hasSelection: Boolean(editorTabsStore.activeTab?.hasSelection),
-    isMarkdown: relPath.toLowerCase().endsWith('.md'),
-    isInbox: relPath === 'inbox.md',
-  });
+  await terminalStore.openExternalTerminalForActiveSession();
 }
 
 watch(
@@ -359,7 +315,6 @@ onUnmounted(() => {
         <button
           type="button"
           class="qn-terminal-panel__icon-btn"
-          :disabled="!hasActiveDoc"
           title="在外部终端打开 (⌥⌘T)"
           data-testid="terminal-open-external-btn"
           @click="openExternalTerminal"
@@ -411,7 +366,7 @@ onUnmounted(() => {
     <!-- 错误提示横幅 -->
     <QnBanner
       v-if="terminalStore.errorMessage"
-      variant="error"
+      tone="danger"
       class="qn-terminal-panel__banner"
       data-testid="terminal-error-banner"
     >
@@ -424,7 +379,7 @@ onUnmounted(() => {
     <!-- 10MB 背压暂停横幅 -->
     <QnBanner
       v-if="activeSession?.outputPaused"
-      variant="warning"
+      tone="warning"
       class="qn-terminal-panel__banner"
       data-testid="terminal-output-paused-banner"
     >
@@ -579,6 +534,11 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--qn-border-subtle);
   background-color: var(--qn-bg-sidebar);
   overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.qn-terminal-panel__session-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .qn-terminal-panel__session-chip {
@@ -668,5 +628,13 @@ onUnmounted(() => {
   min-height: 0;
   padding: var(--qn-space-1) var(--qn-space-2);
   overflow: hidden;
+}
+
+.qn-terminal-panel__xterm-host :deep(.xterm-viewport) {
+  scrollbar-width: none;
+}
+
+.qn-terminal-panel__xterm-host :deep(.xterm-viewport::-webkit-scrollbar) {
+  display: none;
 }
 </style>

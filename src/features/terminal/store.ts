@@ -15,6 +15,7 @@ import {
   extractTerminalErrorMessage,
   killTerminalSession,
   listTerminalSessions,
+  openExternalTerminalAtDir,
   resizeTerminalPty,
   setTerminalVisibility,
   spawnTerminalSession,
@@ -590,6 +591,24 @@ export const useTerminalStore = defineStore('terminal', () => {
     return true;
   }
 
+  async function openExternalTerminalForActiveSession(): Promise<boolean> {
+    const targetDir =
+      normalizeNonEmpty(activeSession.value?.cwd) ??
+      normalizeNonEmpty(getCurrentLaunchContext().cwd);
+    if (!targetDir) {
+      errorMessage.value = '未解析到可用目录，请先在设置中配置工作区或为文档配置 open_dir';
+      return false;
+    }
+    errorMessage.value = null;
+    try {
+      await openExternalTerminalAtDir(targetDir);
+      return true;
+    } catch (error) {
+      errorMessage.value = extractTerminalErrorMessage(error);
+      return false;
+    }
+  }
+
   function clearNotice(): void {
     errorMessage.value = null;
     recycledNotice.value = null;
@@ -627,6 +646,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     setHasSelection,
     copyActiveSelection,
     pasteFromClipboardToSession,
+    openExternalTerminalForActiveSession,
     clearNotice,
   };
 });
@@ -670,7 +690,7 @@ export function evaluateTerminalKeyEvent(
     return hasSelection ? 'copy_selection' : 'pass_cmd_c_no_selection';
   }
 
-  // ⌘V：粘贴系统剪贴板文本写入 PTY
+  // ⌘V：交由浏览器/WKWebView 原生 paste 事件直贴 xterm，不触发 navigator.clipboard.readText()
   if (event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && key === 'v') {
     return 'paste_clipboard';
   }
@@ -691,4 +711,44 @@ export function evaluateTerminalKeyEvent(
   }
 
   return 'pass_to_xterm';
+}
+
+export interface TerminalCustomKeyEventInput extends TerminalKeyEventLike {
+  preventDefault: () => void;
+  stopPropagation: () => void;
+}
+
+export interface TerminalCustomKeyCallbacks {
+  copySelection: () => void;
+}
+
+export function handleTerminalCustomKeyEvent(
+  event: TerminalCustomKeyEventInput,
+  hasSelection: boolean,
+  callbacks: TerminalCustomKeyCallbacks,
+): boolean {
+  const decision = evaluateTerminalKeyEvent(event, hasSelection);
+  if (decision === 'swallow_alt_cmd_c') {
+    if (event.type === 'keydown') {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    return false;
+  }
+  if (decision === 'copy_selection') {
+    if (event.type === 'keydown') {
+      event.preventDefault();
+      event.stopPropagation();
+      callbacks.copySelection();
+    }
+    return false;
+  }
+  if (
+    decision === 'pass_cmd_c_no_selection' ||
+    decision === 'paste_clipboard' ||
+    decision === 'pass_to_outer_actions'
+  ) {
+    return false;
+  }
+  return true;
 }

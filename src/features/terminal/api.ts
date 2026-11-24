@@ -10,6 +10,7 @@ import type {
 } from '@/bindings/types';
 import {
   Channel,
+  externalActionRun,
   isAppError,
   terminalKill,
   terminalListSessions,
@@ -49,6 +50,14 @@ export function listTerminalSessions(): Promise<TerminalSessionInfo[]> {
   return terminalListSessions();
 }
 
+export function openExternalTerminalAtDir(dirPath: string): Promise<void> {
+  return externalActionRun({
+    id: 'external.terminal',
+    absPath: null,
+    dirPath,
+  });
+}
+
 export function subscribeTerminalSessionState(
   handler: (info: TerminalSessionInfo) => void,
 ): Promise<UnlistenFn> {
@@ -68,6 +77,17 @@ export function extractTerminalErrorMessage(error: unknown): string {
     }
     if (error.code === 'terminalSpawnFailed') {
       return `启动终端失败：${error.message}`;
+    }
+    if (error.code === 'externalAppMissing') {
+      const detail = error.message.trim();
+      return detail.length > 0
+        ? `未找到已配置的外部终端（${detail}），请在「设置 > 外部与搜索 > 外部终端」中切换或检查配置`
+        : '未找到已配置的外部终端，请在「设置 > 外部与搜索 > 外部终端」中切换或检查配置';
+    }
+    if (error.code === 'workspaceDirMissing' || error.code === 'notFound') {
+      return error.message.trim().length > 0
+        ? error.message
+        : '目标目录不存在或不可访问，请检查工作区或文档 open_dir 配置';
     }
     return error.message;
   }
