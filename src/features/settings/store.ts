@@ -14,9 +14,11 @@ import { applyThemeToDocument } from '@/lib/utils';
 import {
   changeLibraryRoot,
   createTemplateNote,
+  exportSettingsBackup,
   extractSettingsErrorMessage,
   fetchSettingsSnapshot,
   fetchUiState,
+  importSettingsBackup,
   listTemplateNotes,
   saveSettingsPatch,
   subscribeSettingsStatus,
@@ -45,6 +47,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const hotkeyError = ref<string | null>(null);
   const templates = ref<NoteSummary[]>([]);
   const loadingTemplates = ref<boolean>(false);
+  const backupBusy = ref<boolean>(false);
+  const backupError = ref<string | null>(null);
+  const backupSuccess = ref<string | null>(null);
 
   let unlistenStatus: UnlistenFn | null = null;
   let unlistenWindowState: UnlistenFn | null = null;
@@ -248,6 +253,56 @@ export const useSettingsStore = defineStore('settings', () => {
     return switchHotkey(PRIMARY_HOTKEY_COMBO);
   }
 
+  async function exportSettings(destPath: string): Promise<boolean> {
+    const trimmed = destPath.trim();
+    if (!trimmed) {
+      backupError.value = '导出路径不能为空。';
+      backupSuccess.value = null;
+      return false;
+    }
+
+    backupBusy.value = true;
+    backupError.value = null;
+    backupSuccess.value = null;
+    try {
+      await exportSettingsBackup(trimmed);
+      backupSuccess.value = `配置备份已导出至 ${trimmed}`;
+      return true;
+    } catch (error) {
+      backupError.value = extractSettingsErrorMessage(error);
+      return false;
+    } finally {
+      backupBusy.value = false;
+    }
+  }
+
+  async function importSettings(srcPath: string): Promise<boolean> {
+    const trimmed = srcPath.trim();
+    if (!trimmed) {
+      backupError.value = '导入路径不能为空。';
+      backupSuccess.value = null;
+      return false;
+    }
+
+    backupBusy.value = true;
+    backupError.value = null;
+    backupSuccess.value = null;
+    try {
+      const imported = await importSettingsBackup(trimmed);
+      snapshot.value = imported;
+      applyThemeLocal(imported.settings.editor.theme);
+      saveError.value = null;
+      lastSavedAt.value = Date.now();
+      backupSuccess.value = '配置已成功导入并热更新生效。';
+      return true;
+    } catch (error) {
+      backupError.value = extractSettingsErrorMessage(error);
+      return false;
+    } finally {
+      backupBusy.value = false;
+    }
+  }
+
   function dispose(): void {
     if (unlistenStatus) {
       unlistenStatus();
@@ -272,12 +327,17 @@ export const useSettingsStore = defineStore('settings', () => {
     hotkeyError,
     templates,
     loadingTemplates,
+    backupBusy,
+    backupError,
+    backupSuccess,
     loadStatus,
     isSettingsInvalid,
     isHotkeyConflict,
     isUsingBackupHotkey,
     setTheme,
     patchSettings,
+    exportSettings,
+    importSettings,
     loadTemplates,
     addTemplate,
     updateLibraryRoot,

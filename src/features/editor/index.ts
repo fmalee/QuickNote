@@ -3,6 +3,7 @@ export { default as DocPropertiesPopover } from './DocPropertiesPopover.vue';
 export { default as EditorConflictBanner } from './EditorConflictBanner.vue';
 export { default as EditorMergeView } from './EditorMergeView.vue';
 export { default as EditorTabBar } from './EditorTabBar.vue';
+export { default as ExportPdfModal } from './ExportPdfModal.vue';
 export { default as InboxBloatBanner } from './InboxBloatBanner.vue';
 export { default as InboxExtractModal } from './InboxExtractModal.vue';
 export { default as MarkdownEditor } from './MarkdownEditor.vue';
@@ -90,6 +91,15 @@ export {
   type FileIndentation,
   getStreamLanguageExtension,
 } from './extensions/codeLanguages';
+export {
+  buildDefaultPdfExportPath,
+  buildPlainTextFallback,
+  buildPrintHtmlDocument,
+  copyMarkdownAsRichText,
+  escapeHtml,
+  renderMarkdownToRichHtml,
+  sanitizeHref,
+} from './export/markdownExport';
 export {
   DIAGNOSTICS_MAX_BYTES,
   diagnosticsField,

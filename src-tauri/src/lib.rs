@@ -117,6 +117,8 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
                 .build(app)?,
         )
         .separator()
+        .item(&MenuItemBuilder::with_id("editor.exportPdf", "导出为 PDF…").build(app)?)
+        .separator()
         .item(&MenuItemBuilder::with_id("menu_hide_window", "关闭窗口").build(app)?)
         .build()?;
 
@@ -126,6 +128,7 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         .separator()
         .item(&PredefinedMenuItem::cut(app, Some("剪切"))?)
         .item(&PredefinedMenuItem::copy(app, Some("复制"))?)
+        .item(&MenuItemBuilder::with_id("editor.copyRichText", "复制为富文本").build(app)?)
         .item(&PredefinedMenuItem::paste(app, Some("粘贴"))?)
         .item(&PredefinedMenuItem::select_all(app, Some("全选"))?)
         .build()?;
@@ -358,6 +361,8 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
             | "editor.heading4"
             | "editor.heading5"
             | "editor.heading6"
+            | "editor.copyRichText"
+            | "editor.exportPdf"
             | "panel.toggle.outline"
             | "panel.toggle.related"
             | "panel.toggle.recent"

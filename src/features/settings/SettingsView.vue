@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { QnBadge, QnBanner, QnButton, QnPanelCard } from '@/components';
+import { computed, ref } from 'vue';
+import { QnBadge, QnBanner, QnButton, QnInput, QnPanelCard } from '@/components';
 import { formatHotkeyCombo } from '@/lib/utils';
 import SettingsAppearancePanel from './SettingsAppearancePanel.vue';
 import SettingsErrorBanner from './SettingsErrorBanner.vue';
@@ -12,6 +12,16 @@ import VisualBaselinePreview from './VisualBaselinePreview.vue';
 import { BACKUP_HOTKEY_COMBO, type SettingsSection, useSettingsStore } from './store';
 
 const store = useSettingsStore();
+const exportPathDraft = ref('~/Desktop/quicknote-settings-backup.yaml');
+const importPathDraft = ref('');
+
+async function handleExportSettings(): Promise<void> {
+  await store.exportSettings(exportPathDraft.value);
+}
+
+async function handleImportSettings(): Promise<void> {
+  await store.importSettings(importPathDraft.value);
+}
 
 const sections: { id: SettingsSection; label: string }[] = [
   { id: 'general', label: '通用与热键' },
@@ -192,6 +202,76 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
             </div>
           </div>
         </QnPanelCard>
+
+        <QnPanelCard
+          title="配置备份与恢复"
+          subtitle="导出 settings.yaml 备份或从已有 YAML 文件恢复配置"
+          data-testid="settings-backup-card"
+        >
+          <div class="qn-settings__backup-stack">
+            <div class="qn-settings__backup-row">
+              <QnInput
+                v-model="exportPathDraft"
+                label="导出备份路径"
+                placeholder="~/Desktop/quicknote-settings-backup.yaml"
+                monospace
+                :disabled="store.backupBusy"
+                data-testid="settings-export-path-input"
+              />
+              <QnButton
+                variant="secondary"
+                size="sm"
+                :loading="store.backupBusy"
+                data-testid="settings-export-btn"
+                @click="handleExportSettings"
+              >
+                导出配置备份
+              </QnButton>
+            </div>
+
+            <div class="qn-settings__backup-row">
+              <QnInput
+                v-model="importPathDraft"
+                label="导入备份路径"
+                placeholder="~/Desktop/quicknote-settings-backup.yaml"
+                monospace
+                :disabled="store.backupBusy"
+                data-testid="settings-import-path-input"
+              />
+              <QnButton
+                variant="primary"
+                size="sm"
+                :loading="store.backupBusy"
+                data-testid="settings-import-btn"
+                @click="handleImportSettings"
+              >
+                导入并恢复配置
+              </QnButton>
+            </div>
+
+            <p class="qn-settings__backup-hint">
+              导入前将自动备份当前配置至 backups/，格式错误不会覆盖现有文件
+            </p>
+
+            <QnBanner
+              v-if="store.backupError"
+              tone="danger"
+              title="备份操作失败"
+              data-testid="settings-backup-error"
+            >
+              {{ store.backupError }}
+            </QnBanner>
+
+            <QnBanner
+              v-if="store.backupSuccess"
+              tone="success"
+              title="操作成功"
+              data-testid="settings-backup-success"
+            >
+              {{ store.backupSuccess }}
+            </QnBanner>
+          </div>
+        </QnPanelCard>
       </section>
 
       <section v-else-if="store.activeSection === 'appearance'" class="qn-settings__section">
@@ -335,5 +415,24 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
 .qn-settings__save-bar {
   display: flex;
   justify-content: flex-end;
+}
+
+.qn-settings__backup-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qn-space-3);
+}
+
+.qn-settings__backup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--qn-space-3);
+}
+
+.qn-settings__backup-hint {
+  margin: 0;
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-secondary);
 }
 </style>

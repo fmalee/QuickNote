@@ -1,6 +1,7 @@
 import type {
   ExternalActionState,
   ExternalChangeEvent,
+  ExportPdfArgs,
   InboxExtractArgs,
   NoteDoc,
   NoteSummary,
@@ -22,6 +23,7 @@ import {
   externalActionsResolve,
   inboxExtractToNote,
   isAppError,
+  noteExportPdf,
   noteRead,
   noteSaveImage,
   noteUpdateMeta,
@@ -67,6 +69,10 @@ export function resolveExternalActions(args: ResolveExternalArgs): Promise<Exter
 
 export function runExternalAction(args: RunExternalArgs): Promise<void> {
   return externalActionRun(args);
+}
+
+export function exportNotePdf(args: ExportPdfArgs): Promise<void> {
+  return noteExportPdf(args);
 }
 
 export function listTemplates(): Promise<NoteSummary[]> {

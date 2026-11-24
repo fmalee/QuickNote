@@ -36,9 +36,15 @@ const terminalForm = reactive<ExternalAppConfig>({
 
 const vscodeForm = reactive<ExternalAppConfig>({ ...DEFAULT_VSCODE });
 const sublimeForm = reactive<ExternalAppConfig>({ ...DEFAULT_SUBLIME });
+const embeddedTerminalForm = reactive({
+  shell: '/bin/zsh',
+  idleRecycleMinutes: '30',
+  maxConcurrentSessions: '3',
+});
 
 const newSearchRoot = ref('');
 const terminalError = ref<string | null>(null);
+const embeddedTerminalError = ref<string | null>(null);
 const editorsError = ref<string | null>(null);
 const searchRootsError = ref<string | null>(null);
 
@@ -56,6 +62,11 @@ watch(
     vscodeForm.bundleId = settings.editors.vscode.bundleId;
     sublimeForm.name = settings.editors.sublime.name;
     sublimeForm.bundleId = settings.editors.sublime.bundleId;
+    embeddedTerminalForm.shell = settings.panels.terminal.shell;
+    embeddedTerminalForm.idleRecycleMinutes = String(settings.panels.terminal.idleRecycleMinutes);
+    embeddedTerminalForm.maxConcurrentSessions = String(
+      settings.panels.terminal.maxConcurrentSessions,
+    );
   },
   { immediate: true, deep: true },
 );
@@ -86,6 +97,38 @@ async function saveTerminalConfig(): Promise<void> {
   }
   terminalError.value = null;
   await store.patchSettings({ terminal: { name, bundleId } });
+}
+
+async function saveEmbeddedTerminalConfig(): Promise<void> {
+  if (store.isSettingsInvalid) {
+    embeddedTerminalError.value = SETTINGS_READONLY_ERROR;
+    return;
+  }
+  const shell = embeddedTerminalForm.shell.trim();
+  if (!shell) {
+    embeddedTerminalError.value = '登录 Shell 路径不能为空。';
+    return;
+  }
+  const idleRaw = Number(embeddedTerminalForm.idleRecycleMinutes);
+  const idleRecycleMinutes = Number.isFinite(idleRaw) ? Math.max(0, Math.round(idleRaw)) : 30;
+  const maxRaw = Number(embeddedTerminalForm.maxConcurrentSessions);
+  const maxConcurrentSessions = Number.isFinite(maxRaw)
+    ? Math.min(6, Math.max(1, Math.round(maxRaw)))
+    : 3;
+
+  embeddedTerminalForm.idleRecycleMinutes = String(idleRecycleMinutes);
+  embeddedTerminalForm.maxConcurrentSessions = String(maxConcurrentSessions);
+  embeddedTerminalError.value = null;
+
+  await store.patchSettings({
+    panels: {
+      terminal: {
+        shell,
+        idleRecycleMinutes,
+        maxConcurrentSessions,
+      },
+    },
+  });
 }
 
 function resetVscodeDefault(): void {
@@ -227,6 +270,50 @@ async function removeSearchRoot(target: string): Promise<void> {
             保存终端配置
           </QnButton>
         </div>
+      </div>
+    </QnPanelCard>
+
+    <QnPanelCard
+      title="内嵌终端面板配置"
+      subtitle="配置右侧内置终端的登录 Shell、闲置回收与并发会话上限"
+      data-testid="settings-terminal-panel-card"
+    >
+      <div class="qn-external-panel__stack">
+        <QnInput
+          v-model="embeddedTerminalForm.shell"
+          label="登录 Shell 路径"
+          placeholder="/bin/zsh"
+          monospace
+          :disabled="store.isSettingsInvalid"
+          data-testid="embedded-terminal-shell-input"
+          @change="saveEmbeddedTerminalConfig"
+        />
+
+        <div class="qn-external-panel__grid">
+          <QnInput
+            v-model="embeddedTerminalForm.idleRecycleMinutes"
+            type="number"
+            min="0"
+            label="隐藏闲置自动回收（分钟，0 表示禁用自动回收）"
+            :disabled="store.isSettingsInvalid"
+            data-testid="embedded-terminal-idle-input"
+            @change="saveEmbeddedTerminalConfig"
+          />
+          <QnInput
+            v-model="embeddedTerminalForm.maxConcurrentSessions"
+            type="number"
+            min="1"
+            max="6"
+            label="全局最大并发会话数（1–6）"
+            :disabled="store.isSettingsInvalid"
+            data-testid="embedded-terminal-max-sessions-input"
+            @change="saveEmbeddedTerminalConfig"
+          />
+        </div>
+
+        <p v-if="embeddedTerminalError" class="qn-external-panel__error" role="alert">
+          {{ embeddedTerminalError }}
+        </p>
       </div>
     </QnPanelCard>
 

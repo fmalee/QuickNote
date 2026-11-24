@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import type { NoteMetaPatch, NoteType } from '@/bindings/types';
-import { QnBadge, QnButton, QnContextMenu, QnModalShell } from '@/components';
+import {
+  type ContextMenuEntry,
+  QnBadge,
+  QnButton,
+  QnContextMenu,
+  QnModalShell,
+} from '@/components';
+import { actionRegistry } from '@/lib/actions';
 import DocPropertiesPopover from './DocPropertiesPopover.vue';
+import { copyMarkdownAsRichText } from './export/markdownExport';
 import { needsExternalFrontmatterConfirm, useEditorTabsStore } from './store';
 import { isExternalActionId, useExternalActions } from './useExternalActions';
 
@@ -14,6 +22,10 @@ const tagInputDraft = ref('');
 const propertiesOpen = ref(false);
 const externalMenuOpen = ref(false);
 const externalMenuPos = ref({ x: 0, y: 0 });
+const moreMenuOpen = ref(false);
+const moreMenuPos = ref({ x: 0, y: 0 });
+const copyFeedbackText = ref<string | null>(null);
+let copyFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 const externalConfirmOpen = ref(false);
 const pendingAction = ref<
   { kind: 'open-properties' } | { kind: 'patch'; patch: NoteMetaPatch } | null
@@ -48,15 +60,29 @@ watch(
   { immediate: true },
 );
 
+const moreMenuItems: ContextMenuEntry[] = [
+  { type: 'item', id: 'editor.copyRichText', title: '复制为富文本' },
+  { type: 'separator', id: 'export-separator' },
+  { type: 'item', id: 'editor.exportPdf', title: '导出为 PDF…' },
+];
+
 watch(
   () => doc.value?.absPath,
   () => {
     propertiesOpen.value = false;
     externalMenuOpen.value = false;
+    moreMenuOpen.value = false;
     externalConfirmOpen.value = false;
     pendingAction.value = null;
   },
 );
+
+onUnmounted(() => {
+  if (copyFeedbackTimer !== null) {
+    clearTimeout(copyFeedbackTimer);
+    copyFeedbackTimer = null;
+  }
+});
 
 function requiresExternalConfirm(): boolean {
   const currentDoc = doc.value;
@@ -189,6 +215,48 @@ async function handleExternalMenuSelect(id: string): Promise<void> {
   await externalActions.executeAction(id, { pinned: doc.value?.meta.pinned });
 }
 
+function handleMoreMenuClick(event: MouseEvent): void {
+  if (moreMenuOpen.value) {
+    moreMenuOpen.value = false;
+    return;
+  }
+  const target = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  const rect = target?.getBoundingClientRect();
+  moreMenuPos.value = rect
+    ? { x: rect.left, y: rect.bottom + 4 }
+    : { x: event.clientX, y: event.clientY };
+  moreMenuOpen.value = true;
+}
+
+function showCopyFeedback(message: string): void {
+  copyFeedbackText.value = message;
+  if (copyFeedbackTimer !== null) {
+    clearTimeout(copyFeedbackTimer);
+  }
+  copyFeedbackTimer = setTimeout(() => {
+    copyFeedbackText.value = null;
+    copyFeedbackTimer = null;
+  }, 2400);
+}
+
+async function handleMoreMenuSelect(id: string): Promise<void> {
+  moreMenuOpen.value = false;
+  const currentDoc = doc.value;
+  if (!currentDoc) {
+    return;
+  }
+  if (id === 'editor.copyRichText') {
+    const body = tab.value?.draftBody ?? currentDoc.body;
+    const mode = await copyMarkdownAsRichText(body);
+    showCopyFeedback(mode === 'rich' ? '已复制为富文本' : '已复制纯文本');
+  } else if (id === 'editor.exportPdf') {
+    await actionRegistry.executeById('editor.exportPdf', {
+      activeScope: 'editor',
+      hasActiveDoc: true,
+    });
+  }
+}
+
 async function handleQuickPinExternal(): Promise<void> {
   await externalActions.executeAction('external.pin', { pinned: doc.value?.meta.pinned });
 }
@@ -311,6 +379,34 @@ function cancelExternalFrontmatter(): void {
             :open="propertiesOpen"
             :meta="doc.meta"
             @close="propertiesOpen = false"
+          />
+        </div>
+
+        <span
+          v-if="copyFeedbackText"
+          class="qn-doc-header__copy-feedback"
+          data-testid="doc-header-copy-feedback"
+        >
+          {{ copyFeedbackText }}
+        </span>
+
+        <div class="qn-doc-header__prop-anchor">
+          <QnButton
+            variant="ghost"
+            size="sm"
+            data-testid="doc-header-more-btn"
+            aria-label="更多操作"
+            @click="handleMoreMenuClick"
+          >
+            ⋯
+          </QnButton>
+          <QnContextMenu
+            :open="moreMenuOpen"
+            :x="moreMenuPos.x"
+            :y="moreMenuPos.y"
+            :items="moreMenuItems"
+            @select="handleMoreMenuSelect"
+            @close="moreMenuOpen = false"
           />
         </div>
       </div>
@@ -502,6 +598,12 @@ function cancelExternalFrontmatter(): void {
 .qn-doc-header__error {
   font-size: var(--qn-text-xs);
   color: var(--qn-danger);
+}
+
+.qn-doc-header__copy-feedback {
+  font-size: var(--qn-text-xs);
+  color: var(--qn-success);
+  white-space: nowrap;
 }
 
 .qn-doc-header__confirm-text {

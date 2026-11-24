@@ -343,6 +343,24 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     when: (ctx) => Boolean(ctx.hasActiveDoc && ctx.isInbox && ctx.hasSelection),
     run: noopAction,
   },
+  {
+    id: 'editor.copyRichText',
+    title: '复制为富文本',
+    category: 'editor',
+    defaultKeys: null,
+    scope: 'editor',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
+    run: noopAction,
+  },
+  {
+    id: 'editor.exportPdf',
+    title: '导出为 PDF…',
+    category: 'editor',
+    defaultKeys: null,
+    scope: 'editor',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
+    run: noopAction,
+  },
 
   // terminal.* 高优先级显式吞键保护（C7.3）
   {

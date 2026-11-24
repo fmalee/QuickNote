@@ -5,7 +5,9 @@ import {
   librarySetRoot,
   noteCreate,
   notesList,
+  settingsExport,
   settingsGet,
+  settingsImport,
   settingsUpdate,
   uiStateGet,
 } from '@/lib/ipc/commands';
@@ -34,6 +36,14 @@ export function fetchUiState(): Promise<UiState> {
 
 export function saveSettingsPatch(patch: SettingsPatch): Promise<SettingsSnapshot> {
   return settingsUpdate(patch);
+}
+
+export function exportSettingsBackup(destPath: string): Promise<void> {
+  return settingsExport({ destPath });
+}
+
+export function importSettingsBackup(srcPath: string): Promise<SettingsSnapshot> {
+  return settingsImport({ srcPath });
 }
 
 export function changeLibraryRoot(args: SetRootArgs): Promise<LibraryInfo> {

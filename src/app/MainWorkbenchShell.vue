@@ -7,10 +7,12 @@ import {
   EditorConflictBanner,
   EditorMergeView,
   EditorTabBar,
+  ExportPdfModal,
   EXTERNAL_ACTION_SPECS,
   InboxBloatBanner,
   InboxExtractModal,
   MarkdownEditor,
+  copyMarkdownAsRichText,
   useEditorTabsStore,
   useExternalActions,
 } from '@/features/editor';
@@ -50,6 +52,7 @@ const quickOpenModalOpen = ref(false);
 const quickOpenFocusTick = ref(0);
 const commandBookModalOpen = ref(false);
 const commandBookFocusTick = ref(0);
+const exportPdfModalOpen = ref(false);
 let unlistenToastAppendUndo: UnlistenFn | null = null;
 let unlistenMainWindowState: UnlistenFn | null = null;
 let unlistenMenuAction: UnlistenFn | null = null;
@@ -202,6 +205,32 @@ function bindMainWindowActions(): void {
       () => editorTabsStore.openInboxExtractModal(),
       {
         when: (ctx) => Boolean(ctx.hasActiveDoc && ctx.isInbox && ctx.hasSelection),
+      },
+    ),
+    actionRegistry.bindHandler(
+      'editor.copyRichText',
+      async () => {
+        const currentDoc = editorTabsStore.activeDoc;
+        if (!currentDoc) {
+          return;
+        }
+        const body = editorTabsStore.activeTab?.draftBody ?? currentDoc.body;
+        await copyMarkdownAsRichText(body);
+      },
+      {
+        when: (ctx) => Boolean(ctx.hasActiveDoc),
+      },
+    ),
+    actionRegistry.bindHandler(
+      'editor.exportPdf',
+      () => {
+        if (!editorTabsStore.activeDoc) {
+          return;
+        }
+        exportPdfModalOpen.value = true;
+      },
+      {
+        when: (ctx) => Boolean(ctx.hasActiveDoc),
       },
     ),
     actionRegistry.bindHandler('window.closeTab', () => {
@@ -674,6 +703,12 @@ onUnmounted(() => {
     </QnModalShell>
     <NewNoteTemplateModal />
     <InboxExtractModal />
+    <ExportPdfModal
+      :open="exportPdfModalOpen"
+      :doc="editorTabsStore.activeDoc"
+      :body="editorTabsStore.activeTab?.draftBody ?? editorTabsStore.activeDoc?.body ?? ''"
+      @close="exportPdfModalOpen = false"
+    />
   </div>
 </template>
 
