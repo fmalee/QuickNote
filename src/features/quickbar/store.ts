@@ -15,6 +15,8 @@ import type {
   SettingsSnapshot,
   TagNode,
   UiState,
+  WindowMode,
+  WindowState,
   WorkspaceSummary,
 } from '@/bindings/types';
 import {
@@ -24,6 +26,7 @@ import {
   inferDefaultTemplateName,
 } from '@/features/notes';
 import { writePendingOpenFile } from '@/features/quickopen';
+import { windowShowMain } from '@/lib/ipc/commands';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import {
   appendQuickBarNote,
@@ -194,6 +197,8 @@ export const useQuickBarStore = defineStore('quickbar', () => {
   const submitting = ref<boolean>(false);
   const errorMessage = ref<string | null>(null);
   const focusTick = ref<number>(0);
+  const mainWindowMode = ref<WindowMode>('standard');
+  const mainWindowVisible = ref<boolean>(false);
 
   const resolvedTarget = ref<ResolvedTarget | null>(null);
   const explicitTarget = ref<ExplicitQuickBarTarget | null>(null);
@@ -225,8 +230,12 @@ export const useQuickBarStore = defineStore('quickbar', () => {
   let relatedRequestId = 0;
   let pickerRequestId = 0;
   let suppressDraftWatch = false;
+  let hasLiveMainWindowState = false;
 
   const isUnconfigured = computed<boolean>(() => !libraryInfo.value?.root);
+  const isAuxiliarySidebarActive = computed<boolean>(
+    () => mainWindowVisible.value && mainWindowMode.value === 'auxiliary',
+  );
   const canSubmit = computed<boolean>(
     () => !isUnconfigured.value && !submitting.value && draft.value.trim().length > 0,
   );
@@ -377,6 +386,10 @@ export const useQuickBarStore = defineStore('quickbar', () => {
       const normalizedUi = fetchedUiState ?? createFallbackUiState();
       uiState.value = normalizedUi;
       selectedWorkspaceKey.value = normalizedUi.selectedWorkspaceKey ?? null;
+      if (!hasLiveMainWindowState) {
+        mainWindowMode.value = normalizedUi.windows?.main?.mode ?? 'standard';
+        mainWindowVisible.value = normalizedUi.windows?.main?.isOpen ?? false;
+      }
 
       if (info.root !== null) {
         await resolveCurrentTarget(normalizedUi);
@@ -845,6 +858,14 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     }
     if (!unlistenWindowState) {
       unlistenWindowState = await subscribeQuickBarWindowState((state) => {
+        if (state.windowId === 'main') {
+          hasLiveMainWindowState = true;
+          mainWindowVisible.value = state.visible;
+          if (state.mode !== null) {
+            mainWindowMode.value = state.mode;
+          }
+          return;
+        }
         if (state.windowId === 'quickbar' && state.visible) {
           if (state.mode === null) {
             mode.value = 'capture';
@@ -874,6 +895,23 @@ export const useQuickBarStore = defineStore('quickbar', () => {
 
   async function openMainOnboarding(): Promise<void> {
     await showMainWindowForOnboarding();
+  }
+
+  async function toggleAuxiliarySidebarMode(): Promise<WindowState | null> {
+    const targetMode: WindowMode = isAuxiliarySidebarActive.value ? 'standard' : 'auxiliary';
+    errorMessage.value = null;
+    try {
+      const nextState = await windowShowMain({ mode: targetMode });
+      hasLiveMainWindowState = true;
+      mainWindowVisible.value = nextState?.visible ?? true;
+      mainWindowMode.value = nextState?.mode ?? targetMode;
+      await hide('esc');
+      return nextState ?? null;
+    } catch (error) {
+      errorMessage.value =
+        error instanceof Error ? error.message : '切换 45% 侧栏辅助窗口失败，请重试。';
+      return null;
+    }
   }
 
   async function hide(reason: HideReason = 'esc'): Promise<void> {
@@ -914,6 +952,9 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     submitting,
     errorMessage,
     focusTick,
+    mainWindowMode,
+    mainWindowVisible,
+    isAuxiliarySidebarActive,
     resolvedTarget,
     explicitTarget,
     selectedWorkspaceKey,
@@ -946,6 +987,7 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     initialize,
     dispose,
     openMainOnboarding,
+    toggleAuxiliarySidebarMode,
     hide,
     setMode,
     openFileInMain,

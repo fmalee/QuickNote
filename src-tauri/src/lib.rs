@@ -1,16 +1,18 @@
 use std::sync::{Arc, OnceLock};
 
-use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::menu::{
+    CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
+};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use crate::application::capture::CaptureManager;
 use crate::application::hotkey::HotkeyManager;
 use crate::application::persistence::PersistenceManager;
 use crate::application::terminal::{TauriTerminalEventSink, TerminalManager};
-use crate::application::window::WindowManager;
+use crate::application::window::{MainWindowLayoutMode, WindowManager};
 use crate::domain::settings::WindowMode;
-use crate::domain::window::HideReason;
+use crate::domain::window::{HideReason, WindowState};
 use crate::infra::external_open::{ExternalLauncher, MacosExternalLauncher};
 use crate::infra::macos::{NativeWindowBridge, NoopNativeBridge};
 use crate::infra::settings_watch::SettingsWatcher;
@@ -275,11 +277,43 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         .build()
 }
 
+fn format_tray_auxiliary_label(is_active: bool) -> &'static str {
+    if is_active {
+        "切换 45% 侧栏辅助窗口（已开启）"
+    } else {
+        "切换 45% 侧栏辅助窗口"
+    }
+}
+
 fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
     let menu = build_app_menu(app)?;
     app.set_menu(menu)?;
 
+    let initial_aux_active = app
+        .try_state::<Arc<WindowManager>>()
+        .map(|wm| {
+            let visible = app
+                .get_webview_window("main")
+                .and_then(|w| w.is_visible().ok())
+                .unwrap_or(false);
+            visible
+                && wm
+                    .current_main_layout_mode()
+                    .map(|mode| mode == MainWindowLayoutMode::AuxiliarySidebar45)
+                    .unwrap_or(false)
+        })
+        .unwrap_or(false);
+
+    let tray_aux_item = CheckMenuItemBuilder::with_id(
+        "tray_toggle_auxiliary",
+        format_tray_auxiliary_label(initial_aux_active),
+    )
+    .checked(initial_aux_active)
+    .build(app)?;
+
     let tray_menu = MenuBuilder::new(app)
+        .item(&tray_aux_item)
+        .separator()
         .item(&MenuItemBuilder::with_id("tray_quick_bar", "快速捕捉").build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("tray_show_main", "打开主窗口").build(app)?)
@@ -305,10 +339,40 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
 
     tray_builder.build(app)?;
 
-    app.on_menu_event(|app_handle, event| {
+    let tray_aux_for_event = tray_aux_item.clone();
+    app.listen("window:state", move |event| {
+        if let Ok(state) = serde_json::from_str::<WindowState>(event.payload()) {
+            if state.window_id == "main" {
+                let is_active = state.visible && state.mode == Some(WindowMode::Auxiliary);
+                let _ = tray_aux_for_event.set_checked(is_active);
+                let _ = tray_aux_for_event.set_text(format_tray_auxiliary_label(is_active));
+            }
+        }
+    });
+
+    let tray_aux_for_menu = tray_aux_item.clone();
+    app.on_menu_event(move |app_handle, event| {
         let wm = app_handle.state::<Arc<WindowManager>>();
         let menu_id = event.id().as_ref();
         match menu_id {
+            "tray_toggle_auxiliary" => {
+                let aux_pct = app_handle
+                    .try_state::<Arc<PersistenceManager>>()
+                    .and_then(|pm| pm.settings_get().ok())
+                    .map(|s| s.settings.main_window.auxiliary_width_percent)
+                    .unwrap_or(crate::domain::window::DEFAULT_AUXILIARY_WIDTH_PERCENT);
+                match wm.toggle_auxiliary_sidebar_mode(app_handle, aux_pct) {
+                    Ok(win_state) => {
+                        let is_active =
+                            win_state.visible && win_state.mode == Some(WindowMode::Auxiliary);
+                        let _ = tray_aux_for_menu.set_checked(is_active);
+                        let _ = tray_aux_for_menu.set_text(format_tray_auxiliary_label(is_active));
+                    }
+                    Err(err) => {
+                        eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
+                    }
+                }
+            }
             "tray_quick_bar" | "menu_quick_bar" => {
                 if let Err(err) = wm.show_quick_bar(app_handle, None) {
                     eprintln!("[menu] {menu_id} failed: code={:?}", err.code);

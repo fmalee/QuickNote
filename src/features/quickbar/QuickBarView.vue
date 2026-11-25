@@ -313,6 +313,24 @@ function handleKeydown(event: KeyboardEvent): void {
           {{ store.sectionHintText }}
         </span>
 
+        <button
+          type="button"
+          :class="[
+            'qn-quickbar__aux-btn',
+            { 'qn-quickbar__aux-btn--active': store.isAuxiliarySidebarActive },
+          ]"
+          :title="
+            store.isAuxiliarySidebarActive
+              ? '退出 45% 侧栏辅助窗口并恢复标准模式'
+              : '在当前空间呼出 45% 侧栏辅助窗口'
+          "
+          :aria-pressed="store.isAuxiliarySidebarActive"
+          data-testid="quickbar-toggle-auxiliary"
+          @click="store.toggleAuxiliarySidebarMode()"
+        >
+          45% 侧栏
+        </button>
+
         <QnButton variant="ghost" size="sm" @click="store.handleEscape()">Esc</QnButton>
       </div>
     </header>
@@ -617,6 +635,29 @@ function handleKeydown(event: KeyboardEvent): void {
 .qn-quickbar__section-hint {
   font-size: var(--qn-text-xs);
   color: var(--qn-text-muted);
+}
+
+.qn-quickbar__aux-btn {
+  padding: var(--qn-space-1) var(--qn-space-2);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qn-radius-sm);
+  background-color: transparent;
+  color: var(--qn-text-secondary);
+  font-size: var(--qn-text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.qn-quickbar__aux-btn:hover {
+  background-color: var(--qn-bg-hover);
+  color: var(--qn-text-primary);
+}
+
+.qn-quickbar__aux-btn--active {
+  border-color: var(--qn-accent);
+  background-color: var(--qn-bg-active);
+  color: var(--qn-text-primary);
 }
 
 .qn-quickbar__banner {
