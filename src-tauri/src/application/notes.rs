@@ -524,15 +524,18 @@ pub fn note_create(pm: &PersistenceManager, args: CreateNoteArgs) -> Result<Note
         _ => format!("{rendered}\n"),
     };
 
-    atomic_write_str(&abs_path, &content)?;
-    let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
-    index_single_note(pm, &rel_path, &content, mtime_ms, size_bytes as i64)?;
     let stem = abs_path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("note");
     let created_parsed = parse_note(&content, stem);
     pm.record_self_write(&abs_path, &compute_body_hash(&created_parsed.body));
+    if let Err(err) = atomic_write_str(&abs_path, &content) {
+        pm.clear_self_write(&abs_path);
+        return Err(err);
+    }
+    let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
+    index_single_note(pm, &rel_path, &content, mtime_ms, size_bytes as i64)?;
 
     note_read(
         pm,
@@ -615,10 +618,13 @@ pub fn note_write(pm: &PersistenceManager, args: WriteNoteArgs) -> Result<WriteR
             ));
         }
 
-        atomic_write_str(&abs_path, &args.body)?;
-        let (new_mtime_ms, _) = file_mtime_and_size(&abs_path)?;
         let new_body_hash = compute_body_hash(&args.body);
         pm.record_self_write(&abs_path, &new_body_hash);
+        if let Err(err) = atomic_write_str(&abs_path, &args.body) {
+            pm.clear_self_write(&abs_path);
+            return Err(err);
+        }
+        let (new_mtime_ms, _) = file_mtime_and_size(&abs_path)?;
         let _ = pm.clear_recovery_snapshot(&args.abs_path);
         let abs_lossy = abs_path.to_string_lossy();
         if abs_lossy != args.abs_path {
@@ -690,16 +696,19 @@ pub fn note_write(pm: &PersistenceManager, args: WriteNoteArgs) -> Result<WriteR
         compose_note(parsed.block.as_deref(), &args.body)
     };
 
-    atomic_write_str(&abs_path, &new_content)?;
-    let (new_mtime_ms, new_size_bytes) = file_mtime_and_size(&abs_path)?;
     let new_parsed = parse_note(&new_content, stem);
+    let new_body_hash = compute_body_hash(&new_parsed.body);
+    pm.record_self_write(&abs_path, &new_body_hash);
+    if let Err(err) = atomic_write_str(&abs_path, &new_content) {
+        pm.clear_self_write(&abs_path);
+        return Err(err);
+    }
+    let (new_mtime_ms, new_size_bytes) = file_mtime_and_size(&abs_path)?;
 
     if let Some(rel) = rel_path {
         index_single_note(pm, &rel, &new_content, new_mtime_ms, new_size_bytes as i64)?;
     }
 
-    let new_body_hash = compute_body_hash(&new_parsed.body);
-    pm.record_self_write(&abs_path, &new_body_hash);
     let _ = pm.clear_recovery_snapshot(&args.abs_path);
     let abs_lossy = abs_path.to_string_lossy();
     if abs_lossy != args.abs_path {
@@ -776,19 +785,22 @@ pub fn note_update_meta(
         compose_note(Some(&block), &parsed.body)
     };
 
-    atomic_write_str(&abs_path, &new_content)?;
-    let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
-
-    let root = pm.current_library_root()?.map(PathBuf::from);
-    if let Some(rel) = root.as_deref().and_then(|r| resolve_rel_path(r, &abs_path)) {
-        index_single_note(pm, &rel, &new_content, mtime_ms, size_bytes as i64)?;
-    }
     let meta_stem = abs_path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("note");
     let updated_parsed = parse_note(&new_content, meta_stem);
     pm.record_self_write(&abs_path, &compute_body_hash(&updated_parsed.body));
+    if let Err(err) = atomic_write_str(&abs_path, &new_content) {
+        pm.clear_self_write(&abs_path);
+        return Err(err);
+    }
+    let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
+
+    let root = pm.current_library_root()?.map(PathBuf::from);
+    if let Some(rel) = root.as_deref().and_then(|r| resolve_rel_path(r, &abs_path)) {
+        index_single_note(pm, &rel, &new_content, mtime_ms, size_bytes as i64)?;
+    }
 
     note_read(
         pm,
@@ -899,7 +911,18 @@ pub fn note_rename(pm: &PersistenceManager, args: RenameNoteArgs) -> Result<Note
         fs::create_dir_all(parent)
             .map_err(|e| map_io_error(e, "Failed to create target directory"))?;
     }
-    fs::rename(&old_abs, &new_abs).map_err(|e| map_io_error(e, "Failed to rename note file"))?;
+    let rename_stem = new_abs
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("note");
+    let old_raw = fs::read_to_string(&old_abs)
+        .map_err(|e| map_io_error(e, "Failed to read note before rename"))?;
+    let old_parsed = parse_note(&old_raw, rename_stem);
+    pm.record_self_write(&new_abs, &compute_body_hash(&old_parsed.body));
+    if let Err(e) = fs::rename(&old_abs, &new_abs) {
+        pm.clear_self_write(&new_abs);
+        return Err(map_io_error(e, "Failed to rename note file"));
+    }
 
     let raw =
         fs::read_to_string(&new_abs).map_err(|e| map_io_error(e, "Failed to read renamed note"))?;
@@ -908,12 +931,6 @@ pub fn note_rename(pm: &PersistenceManager, args: RenameNoteArgs) -> Result<Note
     pm.with_db(|conn| delete_note_index_by_rel_path(conn, &old_rel))?;
     index_single_note(pm, &new_rel, &raw, mtime_ms, size_bytes as i64)?;
     pm.clear_self_write(&old_abs);
-    let rename_stem = new_abs
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("note");
-    let renamed_parsed = parse_note(&raw, rename_stem);
-    pm.record_self_write(&new_abs, &compute_body_hash(&renamed_parsed.body));
 
     note_read(
         pm,
@@ -1216,10 +1233,13 @@ pub fn tags_batch_rename(
         let new_block = build_frontmatter_block(&patched_yaml);
         let new_content = compose_note(Some(&new_block), &parsed.body);
 
-        atomic_write_str(&abs_path, &new_content)?;
+        pm.record_self_write(&abs_path, &compute_body_hash(&parsed.body));
+        if let Err(err) = atomic_write_str(&abs_path, &new_content) {
+            pm.clear_self_write(&abs_path);
+            return Err(err);
+        }
         let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
         index_single_note(pm, &row.rel_path, &new_content, mtime_ms, size_bytes as i64)?;
-        pm.record_self_write(&abs_path, &compute_body_hash(&parsed.body));
         updated_files += 1;
     }
 

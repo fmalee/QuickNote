@@ -184,6 +184,24 @@ function buildTabFromDoc(doc: NoteDoc, isPreview: boolean): EditorTab {
   };
 }
 
+function isSameNoteMeta(a: NoteMeta, b: NoteMeta | undefined): boolean {
+  if (!b) {
+    return false;
+  }
+  return (
+    a.title === b.title &&
+    a.docType === b.docType &&
+    a.tags.length === b.tags.length &&
+    a.tags.every((tag, idx) => tag === b.tags[idx]) &&
+    a.project === b.project &&
+    a.openDir === b.openDir &&
+    a.codeWorkspace === b.codeWorkspace &&
+    a.terminalDir === b.terminalDir &&
+    a.pinned === b.pinned &&
+    a.archived === b.archived
+  );
+}
+
 export const useEditorTabsStore = defineStore('editorTabs', () => {
   const settingsStore = useSettingsStore();
 
@@ -446,6 +464,19 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
   }
 
+  function scheduleAutoSaveIfDirty(key: string): void {
+    const tab = tabs.value.find((item) => item.key === key);
+    if (
+      tab &&
+      tab.isDirty &&
+      tab.conflictState === null &&
+      !tab.isMissing &&
+      tab.saveStatus !== 'saving'
+    ) {
+      scheduleAutoSave(key);
+    }
+  }
+
   function pushClosedStack(absPath: string): void {
     if (!absPath) {
       return;
@@ -705,6 +736,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     cursorOffset?: number,
     line?: number,
     col?: number,
+    composing = false,
   ): void {
     const tab = tabs.value.find((item) => item.key === key);
     if (!tab) {
@@ -734,7 +766,9 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
 
     if (tab.conflictState === null && !tab.isMissing) {
       tab.saveStatus = 'dirty';
-      scheduleAutoSave(tab.key);
+      if (!composing) {
+        scheduleAutoSave(tab.key);
+      }
     }
 
     if (promoted) {
@@ -923,6 +957,13 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       if (event.kind === 'modified') {
         if (tab.evicted && !tab.isDirty) {
           notifyNotesRefresh();
+          continue;
+        }
+        const isEcho =
+          Boolean(event.newBodyHash) &&
+          event.newBodyHash === tab.baseBodyHash &&
+          (!event.newMeta || isSameNoteMeta(event.newMeta, tab.doc?.meta));
+        if (isEcho) {
           continue;
         }
         if (!tab.isDirty) {
@@ -1674,6 +1715,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     activateTabByIndex,
     promoteTabToPinned,
     updateTabBody,
+    scheduleAutoSaveIfDirty,
     updateTabCursorAndScroll,
     updateTabSelection,
     hasConfirmedExternalMeta,

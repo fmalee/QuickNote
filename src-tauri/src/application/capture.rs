@@ -297,7 +297,12 @@ impl CaptureManager {
 
         // Preserve latest disk frontmatter while restoring `before_body` (`C8.3`).
         let restored_raw = compose_note(parsed.block.as_deref(), &snapshot.before_body);
-        atomic_write_str(&abs_path, &restored_raw)?;
+        let restored_body_hash = compute_body_hash(&snapshot.before_body);
+        pm.record_self_write(&abs_path, &restored_body_hash);
+        if let Err(err) = atomic_write_str(&abs_path, &restored_raw) {
+            pm.clear_self_write(&abs_path);
+            return Err(err);
+        }
 
         let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
         index_single_note(
@@ -307,8 +312,6 @@ impl CaptureManager {
             mtime_ms,
             size_bytes as i64,
         )?;
-        let restored_body_hash = compute_body_hash(&snapshot.before_body);
-        pm.record_self_write(&abs_path, &restored_body_hash);
 
         if let Some(handle) = app {
             let _ = handle.emit(

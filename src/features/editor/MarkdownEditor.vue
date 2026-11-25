@@ -656,7 +656,7 @@ function createEditorState(tab: EditorTab): EditorState {
 
         if (update.docChanged) {
           const nextBody = update.state.doc.toString();
-          editorTabsStore.updateTabBody(key, nextBody, head, line, col);
+          editorTabsStore.updateTabBody(key, nextBody, head, line, col, update.view.composing);
           editorTabsStore.updateTabSelection(key, fromLine, toLine, hasSelection);
           editorTabsStore.setActiveTopLine(line);
           const activeTab = editorTabsStore.activeTab;
@@ -674,6 +674,12 @@ function createEditorState(tab: EditorTab): EditorState {
         }
       }),
       EditorView.domEventHandlers({
+        compositionend: () => {
+          if (currentTabKey) {
+            editorTabsStore.scheduleAutoSaveIfDirty(currentTabKey);
+          }
+          return false;
+        },
         keydown: (event, targetView) => {
           if (
             event.key === 'Tab' &&

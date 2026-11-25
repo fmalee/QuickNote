@@ -407,3 +407,42 @@ fn vault_watcher_converges_root_manual_md_and_quicknote_yaml_with_self_write_gua
 
     Ok(())
 }
+
+#[test]
+fn note_write_registers_self_write_before_watch_can_observe_it(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_app_dir, _vault_dir, pm) = setup_pm_with_library()?;
+    let doc = note_create(
+        &pm,
+        CreateNoteArgs {
+            title: "回声测试".to_string(),
+            dir_rel_path: "notes".to_string(),
+            template_name: None,
+            body: Some("# 回声测试\n\n初始正文。\n".to_string()),
+        },
+    )?;
+    // 建库后先消化创建产生的自写记录，再模拟编辑器连续保存。
+    let _ = process_external_fs_path(&pm, Path::new(&doc.abs_path))?;
+
+    let _bytes = fs::read(&doc.abs_path)?;
+    let first = note_write(
+        &pm,
+        WriteNoteArgs {
+            abs_path: doc.abs_path.clone(),
+            body: "# 回声测试\n\n第一次写入。\n".to_string(),
+            base_body_hash: doc.body_hash.clone(),
+        },
+    )?;
+    assert!(process_external_fs_path(&pm, Path::new(&doc.abs_path))?.is_none());
+
+    note_write(
+        &pm,
+        WriteNoteArgs {
+            abs_path: doc.abs_path.clone(),
+            body: "# 回声测试\n\n第二次写入，内容不同。\n".to_string(),
+            base_body_hash: first.body_hash.clone(),
+        },
+    )?;
+    assert!(process_external_fs_path(&pm, Path::new(&doc.abs_path))?.is_none());
+    Ok(())
+}

@@ -437,4 +437,63 @@ describe('editor autosave, ULID backfill and external change handling', () => {
     expect(store.activeTab?.key).toBe(a.key);
     expect(store.activeTab?.evicted).toBe(false);
   });
+
+  it('回声被忽略：脏态下哈希与元数据均一致的 modified 事件不弹冲突', async () => {
+    const doc = makeDoc();
+    mockNoteRead.mockResolvedValue(doc);
+    const store = useEditorTabsStore();
+    await store.ensureExternalChangeListener();
+    await store.openNote(doc.relPath!, { preview: false, absPath: doc.absPath });
+
+    store.updateTabBody(doc.key, '本地继续输入的草稿');
+    expect(store.activeTab?.isDirty).toBe(true);
+
+    externalChangeHandler!({
+      absPath: doc.absPath,
+      kind: 'modified',
+      newBody: doc.body,
+      newBodyHash: store.activeTab!.baseBodyHash,
+      newMeta: makeMeta(),
+    });
+
+    expect(store.activeTab?.conflictState).toBeNull();
+    expect(store.activeTab?.saveStatus).not.toBe('conflict');
+    expect(store.activeTab?.draftBody).toBe('本地继续输入的草稿');
+  });
+
+  it('真实外部修改仍冲突：哈希不同时脏态弹冲突', async () => {
+    const doc = makeDoc();
+    mockNoteRead.mockResolvedValue(doc);
+    const store = useEditorTabsStore();
+    await store.ensureExternalChangeListener();
+    await store.openNote(doc.relPath!, { preview: false, absPath: doc.absPath });
+
+    store.updateTabBody(doc.key, '本地继续输入的草稿');
+    externalChangeHandler!({
+      absPath: doc.absPath,
+      kind: 'modified',
+      newBody: '外部编辑器改过的正文',
+      newBodyHash: 'hash-real-external',
+      newMeta: makeMeta(),
+    });
+
+    expect(store.activeTab?.conflictState?.kind).toBe('modified');
+    expect(store.activeTab?.saveStatus).toBe('conflict');
+  });
+
+  it('组合态不排保存：compositionend 后才调度自动保存', async () => {
+    const doc = makeDoc();
+    mockNoteRead.mockResolvedValue(doc);
+    mockNoteWrite.mockResolvedValue({ bodyHash: 'hash-v2', mtimeMs: 2000, updatedMeta: null });
+    const store = useEditorTabsStore();
+    await store.openNote(doc.relPath!, { preview: false, absPath: doc.absPath });
+
+    store.updateTabBody(doc.key, '新正文', 0, 1, 1, true);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(mockNoteWrite).not.toHaveBeenCalled();
+
+    store.scheduleAutoSaveIfDirty(doc.key);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(mockNoteWrite).toHaveBeenCalledTimes(1);
+  });
 });

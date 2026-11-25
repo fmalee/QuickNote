@@ -78,6 +78,7 @@ pub fn process_external_fs_path(
     let (mtime_ms, size_bytes) = file_mtime_and_size(&canonical_path)?;
 
     if pm.should_suppress_external_modify(&canonical_path, &disk_body_hash) {
+        eprintln!("[vault-watch] event=vault_change_suppressed");
         index_single_note(pm, &rel_path, &raw, mtime_ms, size_bytes as i64)?;
         return Ok(None);
     }
