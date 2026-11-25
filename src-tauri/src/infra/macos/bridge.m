@@ -607,6 +607,14 @@ static void qn_save_standard_window_state(NSWindow *win, BOOL isFullScreen) {
     g_has_saved_standard_state = YES;
 }
 
+static BOOL qn_is_fullscreen_space(void) {
+    NSApplicationPresentationOptions opts = [NSApp currentSystemPresentationOptions];
+    if ((opts & (NSApplicationPresentationFullScreen | NSApplicationPresentationHideMenuBar)) != 0) {
+        return YES;
+    }
+    return ![NSMenu menuBarVisible];
+}
+
 static void qn_apply_auxiliary_docking(NSWindow *win, uint8_t auxiliary_width_percent) {
     if (win == nil) {
         return;
@@ -638,6 +646,7 @@ static void qn_apply_auxiliary_docking(NSWindow *win, uint8_t auxiliary_width_pe
         uint8_t clamped = auxiliary_width_percent < 30
             ? 30
             : (auxiliary_width_percent > 60 ? 60 : auxiliary_width_percent);
+        NSRect frame = screen.frame;
         NSRect visible = screen.visibleFrame;
         CGFloat w = round(visible.size.width * ((CGFloat)clamped / 100.0));
         if (w < 480.0) {
@@ -646,8 +655,14 @@ static void qn_apply_auxiliary_docking(NSWindow *win, uint8_t auxiliary_width_pe
         if (w > visible.size.width) {
             w = visible.size.width;
         }
-        CGFloat x = visible.origin.x + (visible.size.width - w);
-        NSRect target = NSMakeRect(x, visible.origin.y, w, visible.size.height);
+        CGFloat x = frame.origin.x + (frame.size.width - w);
+        CGFloat top = frame.origin.y + frame.size.height;
+        CGFloat bottom = visible.origin.y;
+        CGFloat visibleTop = visible.origin.y + visible.size.height;
+        if (top > visibleTop && !qn_is_fullscreen_space()) {
+            top = visibleTop;
+        }
+        NSRect target = NSMakeRect(x, bottom, w, top - bottom);
         [win setFrame:target display:NO animate:NO];
     }
 
