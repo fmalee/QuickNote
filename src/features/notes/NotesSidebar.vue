@@ -18,6 +18,7 @@ import {
   QnModalShell,
 } from '@/components';
 import { useEditorTabsStore } from '@/features/editor';
+import { OutlinePanel, RelatedNotesPanel, usePanelsStore } from '@/features/panels';
 import { type ActionContext, actionRegistry } from '@/lib/actions';
 import {
   extractNotesErrorMessage,
@@ -58,6 +59,7 @@ const emit = defineEmits<{
 
 const notesStore = useNotesStore();
 const editorTabsStore = useEditorTabsStore();
+const panelsStore = usePanelsStore();
 
 const filterInputRef = ref<HTMLInputElement | null>(null);
 const expandedDirs = ref<Record<string, boolean>>({});
@@ -435,12 +437,14 @@ async function handleExternalContextSelect(id: string): Promise<void> {
 }
 const renameInputRef = ref<HTMLInputElement | null>(null);
 
-const navItems: { id: NavTab; label: string }[] = [
+const navItems: { id: string; label: string }[] = [
   { id: 'inbox', label: '收件箱' },
   { id: 'projects', label: '项目' },
   { id: 'tags', label: '标签' },
   { id: 'recent', label: '最近' },
   { id: 'workspaces', label: '工作区' },
+  { id: 'related', label: '相关文档' },
+  { id: 'outline', label: '大纲' },
 ];
 
 const flatDirs = computed<FlatDirItem[]>(() => {
@@ -574,10 +578,35 @@ function handleDeleteNote(relPath: string | null): void {
 }
 
 async function handleSelectTab(tab: NavTab): Promise<void> {
+  panelsStore.setLeftView('workspace');
   await notesStore.setActiveTab(tab);
   if (tab === 'inbox') {
     await editorTabsStore.openNote('inbox.md', { preview: true });
   }
+}
+
+function isNavItemActive(id: string): boolean {
+  if (id === 'related' || id === 'outline') {
+    return panelsStore.leftSidebar.activeView === id;
+  }
+  return panelsStore.leftSidebar.activeView === 'workspace' && notesStore.activeTab === id;
+}
+
+function handleNavItemClick(id: string): void {
+  if (id === 'related' || id === 'outline') {
+    panelsStore.toggleLeftView(id);
+    return;
+  }
+  void handleSelectTab(id as NavTab);
+}
+
+function handleCollapsedStripClick(id: string): void {
+  emit('toggle-collapse');
+  if (id === 'related' || id === 'outline') {
+    panelsStore.setLeftView(id);
+    return;
+  }
+  void handleSelectTab(id as NavTab);
 }
 </script>
 
@@ -605,14 +634,11 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
       type="button"
       :class="[
         'qn-notes-sidebar-strip__btn',
-        { 'qn-notes-sidebar-strip__btn--active': notesStore.activeTab === item.id },
+        { 'qn-notes-sidebar-strip__btn--active': isNavItemActive(item.id) },
       ]"
       :title="item.label"
       :data-testid="`notes-sidebar-strip-${item.id}`"
-      @click="
-        emit('toggle-collapse');
-        handleSelectTab(item.id);
-      "
+      @click="handleCollapsedStripClick(item.id)"
     >
       {{ item.label.slice(0, 1) }}
     </button>
@@ -631,13 +657,13 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
         :key="item.id"
         type="button"
         role="tab"
-        :aria-selected="notesStore.activeTab === item.id"
+        :aria-selected="isNavItemActive(item.id)"
         :data-testid="`nav-tab-${item.id}`"
         :class="[
           'qn-notes-sidebar__nav-btn',
-          { 'qn-notes-sidebar__nav-btn--active': notesStore.activeTab === item.id },
+          { 'qn-notes-sidebar__nav-btn--active': isNavItemActive(item.id) },
         ]"
-        @click="handleSelectTab(item.id)"
+        @click="handleNavItemClick(item.id)"
       >
         <span>{{ item.label }}</span>
         <QnBadge v-if="item.id === 'inbox'" tone="neutral" data-testid="inbox-count-badge">
@@ -656,350 +682,367 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
     </div>
 
     <div
-      v-if="notesStore.activeTab === 'projects'"
-      class="qn-notes-sidebar__subpanel"
-      data-testid="nav-projects-tree"
+      v-show="panelsStore.leftSidebar.activeView === 'workspace'"
+      class="qn-notes-sidebar__workspace"
     >
-      <div class="qn-notes-sidebar__subpanel-header">
-        <span>项目目录</span>
-        <button
-          v-if="notesStore.selectedDir"
-          type="button"
-          class="qn-notes-sidebar__link-btn"
-          @click="notesStore.selectDir(null)"
-        >
-          全部项目
-        </button>
-      </div>
-      <div v-if="flatDirs.length === 0" class="qn-notes-sidebar__empty">暂无子目录</div>
-      <div v-else class="qn-notes-sidebar__tree">
-        <div
-          v-for="entry in flatDirs"
-          :key="entry.node.relPath"
-          :style="{ paddingLeft: `calc(var(--qn-space-2) + ${entry.depth} * var(--qn-space-3))` }"
-          :class="[
-            'qn-notes-sidebar__tree-item',
-            {
-              'qn-notes-sidebar__tree-item--active': notesStore.selectedDir === entry.node.relPath,
-            },
-          ]"
-          :data-testid="`dir-node-${entry.node.relPath}`"
-          @click="notesStore.selectDir(entry.node.relPath)"
-          @contextmenu.prevent="openDirContextMenu($event, entry.node)"
-        >
-          <button
-            v-if="entry.hasChildren"
-            type="button"
-            class="qn-notes-sidebar__expand-btn"
-            :aria-label="entry.expanded ? '折叠目录' : '展开目录'"
-            @click.stop="toggleDirExpand(entry.node.relPath)"
-          >
-            {{ entry.expanded ? '▾' : '▸' }}
-          </button>
-          <span v-else class="qn-notes-sidebar__expand-spacer" />
-          <span class="qn-notes-sidebar__tree-label">{{ entry.node.name }}</span>
-          <QnBadge
-            v-if="getBoundDirWorkspaceEntry(entry.node.relPath)"
-            :tone="getBoundDirWorkspaceEntry(entry.node.relPath)?.parseError ? 'warning' : 'accent'"
-            size="sm"
-            class="qn-notes-sidebar__ws-badge"
-            :title="formatDirWorkspaceTooltip(getBoundDirWorkspaceEntry(entry.node.relPath)!)"
-            :data-testid="`dir-ws-badge-${entry.node.relPath}`"
-          >
-            {{ getBoundDirWorkspaceEntry(entry.node.relPath)?.parseError ? '异常' : 'WS' }}
-          </QnBadge>
-          <span class="qn-notes-sidebar__tree-count">{{ entry.node.count }}</span>
-        </div>
-      </div>
-      <QnContextMenu
-        :open="dirCtxOpen"
-        :x="dirCtxPos.x"
-        :y="dirCtxPos.y"
-        :items="dirCtxMenuItems"
-        @select="handleDirContextSelect"
-        @close="dirCtxOpen = false"
-      />
-    </div>
-
-    <div
-      v-else-if="notesStore.activeTab === 'tags'"
-      class="qn-notes-sidebar__subpanel"
-      data-testid="nav-tags-tree"
-    >
-      <div class="qn-notes-sidebar__subpanel-header">
-        <span>标签树（多选 AND）</span>
-        <button
-          v-if="notesStore.selectedTags.length > 0"
-          type="button"
-          class="qn-notes-sidebar__link-btn"
-          data-testid="clear-tags-btn"
-          @click="notesStore.clearTags()"
-        >
-          清除筛选
-        </button>
-      </div>
-      <div v-if="notesStore.selectedTags.length > 0" class="qn-notes-sidebar__chips">
-        <button
-          v-for="tag in notesStore.selectedTags"
-          :key="tag"
-          type="button"
-          class="qn-notes-sidebar__chip"
-          :data-testid="`selected-tag-chip-${tag}`"
-          @click="notesStore.toggleTag(tag)"
-        >
-          #{{ tag }} ×
-        </button>
-      </div>
-      <div v-if="tagRenameNotice" class="qn-notes-sidebar__tag-notice">
-        <QnBanner tone="success" data-testid="tag-rename-success-banner">
-          <span>{{ tagRenameNotice }}</span>
-          <template #actions>
-            <QnButton size="sm" variant="ghost" @click="tagRenameNotice = null">关闭</QnButton>
-          </template>
-        </QnBanner>
-      </div>
-      <div v-if="flatTags.length === 0" class="qn-notes-sidebar__empty">暂无标签</div>
-      <div v-else class="qn-notes-sidebar__tree">
-        <div
-          v-for="entry in flatTags"
-          :key="entry.node.tag"
-          :style="{ paddingLeft: `calc(var(--qn-space-2) + ${entry.depth} * var(--qn-space-3))` }"
-          :class="[
-            'qn-notes-sidebar__tree-item',
-            {
-              'qn-notes-sidebar__tree-item--active': notesStore.selectedTags.includes(
-                entry.node.tag,
-              ),
-            },
-          ]"
-          :data-testid="`tag-node-${entry.node.tag}`"
-          @click="notesStore.toggleTag(entry.node.tag)"
-          @contextmenu.prevent="openTagContextMenu($event, entry.node.tag)"
-        >
-          <button
-            v-if="entry.hasChildren"
-            type="button"
-            class="qn-notes-sidebar__expand-btn"
-            :aria-label="entry.expanded ? '折叠标签' : '展开标签'"
-            @click.stop="toggleTagExpand(entry.node.tag)"
-          >
-            {{ entry.expanded ? '▾' : '▸' }}
-          </button>
-          <span v-else class="qn-notes-sidebar__expand-spacer" />
-          <span class="qn-notes-sidebar__tree-label">#{{ entry.node.tag }}</span>
-          <button
-            type="button"
-            class="qn-notes-sidebar__tag-action"
-            title="重命名 / 合并…"
-            :data-testid="`tag-rename-trigger-${entry.node.tag}`"
-            @click.stop="openTagRenameModal(entry.node.tag)"
-          >
-            重命名
-          </button>
-          <span class="qn-notes-sidebar__tree-count">{{ entry.node.count }}</span>
-        </div>
-      </div>
-      <QnContextMenu
-        :open="tagCtxOpen"
-        :x="tagCtxPos.x"
-        :y="tagCtxPos.y"
-        :items="tagCtxMenuItems"
-        @select="handleTagContextSelect"
-        @close="tagCtxOpen = false"
-      />
-    </div>
-
-    <div
-      v-else-if="notesStore.activeTab === 'workspaces'"
-      class="qn-notes-sidebar__subpanel"
-      data-testid="nav-workspaces-list"
-    >
-      <div class="qn-notes-sidebar__subpanel-header">
-        <span>工作区</span>
-        <button
-          v-if="notesStore.selectedWorkspace"
-          type="button"
-          class="qn-notes-sidebar__link-btn"
-          @click="notesStore.selectWorkspace(null)"
-        >
-          清除锁定
-        </button>
-      </div>
-      <div v-if="notesStore.navTree.workspaces.length === 0" class="qn-notes-sidebar__empty">
-        暂无工作区
-      </div>
-      <div v-else class="qn-notes-sidebar__tree">
-        <div
-          v-for="ws in notesStore.navTree.workspaces"
-          :key="ws.key"
-          :class="[
-            'qn-notes-sidebar__tree-item',
-            { 'qn-notes-sidebar__tree-item--active': notesStore.selectedWorkspace === ws.key },
-          ]"
-          :data-testid="`workspace-node-${ws.key}`"
-          @click="notesStore.selectWorkspace(ws.key)"
-        >
-          <span class="qn-notes-sidebar__tree-label">{{ ws.name }}</span>
-          <span class="qn-notes-sidebar__tree-count">{{ ws.key }}</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="qn-notes-sidebar__toolbar">
-      <input
-        ref="filterInputRef"
-        type="search"
-        :value="notesStore.filterText"
-        placeholder="过滤标题或标签… (⌘F)"
-        class="qn-notes-sidebar__filter-input"
-        data-testid="notes-filter-input"
-        @input="onFilterInput"
-      />
-      <QnButton
-        variant="primary"
-        size="sm"
-        :loading="notesStore.mutating"
-        data-testid="notes-create-btn"
-        @click="notesStore.openNewNoteModal()"
-      >
-        + 新建
-      </QnButton>
-    </div>
-
-    <QnBanner v-if="notesStore.errorMessage" tone="danger" data-testid="notes-error-banner">
-      {{ notesStore.errorMessage }}
-    </QnBanner>
-
-    <div
-      v-if="notesStore.pinnedExternalFiles.length > 0"
-      class="qn-notes-sidebar__pinned-external"
-      data-testid="notes-pinned-external"
-    >
-      <button
-        type="button"
-        class="qn-notes-sidebar__pinned-header"
-        data-testid="notes-pinned-external-toggle"
-        @click="pinnedExternalExpanded = !pinnedExternalExpanded"
-      >
-        <span>{{ pinnedExternalExpanded ? '▾' : '▸' }} 常用外部文件</span>
-        <QnBadge tone="accent" size="sm">{{ notesStore.pinnedExternalFiles.length }}</QnBadge>
-      </button>
-
-      <div v-if="pinnedExternalExpanded" class="qn-notes-sidebar__pinned-list">
-        <div
-          v-for="item in notesStore.pinnedExternalFiles"
-          :key="item.absPath"
-          :class="[
-            'qn-notes-sidebar__pinned-item',
-            {
-              'qn-notes-sidebar__pinned-item--active':
-                editorTabsStore.activeTab?.absPath === item.absPath,
-            },
-          ]"
-          :title="item.absPath"
-          :data-testid="`pinned-external-item-${item.absPath}`"
-          @click="editorTabsStore.openNoteByAbsPath(item.absPath, { preview: true })"
-          @dblclick="editorTabsStore.openNoteByAbsPath(item.absPath, { preview: false })"
-          @contextmenu.prevent="openExternalContextMenu($event, item)"
-        >
-          <span class="qn-notes-sidebar__pinned-title">{{ item.title }}</span>
-          <button
-            type="button"
-            class="qn-notes-sidebar__pinned-unpin"
-            title="取消固定"
-            :aria-label="`取消固定 ${item.title}`"
-            :data-testid="`pinned-external-unpin-${item.absPath}`"
-            @click.stop="notesStore.togglePinExternalFile(item.absPath)"
-          >
-            ×
-          </button>
-        </div>
-      </div>
-
-      <QnContextMenu
-        :open="externalCtxOpen"
-        :x="externalCtxPos.x"
-        :y="externalCtxPos.y"
-        :items="externalCtxMenuItems"
-        @select="handleExternalContextSelect"
-        @close="externalCtxOpen = false"
-      />
-    </div>
-
-    <div class="qn-notes-sidebar__list" data-testid="notes-list">
-      <div v-if="notesStore.notes.length === 0" class="qn-notes-sidebar__empty">
-        {{ notesStore.loadingList ? '正在加载笔记…' : '当前筛选下暂无笔记' }}
-      </div>
       <div
-        v-for="note in notesStore.notes"
-        :key="note.key"
-        :class="[
-          'qn-notes-sidebar__card',
-          {
-            'qn-notes-sidebar__card--active': editorTabsStore.activeTab?.relPath === note.relPath,
-          },
-        ]"
-        :data-testid="`note-card-${note.relPath ?? note.absPath}`"
-        @click="openNoteFromList(note, true)"
-        @dblclick="openNoteFromList(note, false)"
+        v-if="notesStore.activeTab === 'projects'"
+        class="qn-notes-sidebar__subpanel"
+        data-testid="nav-projects-tree"
       >
-        <div class="qn-notes-sidebar__card-header">
-          <input
-            v-if="note.relPath && renamingRelPath === note.relPath"
-            ref="renameInputRef"
-            v-model="renameDraft"
-            type="text"
-            class="qn-notes-sidebar__rename-input"
-            data-testid="note-rename-input"
-            @click.stop
-            @dblclick.stop
-            @keydown.enter.prevent="commitRename(note.relPath)"
-            @keydown.escape.prevent="cancelRename"
-            @blur="commitRename(note.relPath)"
-          />
-          <span v-else class="qn-notes-sidebar__card-title">
-            <span v-if="note.pinned" class="qn-notes-sidebar__pin" title="已置顶">★</span>
-            {{ note.title || note.relPath || note.absPath }}
-          </span>
-          <QnBadge v-if="note.metaError" tone="warning" data-testid="note-meta-error-badge">
-            Meta异常
-          </QnBadge>
+        <div class="qn-notes-sidebar__subpanel-header">
+          <span>项目目录</span>
+          <button
+            v-if="notesStore.selectedDir"
+            type="button"
+            class="qn-notes-sidebar__link-btn"
+            @click="notesStore.selectDir(null)"
+          >
+            全部项目
+          </button>
+        </div>
+        <div v-if="flatDirs.length === 0" class="qn-notes-sidebar__empty">暂无子目录</div>
+        <div v-else class="qn-notes-sidebar__tree">
+          <div
+            v-for="entry in flatDirs"
+            :key="entry.node.relPath"
+            :style="{ paddingLeft: `calc(var(--qn-space-2) + ${entry.depth} * var(--qn-space-3))` }"
+            :class="[
+              'qn-notes-sidebar__tree-item',
+              {
+                'qn-notes-sidebar__tree-item--active':
+                  notesStore.selectedDir === entry.node.relPath,
+              },
+            ]"
+            :data-testid="`dir-node-${entry.node.relPath}`"
+            @click="notesStore.selectDir(entry.node.relPath)"
+            @contextmenu.prevent="openDirContextMenu($event, entry.node)"
+          >
+            <button
+              v-if="entry.hasChildren"
+              type="button"
+              class="qn-notes-sidebar__expand-btn"
+              :aria-label="entry.expanded ? '折叠目录' : '展开目录'"
+              @click.stop="toggleDirExpand(entry.node.relPath)"
+            >
+              {{ entry.expanded ? '▾' : '▸' }}
+            </button>
+            <span v-else class="qn-notes-sidebar__expand-spacer" />
+            <span class="qn-notes-sidebar__tree-label">{{ entry.node.name }}</span>
+            <QnBadge
+              v-if="getBoundDirWorkspaceEntry(entry.node.relPath)"
+              :tone="
+                getBoundDirWorkspaceEntry(entry.node.relPath)?.parseError ? 'warning' : 'accent'
+              "
+              size="sm"
+              class="qn-notes-sidebar__ws-badge"
+              :title="formatDirWorkspaceTooltip(getBoundDirWorkspaceEntry(entry.node.relPath)!)"
+              :data-testid="`dir-ws-badge-${entry.node.relPath}`"
+            >
+              {{ getBoundDirWorkspaceEntry(entry.node.relPath)?.parseError ? '异常' : 'WS' }}
+            </QnBadge>
+            <span class="qn-notes-sidebar__tree-count">{{ entry.node.count }}</span>
+          </div>
+        </div>
+        <QnContextMenu
+          :open="dirCtxOpen"
+          :x="dirCtxPos.x"
+          :y="dirCtxPos.y"
+          :items="dirCtxMenuItems"
+          @select="handleDirContextSelect"
+          @close="dirCtxOpen = false"
+        />
+      </div>
+
+      <div
+        v-else-if="notesStore.activeTab === 'tags'"
+        class="qn-notes-sidebar__subpanel"
+        data-testid="nav-tags-tree"
+      >
+        <div class="qn-notes-sidebar__subpanel-header">
+          <span>标签树（多选 AND）</span>
+          <button
+            v-if="notesStore.selectedTags.length > 0"
+            type="button"
+            class="qn-notes-sidebar__link-btn"
+            data-testid="clear-tags-btn"
+            @click="notesStore.clearTags()"
+          >
+            清除筛选
+          </button>
+        </div>
+        <div v-if="notesStore.selectedTags.length > 0" class="qn-notes-sidebar__chips">
+          <button
+            v-for="tag in notesStore.selectedTags"
+            :key="tag"
+            type="button"
+            class="qn-notes-sidebar__chip"
+            :data-testid="`selected-tag-chip-${tag}`"
+            @click="notesStore.toggleTag(tag)"
+          >
+            #{{ tag }} ×
+          </button>
+        </div>
+        <div v-if="tagRenameNotice" class="qn-notes-sidebar__tag-notice">
+          <QnBanner tone="success" data-testid="tag-rename-success-banner">
+            <span>{{ tagRenameNotice }}</span>
+            <template #actions>
+              <QnButton size="sm" variant="ghost" @click="tagRenameNotice = null">关闭</QnButton>
+            </template>
+          </QnBanner>
+        </div>
+        <div v-if="flatTags.length === 0" class="qn-notes-sidebar__empty">暂无标签</div>
+        <div v-else class="qn-notes-sidebar__tree">
+          <div
+            v-for="entry in flatTags"
+            :key="entry.node.tag"
+            :style="{ paddingLeft: `calc(var(--qn-space-2) + ${entry.depth} * var(--qn-space-3))` }"
+            :class="[
+              'qn-notes-sidebar__tree-item',
+              {
+                'qn-notes-sidebar__tree-item--active': notesStore.selectedTags.includes(
+                  entry.node.tag,
+                ),
+              },
+            ]"
+            :data-testid="`tag-node-${entry.node.tag}`"
+            @click="notesStore.toggleTag(entry.node.tag)"
+            @contextmenu.prevent="openTagContextMenu($event, entry.node.tag)"
+          >
+            <button
+              v-if="entry.hasChildren"
+              type="button"
+              class="qn-notes-sidebar__expand-btn"
+              :aria-label="entry.expanded ? '折叠标签' : '展开标签'"
+              @click.stop="toggleTagExpand(entry.node.tag)"
+            >
+              {{ entry.expanded ? '▾' : '▸' }}
+            </button>
+            <span v-else class="qn-notes-sidebar__expand-spacer" />
+            <span class="qn-notes-sidebar__tree-label">#{{ entry.node.tag }}</span>
+            <button
+              type="button"
+              class="qn-notes-sidebar__tag-action"
+              title="重命名 / 合并…"
+              :data-testid="`tag-rename-trigger-${entry.node.tag}`"
+              @click.stop="openTagRenameModal(entry.node.tag)"
+            >
+              重命名
+            </button>
+            <span class="qn-notes-sidebar__tree-count">{{ entry.node.count }}</span>
+          </div>
+        </div>
+        <QnContextMenu
+          :open="tagCtxOpen"
+          :x="tagCtxPos.x"
+          :y="tagCtxPos.y"
+          :items="tagCtxMenuItems"
+          @select="handleTagContextSelect"
+          @close="tagCtxOpen = false"
+        />
+      </div>
+
+      <div
+        v-else-if="notesStore.activeTab === 'workspaces'"
+        class="qn-notes-sidebar__subpanel"
+        data-testid="nav-workspaces-list"
+      >
+        <div class="qn-notes-sidebar__subpanel-header">
+          <span>工作区</span>
+          <button
+            v-if="notesStore.selectedWorkspace"
+            type="button"
+            class="qn-notes-sidebar__link-btn"
+            @click="notesStore.selectWorkspace(null)"
+          >
+            清除锁定
+          </button>
+        </div>
+        <div v-if="notesStore.navTree.workspaces.length === 0" class="qn-notes-sidebar__empty">
+          暂无工作区
+        </div>
+        <div v-else class="qn-notes-sidebar__tree">
+          <div
+            v-for="ws in notesStore.navTree.workspaces"
+            :key="ws.key"
+            :class="[
+              'qn-notes-sidebar__tree-item',
+              { 'qn-notes-sidebar__tree-item--active': notesStore.selectedWorkspace === ws.key },
+            ]"
+            :data-testid="`workspace-node-${ws.key}`"
+            @click="notesStore.selectWorkspace(ws.key)"
+          >
+            <span class="qn-notes-sidebar__tree-label">{{ ws.name }}</span>
+            <span class="qn-notes-sidebar__tree-count">{{ ws.key }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="qn-notes-sidebar__toolbar">
+        <input
+          ref="filterInputRef"
+          type="search"
+          :value="notesStore.filterText"
+          placeholder="过滤标题或标签… (⌘F)"
+          class="qn-notes-sidebar__filter-input"
+          data-testid="notes-filter-input"
+          @input="onFilterInput"
+        />
+        <QnButton
+          variant="primary"
+          size="sm"
+          :loading="notesStore.mutating"
+          data-testid="notes-create-btn"
+          @click="notesStore.openNewNoteModal()"
+        >
+          + 新建
+        </QnButton>
+      </div>
+
+      <QnBanner v-if="notesStore.errorMessage" tone="danger" data-testid="notes-error-banner">
+        {{ notesStore.errorMessage }}
+      </QnBanner>
+
+      <div
+        v-if="notesStore.pinnedExternalFiles.length > 0"
+        class="qn-notes-sidebar__pinned-external"
+        data-testid="notes-pinned-external"
+      >
+        <button
+          type="button"
+          class="qn-notes-sidebar__pinned-header"
+          data-testid="notes-pinned-external-toggle"
+          @click="pinnedExternalExpanded = !pinnedExternalExpanded"
+        >
+          <span>{{ pinnedExternalExpanded ? '▾' : '▸' }} 常用外部文件</span>
+          <QnBadge tone="accent" size="sm">{{ notesStore.pinnedExternalFiles.length }}</QnBadge>
+        </button>
+
+        <div v-if="pinnedExternalExpanded" class="qn-notes-sidebar__pinned-list">
+          <div
+            v-for="item in notesStore.pinnedExternalFiles"
+            :key="item.absPath"
+            :class="[
+              'qn-notes-sidebar__pinned-item',
+              {
+                'qn-notes-sidebar__pinned-item--active':
+                  editorTabsStore.activeTab?.absPath === item.absPath,
+              },
+            ]"
+            :title="item.absPath"
+            :data-testid="`pinned-external-item-${item.absPath}`"
+            @click="editorTabsStore.openNoteByAbsPath(item.absPath, { preview: true })"
+            @dblclick="editorTabsStore.openNoteByAbsPath(item.absPath, { preview: false })"
+            @contextmenu.prevent="openExternalContextMenu($event, item)"
+          >
+            <span class="qn-notes-sidebar__pinned-title">{{ item.title }}</span>
+            <button
+              type="button"
+              class="qn-notes-sidebar__pinned-unpin"
+              title="取消固定"
+              :aria-label="`取消固定 ${item.title}`"
+              :data-testid="`pinned-external-unpin-${item.absPath}`"
+              @click.stop="notesStore.togglePinExternalFile(item.absPath)"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
-        <p v-if="note.excerpt" class="qn-notes-sidebar__card-excerpt">
-          {{ note.excerpt }}
-        </p>
+        <QnContextMenu
+          :open="externalCtxOpen"
+          :x="externalCtxPos.x"
+          :y="externalCtxPos.y"
+          :items="externalCtxMenuItems"
+          @select="handleExternalContextSelect"
+          @close="externalCtxOpen = false"
+        />
+      </div>
 
-        <div class="qn-notes-sidebar__card-footer">
-          <div class="qn-notes-sidebar__card-tags">
-            <span v-for="tag in note.tags.slice(0, 3)" :key="tag" class="qn-notes-sidebar__tag">
-              #{{ tag }}
+      <div class="qn-notes-sidebar__list" data-testid="notes-list">
+        <div v-if="notesStore.notes.length === 0" class="qn-notes-sidebar__empty">
+          {{ notesStore.loadingList ? '正在加载笔记…' : '当前筛选下暂无笔记' }}
+        </div>
+        <div
+          v-for="note in notesStore.notes"
+          :key="note.key"
+          :class="[
+            'qn-notes-sidebar__card',
+            {
+              'qn-notes-sidebar__card--active': editorTabsStore.activeTab?.relPath === note.relPath,
+            },
+          ]"
+          :data-testid="`note-card-${note.relPath ?? note.absPath}`"
+          @click="openNoteFromList(note, true)"
+          @dblclick="openNoteFromList(note, false)"
+        >
+          <div class="qn-notes-sidebar__card-header">
+            <input
+              v-if="note.relPath && renamingRelPath === note.relPath"
+              ref="renameInputRef"
+              v-model="renameDraft"
+              type="text"
+              class="qn-notes-sidebar__rename-input"
+              data-testid="note-rename-input"
+              @click.stop
+              @dblclick.stop
+              @keydown.enter.prevent="commitRename(note.relPath)"
+              @keydown.escape.prevent="cancelRename"
+              @blur="commitRename(note.relPath)"
+            />
+            <span v-else class="qn-notes-sidebar__card-title">
+              <span v-if="note.pinned" class="qn-notes-sidebar__pin" title="已置顶">★</span>
+              {{ note.title || note.relPath || note.absPath }}
             </span>
+            <QnBadge v-if="note.metaError" tone="warning" data-testid="note-meta-error-badge">
+              Meta异常
+            </QnBadge>
           </div>
-          <div class="qn-notes-sidebar__card-meta">
-            <span class="qn-notes-sidebar__card-time">{{ formatMtime(note.mtimeMs) }}</span>
-            <template v-if="canMutateNote(note)">
-              <button
-                type="button"
-                class="qn-notes-sidebar__card-action"
-                :data-testid="`note-rename-btn-${note.relPath}`"
-                @click.stop="startRename(note)"
-              >
-                重命名
-              </button>
-              <button
-                type="button"
-                class="qn-notes-sidebar__card-action qn-notes-sidebar__card-action--danger"
-                :data-testid="`note-delete-btn-${note.relPath}`"
-                @click.stop="handleDeleteNote(note.relPath)"
-              >
-                删除
-              </button>
-            </template>
+
+          <p v-if="note.excerpt" class="qn-notes-sidebar__card-excerpt">
+            {{ note.excerpt }}
+          </p>
+
+          <div class="qn-notes-sidebar__card-footer">
+            <div class="qn-notes-sidebar__card-tags">
+              <span v-for="tag in note.tags.slice(0, 3)" :key="tag" class="qn-notes-sidebar__tag">
+                #{{ tag }}
+              </span>
+            </div>
+            <div class="qn-notes-sidebar__card-meta">
+              <span class="qn-notes-sidebar__card-time">{{ formatMtime(note.mtimeMs) }}</span>
+              <template v-if="canMutateNote(note)">
+                <button
+                  type="button"
+                  class="qn-notes-sidebar__card-action"
+                  :data-testid="`note-rename-btn-${note.relPath}`"
+                  @click.stop="startRename(note)"
+                >
+                  重命名
+                </button>
+                <button
+                  type="button"
+                  class="qn-notes-sidebar__card-action qn-notes-sidebar__card-action--danger"
+                  :data-testid="`note-delete-btn-${note.relPath}`"
+                  @click.stop="handleDeleteNote(note.relPath)"
+                >
+                  删除
+                </button>
+              </template>
+            </div>
           </div>
         </div>
       </div>
     </div>
+
+    <RelatedNotesPanel
+      v-if="panelsStore.leftSidebar.activeView === 'related'"
+      data-testid="left-view-related"
+    />
+    <OutlinePanel
+      v-else-if="panelsStore.leftSidebar.activeView === 'outline'"
+      data-testid="left-view-outline"
+    />
   </aside>
 
   <QnModalShell
@@ -1148,6 +1191,13 @@ async function handleSelectTab(tab: NavTab): Promise<void> {
   height: 1px;
   background-color: var(--qn-border-subtle);
   margin: 2px 0;
+}
+
+.qn-notes-sidebar__workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .qn-notes-sidebar-strip__btn {

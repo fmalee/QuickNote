@@ -217,28 +217,18 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
 
     let view_submenu = SubmenuBuilder::new(app, "视图")
         .item(
-            &MenuItemBuilder::with_id("panel.toggle.outline", "大纲面板")
+            &MenuItemBuilder::with_id("panel.toggle.outline", "大纲视图")
                 .accelerator("Ctrl+CmdOrCtrl+O")
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("panel.toggle.related", "关联笔记面板")
+            &MenuItemBuilder::with_id("panel.toggle.related", "相关文档视图")
                 .accelerator("Ctrl+CmdOrCtrl+R")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("panel.toggle.recent", "最近文档面板")
-                .accelerator("Ctrl+CmdOrCtrl+E")
                 .build(app)?,
         )
         .item(
             &MenuItemBuilder::with_id("panel.toggle.terminal", "终端面板")
                 .accelerator("Ctrl+CmdOrCtrl+T")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("panel.collapseGroup", "折叠/展开右侧面板")
-                .accelerator("Ctrl+CmdOrCtrl+0")
                 .build(app)?,
         )
         .separator()
@@ -434,9 +424,7 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
             | "editor.exportPdf"
             | "panel.toggle.outline"
             | "panel.toggle.related"
-            | "panel.toggle.recent"
             | "panel.toggle.terminal"
-            | "panel.collapseGroup"
             | "window.toggleAuxiliary" => {
                 let main_focused = app_handle
                     .get_webview_window("main")

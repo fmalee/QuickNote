@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
 import type { WindowMode, WindowsUiState } from '@/bindings/types';
-import { QnBadge, QnBanner, QnButton, QnModalShell } from '@/components';
+import { QnBanner, QnButton, QnModalShell } from '@/components';
 import { CommandBookPalette, useCommandPalette } from '@/features/commands';
 import {
   DocHeaderBar,
@@ -19,15 +19,15 @@ import {
 } from '@/features/editor';
 import { NewNoteTemplateModal, NotesSidebar, useNotesStore } from '@/features/notes';
 import { OnboardingView, useOnboardingStore } from '@/features/onboarding';
-import { RightPanelGroup, usePanelsStore } from '@/features/panels';
+import { usePanelsStore } from '@/features/panels';
 import {
   PENDING_OPEN_FILE_STORAGE_KEY,
   QuickOpenPalette,
   consumePendingOpenFile,
   useQuickOpen,
 } from '@/features/quickopen';
-import { SettingsErrorBanner, VisualBaselinePreview, useSettingsStore } from '@/features/settings';
-import { useTerminalStore } from '@/features/terminal';
+import { SettingsErrorBanner, useSettingsStore } from '@/features/settings';
+import { TerminalPanel, useTerminalStore } from '@/features/terminal';
 import {
   ACTION_KEYBINDINGS_STORAGE_KEY,
   actionRegistry,
@@ -48,7 +48,6 @@ const panelsStore = usePanelsStore();
 const terminalStore = useTerminalStore();
 
 const shellRef = ref<HTMLElement | null>(null);
-const baselinePreviewOpen = ref(false);
 const quickOpenModalOpen = ref(false);
 const quickOpenFocusTick = ref(0);
 const commandBookModalOpen = ref(false);
@@ -77,7 +76,6 @@ function resolveActiveScopes(): ActionScope[] {
   }
 
   if (
-    baselinePreviewOpen.value ||
     quickOpenModalOpen.value ||
     commandBookModalOpen.value ||
     document.querySelector('[role="dialog"]')
@@ -253,19 +251,13 @@ function bindMainWindowActions(): void {
       void toggleAuxiliaryMode();
     }),
     actionRegistry.bindHandler('panel.toggle.outline', () => {
-      panelsStore.togglePanel('outline');
+      panelsStore.toggleLeftView('outline');
     }),
     actionRegistry.bindHandler('panel.toggle.terminal', () => {
-      panelsStore.togglePanel('terminal');
+      panelsStore.toggleTerminalPanel();
     }),
     actionRegistry.bindHandler('panel.toggle.related', () => {
-      panelsStore.togglePanel('related');
-    }),
-    actionRegistry.bindHandler('panel.toggle.recent', () => {
-      panelsStore.togglePanel('recent');
-    }),
-    actionRegistry.bindHandler('panel.collapseGroup', () => {
-      panelsStore.toggleCollapseAll();
+      panelsStore.toggleLeftView('related');
     }),
     actionRegistry.bindHandler(
       'terminal.copySelection',
@@ -311,12 +303,52 @@ watch(
 );
 
 watch(
-  () => panelsStore.isPanelGroupExpanded && panelsStore.panelGroup.activeId === 'terminal',
+  () => panelsStore.isTerminalPanelShown,
   (terminalVisible) => {
     void terminalStore.syncPanelVisibility(terminalVisible);
   },
   { immediate: true },
 );
+
+let terminalResizing = false;
+let terminalResizeStartY = 0;
+let terminalResizeStartHeight = 240;
+
+function onTerminalResizeMove(event: PointerEvent): void {
+  if (!terminalResizing) {
+    return;
+  }
+  const nextHeight = terminalResizeStartHeight + (terminalResizeStartY - event.clientY);
+  panelsStore.setTerminalPanelHeight(nextHeight);
+}
+
+function stopTerminalResize(): void {
+  if (!terminalResizing) {
+    return;
+  }
+  terminalResizing = false;
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('pointermove', onTerminalResizeMove);
+    window.removeEventListener('pointerup', stopTerminalResize);
+    window.removeEventListener('pointercancel', stopTerminalResize);
+  }
+  panelsStore.commitTerminalPanelHeight();
+}
+
+function startTerminalResize(event: PointerEvent): void {
+  if (event.button !== 0) {
+    return;
+  }
+  event.preventDefault();
+  terminalResizing = true;
+  terminalResizeStartY = event.clientY;
+  terminalResizeStartHeight = panelsStore.terminalPanel.height;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pointermove', onTerminalResizeMove);
+    window.addEventListener('pointerup', stopTerminalResize);
+    window.addEventListener('pointercancel', stopTerminalResize);
+  }
+}
 
 watch(
   () => externalActions.feedback,
@@ -592,6 +624,7 @@ watch(shellRef, (el) => {
 });
 
 onUnmounted(() => {
+  stopTerminalResize();
   if (viewportResizeObserver) {
     viewportResizeObserver.disconnect();
     viewportResizeObserver = null;
@@ -655,58 +688,6 @@ onUnmounted(() => {
       ]"
       data-testid="main-workbench-unlocked"
     >
-      <header class="qn-main-shell__titlebar">
-        <div class="qn-main-shell__brand">
-          <span class="qn-main-shell__title">QuickNote</span>
-          <QnBadge
-            v-if="mainWindowMode === 'auxiliary'"
-            tone="accent"
-            data-testid="auxiliary-mode-badge"
-          >
-            侧栏辅助
-          </QnBadge>
-          <QnBadge v-else tone="neutral">{{ onboardingStore.libraryInfo?.root }}</QnBadge>
-          <QnButton
-            v-if="mainWindowMode === 'auxiliary'"
-            variant="ghost"
-            size="sm"
-            data-testid="auxiliary-nav-drawer-btn"
-            @click="panelsStore.toggleLeftSidebar()"
-          >
-            {{ panelsStore.leftSidebarCollapsed ? '拉出导航' : '收起导航' }}
-          </QnButton>
-        </div>
-        <div class="qn-main-shell__titlebar-actions">
-          <QnButton
-            v-if="mainWindowMode === 'auxiliary'"
-            variant="secondary"
-            size="sm"
-            data-testid="exit-auxiliary-mode-btn"
-            @click="exitAuxiliaryMode"
-          >
-            退出侧栏辅助
-          </QnButton>
-          <QnButton
-            variant="ghost"
-            size="sm"
-            title="切换 45% 侧栏辅助模式"
-            data-testid="toggle-auxiliary-mode-btn"
-            @click="toggleAuxiliaryMode"
-          >
-            {{ mainWindowMode === 'auxiliary' ? '标准窗口' : '45% 侧栏辅助' }}
-          </QnButton>
-          <QnButton
-            v-if="mainWindowMode !== 'auxiliary'"
-            variant="ghost"
-            size="sm"
-            @click="baselinePreviewOpen = true"
-          >
-            视觉基线预览
-          </QnButton>
-          <QnBadge v-if="mainWindowMode !== 'auxiliary'" tone="accent">⌃⌥Space 捕捉</QnBadge>
-        </div>
-      </header>
-
       <div class="qn-main-shell__body">
         <div
           v-if="panelsStore.isOverlayDrawer && !panelsStore.leftSidebarCollapsed"
@@ -725,6 +706,30 @@ onUnmounted(() => {
           <EditorTabBar />
           <InboxBloatBanner />
           <EditorConflictBanner />
+
+          <!-- 45% 侧栏辅助模式专用的两个悬浮按钮（标准模式下不渲染） -->
+          <div
+            v-if="mainWindowMode === 'auxiliary'"
+            class="qn-main-shell__aux-controls"
+            data-testid="aux-controls"
+          >
+            <QnButton
+              variant="ghost"
+              size="sm"
+              data-testid="auxiliary-nav-drawer-btn"
+              @click="panelsStore.toggleLeftSidebar()"
+            >
+              {{ panelsStore.leftSidebarCollapsed ? '拉出导航' : '收起导航' }}
+            </QnButton>
+            <QnButton
+              variant="secondary"
+              size="sm"
+              data-testid="exit-auxiliary-mode-btn"
+              @click="exitAuxiliaryMode"
+            >
+              退出侧栏辅助
+            </QnButton>
+          </div>
 
           <div class="qn-main-shell__workspace">
             <div class="qn-main-shell__editor-stage">
@@ -769,7 +774,52 @@ onUnmounted(() => {
                 <p class="qn-main-shell__placeholder-text">从左侧选择或新建一篇笔记。</p>
               </div>
             </div>
-            <RightPanelGroup />
+
+            <!-- 底部终端：有存活会话时折叠也保持挂载（D-0005 折叠保活） -->
+            <aside
+              v-show="panelsStore.terminalPanel.visible"
+              class="qn-terminal-dock"
+              :class="{ 'qn-terminal-dock--collapsed': !panelsStore.isTerminalPanelShown }"
+              data-testid="terminal-dock"
+            >
+              <div class="qn-terminal-dock__header">
+                <button
+                  type="button"
+                  class="qn-terminal-dock__toggle"
+                  :title="panelsStore.isTerminalPanelShown ? '折叠终端' : '展开终端'"
+                  data-testid="terminal-dock-toggle"
+                  @click="panelsStore.toggleTerminalCollapse()"
+                >
+                  {{ panelsStore.isTerminalPanelShown ? '▾' : '▴' }} 终端
+                </button>
+                <button
+                  type="button"
+                  class="qn-terminal-dock__close"
+                  title="隐藏终端（会话保留）"
+                  data-testid="terminal-dock-close"
+                  @click="panelsStore.toggleTerminalPanel()"
+                >
+                  ×
+                </button>
+              </div>
+              <div
+                v-show="panelsStore.isTerminalPanelShown"
+                class="qn-terminal-dock__body"
+                :style="{ height: `${panelsStore.terminalPanel.height}px` }"
+              >
+                <div
+                  class="qn-terminal-dock__resizer"
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label="调整终端高度"
+                  data-testid="terminal-dock-resizer"
+                  @pointerdown="startTerminalResize"
+                />
+                <TerminalPanel
+                  v-if="panelsStore.terminalPanel.visible || terminalStore.hasAnySession"
+                />
+              </div>
+            </aside>
           </div>
         </section>
       </div>
@@ -799,19 +849,6 @@ onUnmounted(() => {
       </footer>
     </div>
 
-    <QnModalShell
-      :open="baselinePreviewOpen"
-      title="视觉基线预览"
-      max-width="lg"
-      @close="baselinePreviewOpen = false"
-    >
-      <div class="qn-main-shell__baseline-scroll">
-        <VisualBaselinePreview />
-      </div>
-      <template #footer>
-        <QnButton variant="primary" size="sm" @click="baselinePreviewOpen = false">关闭</QnButton>
-      </template>
-    </QnModalShell>
     <QnModalShell
       :open="quickOpenModalOpen"
       title="快速打开"
@@ -875,36 +912,6 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-.qn-main-shell__titlebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--qn-space-3);
-  height: 44px;
-  padding: 0 var(--qn-space-4);
-  border-bottom: 1px solid var(--qn-border-subtle);
-  background-color: var(--qn-bg-sidebar);
-}
-
-.qn-main-shell__brand {
-  display: flex;
-  align-items: center;
-  gap: var(--qn-space-2);
-  min-width: 0;
-}
-
-.qn-main-shell__title {
-  font-size: var(--qn-text-sm);
-  font-weight: 600;
-  color: var(--qn-text-primary);
-}
-
-.qn-main-shell__titlebar-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--qn-space-2);
-}
-
 .qn-main-shell__body {
   position: relative;
   flex: 1;
@@ -920,10 +927,21 @@ onUnmounted(() => {
 }
 
 .qn-main-shell__editor-col {
+  position: relative;
   flex: 1;
   min-width: min(480px, 100%);
   display: flex;
   flex-direction: column;
+}
+
+.qn-main-shell__aux-controls {
+  position: absolute;
+  top: var(--qn-space-2);
+  right: var(--qn-space-3);
+  z-index: var(--qn-z-drawer);
+  display: flex;
+  align-items: center;
+  gap: var(--qn-space-2);
 }
 
 .qn-main-shell__editor-banner {
@@ -937,16 +955,81 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   display: flex;
+  flex-direction: column;
 }
 
 .qn-main-shell__editor-stage {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--qn-space-6);
   display: flex;
   justify-content: center;
+}
+
+.qn-terminal-dock {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--qn-border-subtle);
+  background-color: var(--qn-bg-sidebar);
+}
+
+.qn-terminal-dock__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 var(--qn-space-3);
+  border-bottom: 1px solid var(--qn-border-subtle);
+  background-color: var(--qn-bg-sidebar);
+}
+
+.qn-terminal-dock--collapsed .qn-terminal-dock__header {
+  border-bottom: none;
+}
+
+.qn-terminal-dock__toggle,
+.qn-terminal-dock__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: var(--qn-radius-sm);
+  color: var(--qn-text-secondary);
+  font-size: var(--qn-text-xs);
+  cursor: pointer;
+  padding: 2px var(--qn-space-2);
+}
+
+.qn-terminal-dock__toggle:hover,
+.qn-terminal-dock__close:hover {
+  background-color: var(--qn-bg-hover);
+  color: var(--qn-text-primary);
+}
+
+.qn-terminal-dock__body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.qn-terminal-dock__resizer {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: row-resize;
+  z-index: var(--qn-z-base);
+}
+
+.qn-terminal-dock__resizer:hover {
+  background-color: var(--qn-accent-soft);
 }
 
 .qn-main-shell__editor-paper {
@@ -991,21 +1074,6 @@ onUnmounted(() => {
   color: var(--qn-text-primary);
 }
 
-.qn-main-shell__right-panel {
-  width: 260px;
-  flex-shrink: 0;
-  border-left: 1px solid var(--qn-border-subtle);
-  background-color: var(--qn-bg-sidebar);
-  padding: var(--qn-space-3);
-}
-
-.qn-main-shell__panel-header {
-  font-size: var(--qn-text-xs);
-  font-weight: 600;
-  color: var(--qn-text-secondary);
-  margin-bottom: var(--qn-space-2);
-}
-
 .qn-main-shell__placeholder-text {
   margin: 0;
   font-size: var(--qn-text-sm);
@@ -1040,11 +1108,5 @@ onUnmounted(() => {
 
 .qn-main-shell__status-feedback--danger {
   color: var(--qn-danger);
-}
-
-.qn-main-shell__baseline-scroll {
-  max-height: 70vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 </style>

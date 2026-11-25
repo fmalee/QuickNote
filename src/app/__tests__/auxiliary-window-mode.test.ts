@@ -143,8 +143,10 @@ vi.mock('@/features/quickopen', () => ({
 }));
 
 vi.mock('@/features/terminal', () => ({
+  TerminalPanel: { template: '<div data-testid="terminal-panel" />' },
   useTerminalStore: () => ({
     hasSelection: false,
+    hasAnySession: false,
     syncPanelVisibility: vi.fn().mockResolvedValue(undefined),
     copyActiveSelection: vi.fn().mockResolvedValue(undefined),
   }),
@@ -279,6 +281,7 @@ describe('M4-05 auxiliary window mode & settings binding', () => {
 
     const panelsStore = usePanelsStore();
     expect(standardHtml).toContain('data-testid="notes-sidebar"');
+    expect(standardHtml).not.toContain('data-testid="aux-controls"');
     expect(standardHtml).not.toContain('data-testid="exit-auxiliary-mode-btn"');
     expect(panelsStore.isOverlayDrawer).toBe(false);
 
@@ -312,8 +315,9 @@ describe('M4-05 auxiliary window mode & settings binding', () => {
     const auxRendered = await renderToString(createSSRApp(AuxShell).use(auxPinia));
     const auxPanels = useAuxPanelsStore(auxPinia);
     expect(auxPanels.isOverlayDrawer).toBe(true);
+    expect(auxRendered).toContain('data-testid="aux-controls"');
+    expect(auxRendered).toContain('退出侧栏辅助');
     expect(auxRendered).toContain('data-testid="exit-auxiliary-mode-btn"');
-    expect(auxRendered).toContain('data-testid="auxiliary-mode-badge"');
     expect(auxRendered).not.toContain('data-testid="notes-sidebar"');
   });
 

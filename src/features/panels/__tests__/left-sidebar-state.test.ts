@@ -115,4 +115,50 @@ describe('panels store leftSidebar & terminalPanel state', () => {
 
     store.dispose();
   });
+
+  it('applies responsive breakpoints for left sidebar collapse and overlay drawer mode', async () => {
+    const store = usePanelsStore();
+    await store.initialize();
+
+    // 1280px：常规展开
+    store.applyViewportWidth(1280);
+    expect(store.leftSidebarCollapsed).toBe(false);
+    expect(store.isOverlayDrawer).toBe(false);
+
+    // 960px (< 1000)：左侧自动收起为窄图标条
+    store.applyViewportWidth(960);
+    expect(store.isNarrowLeftBreakpoint).toBe(true);
+    expect(store.leftSidebarCollapsed).toBe(true);
+    expect(store.isOverlayDrawer).toBe(false);
+
+    // 820px (< 900)：进入覆盖式抽屉模式
+    store.applyViewportWidth(820);
+    expect(store.isOverlayDrawer).toBe(true);
+    expect(store.leftSidebarCollapsed).toBe(true);
+
+    // 回到 1280px：恢复常规展开
+    store.applyViewportWidth(1280);
+    expect(store.leftSidebarCollapsed).toBe(false);
+    expect(store.isOverlayDrawer).toBe(false);
+
+    store.dispose();
+  });
+
+  it('enforces overlay drawer and collapses left sidebar when forceOverlayDrawer is enabled', async () => {
+    const store = usePanelsStore();
+    await store.initialize();
+
+    store.applyViewportWidth(1280);
+    expect(store.isOverlayDrawer).toBe(false);
+
+    store.setForceOverlayDrawer(true);
+    expect(store.isOverlayDrawer).toBe(true);
+    expect(store.leftSidebarCollapsed).toBe(true);
+
+    store.setForceOverlayDrawer(false);
+    expect(store.isOverlayDrawer).toBe(false);
+    expect(store.leftSidebarCollapsed).toBe(false);
+
+    store.dispose();
+  });
 });

@@ -19,11 +19,16 @@
 - `src/app/MainWorkbenchShell.vue`
 - `src/features/notes/NotesSidebar.vue`
 - `src/features/panels/RightPanelGroup.vue`（删除）
+- `src/features/panels/index.ts`（只删 `export { default as RightPanelGroup } from './RightPanelGroup.vue';` 这一行；其余导出留给 M5-04d）
 - `src/features/panels/OutlinePanel.vue`（仅当它内部引用了旧的 `panelGroup` 状态时做适配）
 - `src/lib/actions/catalog.ts`
 - `src-tauri/src/lib.rs`
 
-测试文件（不计入上限）：`src/app/__tests__/auxiliary-window-mode.test.ts`、`src/features/panels/__tests__/right-panel-group.test.ts`
+测试文件（不计入上限）：
+
+- `src/app/__tests__/auxiliary-window-mode.test.ts`
+- `src/features/panels/__tests__/right-panel-group.test.ts`（清理或删除）
+- `src/features/panels/__tests__/left-sidebar-state.test.ts`（M5-04a 新建，本卡在文件末尾追加迁入的用例，不改已有用例）
 
 ## 3. 具体实现要求
 
@@ -155,12 +160,12 @@ watch(() => panelsStore.isTerminalPanelShown, (shown) => { /* 调用终端 store
 ### 3.6 测试
 
 - 删除 `right-panel-group.test.ts` 中依赖 `RightPanelGroup` 组件渲染的用例；其中仍然成立的 store 级断言（如断点下左侧栏自动收起、`applyViewportWidth` 行为）迁移到 `src/features/panels/__tests__/left-sidebar-state.test.ts`。迁移不了的直接删除。
-- `auxiliary-window-mode.test.ts`：把对 `toggle-auxiliary-mode-btn` 的断言改为 `exit-auxiliary-mode-btn`；新增断言：标准模式下 `aux-controls` 不渲染，45% 模式下渲染且含「退出侧栏辅助」。
+- `auxiliary-window-mode.test.ts`：横栏删除后，对 `data-testid="auxiliary-mode-badge"` 的断言（基线约第 316 行）失去对象，改为断言 `data-testid="aux-controls"` 渲染且含「退出侧栏辅助」文本；保留对 `exit-auxiliary-mode-btn` 的已有断言。标准模式（基线约第 282 行那一组）补一条：不渲染 `aux-controls`。文件里若没有 `toggle-auxiliary-mode-btn` 的断言，不必找它。
 
 ## 4. 自动化验收标准（必须全绿）
 
 - `pnpm check:all` 全绿。
-- `grep -rn 'RightPanelGroup' src/` 无结果（`panels/index.ts` 的导出由 M5-04d 清理，此处允许只剩那一行）。
+- `grep -rn 'RightPanelGroup' src/` 无结果。
 
 ## 5. 人工点验清单
 

@@ -396,7 +396,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
   // panel.*
   {
     id: 'panel.toggle.outline',
-    title: '切换大纲面板',
+    title: '大纲视图',
     category: 'panel',
     defaultKeys: 'ctrl+cmd+o',
     scope: 'main-window',
@@ -405,7 +405,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
   },
   {
     id: 'panel.toggle.terminal',
-    title: '切换终端面板',
+    title: '终端面板',
     category: 'panel',
     defaultKeys: 'ctrl+cmd+t',
     scope: 'main-window',
@@ -414,27 +414,9 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
   },
   {
     id: 'panel.toggle.related',
-    title: '切换关联笔记面板',
+    title: '相关文档视图',
     category: 'panel',
     defaultKeys: 'ctrl+cmd+r',
-    scope: 'main-window',
-    menuGroup: 'view',
-    run: noopAction,
-  },
-  {
-    id: 'panel.toggle.recent',
-    title: '切换最近笔记面板',
-    category: 'panel',
-    defaultKeys: 'ctrl+cmd+e',
-    scope: 'main-window',
-    menuGroup: 'view',
-    run: noopAction,
-  },
-  {
-    id: 'panel.collapseGroup',
-    title: '折叠 / 展开右侧面板栏',
-    category: 'panel',
-    defaultKeys: 'ctrl+cmd+0',
     scope: 'main-window',
     menuGroup: 'view',
     run: noopAction,
