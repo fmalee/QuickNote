@@ -7,11 +7,17 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use quicknote_lib::application::external::{
-    external_action_run, external_actions_resolve, path_complete, search_spotlight,
+    directory_workspace_config_get, directory_workspace_config_write, external_action_run,
+    external_actions_resolve, external_bookmark_add, external_bookmark_remove,
+    external_bookmarks_list, external_list_directory, external_list_sibling_files,
+    external_probe_path, external_search_roots, path_complete,
+    resolve_effective_workspace_for_path, search_spotlight,
 };
+use quicknote_lib::application::index::index_rebuild;
 use quicknote_lib::application::library::set_library_root;
 use quicknote_lib::application::notes::{note_read, search_notes_and_files};
 use quicknote_lib::application::persistence::PersistenceManager;
+use quicknote_lib::domain::bookmark::ExternalBookmarkKind;
 use quicknote_lib::domain::error::{AppError, ErrorCode};
 use quicknote_lib::domain::external::{
     is_spotlight_blacklisted, ExternalActionId, ExternalActionState, ResolveExternalArgs,
@@ -21,9 +27,11 @@ use quicknote_lib::domain::note::{
     PathCompleteArgs, ReadNoteArgs, SearchQueryArgs, SearchSource, SpotlightArgs,
 };
 use quicknote_lib::domain::settings::{
-    ExternalAppConfig, SetRootArgs, SettingsPatch, WorkspaceConfig,
+    parse_settings_yaml, ExternalAppConfig, SetRootArgs, SettingsPatch, WorkspaceConfig,
 };
+use quicknote_lib::domain::workspace_context::DirectoryWorkspaceConfig;
 use quicknote_lib::infra::external_open::ExternalLauncher;
+use quicknote_lib::infra::fs_browser::{ListDirectoryOptions, PathEntryKind};
 use quicknote_lib::infra::spotlight::{SpotlightRunner, SPOTLIGHT_HARD_LIMIT};
 
 static TEST_DIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -649,4 +657,358 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
     )
     .expect("read unpinned external file");
     assert!(!unpinned_doc.meta.pinned);
+}
+
+#[test]
+fn three_tier_workspace_cascade_priority_and_external_actions() {
+    let (_app, lib, pm) = setup_pm();
+
+    let global_open = TempDir::new().expect("global_open");
+    let global_term = TempDir::new().expect("global_term");
+    let parent_open = TempDir::new().expect("parent_open");
+    let parent_term = TempDir::new().expect("parent_term");
+    let child_open = TempDir::new().expect("child_open");
+    let doc_term = TempDir::new().expect("doc_term");
+
+    let global_ws_file = global_open.path().join("global.code-workspace");
+    let parent_ws_file = parent_open.path().join("parent.code-workspace");
+    fs::write(&global_ws_file, "{}").expect("write global ws");
+    fs::write(&parent_ws_file, "{}").expect("write parent ws");
+
+    // Tier 3 (lowest): global legacy workspace fallback.
+    let mut workspaces = BTreeMap::new();
+    workspaces.insert(
+        "demo".to_string(),
+        WorkspaceConfig {
+            name: "Demo".to_string(),
+            key: "demo".to_string(),
+            root: global_open.path().to_string_lossy().to_string(),
+            open_dir: global_open.path().to_string_lossy().to_string(),
+            code_workspace: Some(global_ws_file.to_string_lossy().to_string()),
+            terminal_dir: Some(global_term.path().to_string_lossy().to_string()),
+            default_editor: "vscode".to_string(),
+            default_entry_doc: None,
+        },
+    );
+    pm.settings_update(SettingsPatch {
+        workspaces: Some(workspaces),
+        ..Default::default()
+    })
+    .expect("update legacy workspaces");
+
+    // Tier 2 (middle): ancestor directory `.quicknote.yaml` files written via reconciler.
+    fs::create_dir_all(lib.path().join("projects/app")).expect("mkdir projects/app");
+    directory_workspace_config_write(
+        &pm,
+        "projects",
+        &DirectoryWorkspaceConfig {
+            vscode_workspace_path: Some(parent_ws_file.to_string_lossy().to_string()),
+            project_root: Some(parent_open.path().to_string_lossy().to_string()),
+            default_terminal_cwd: Some(parent_term.path().to_string_lossy().to_string()),
+            external_app_overrides: None,
+        },
+    )
+    .expect("write projects .quicknote.yaml");
+
+    directory_workspace_config_write(
+        &pm,
+        "projects/app",
+        &DirectoryWorkspaceConfig {
+            vscode_workspace_path: None,
+            project_root: Some(child_open.path().to_string_lossy().to_string()),
+            default_terminal_cwd: None,
+            external_app_overrides: None,
+        },
+    )
+    .expect("write projects/app .quicknote.yaml");
+
+    let loaded_child_cfg = directory_workspace_config_get(&pm, "projects/app")
+        .expect("get child cfg")
+        .expect("child cfg exists");
+    assert_eq!(
+        loaded_child_cfg.project_root.as_deref(),
+        Some(child_open.path().to_string_lossy().as_ref())
+    );
+
+    // Tier 1 (highest): Note Frontmatter overrides terminal_dir only.
+    let spec_note = lib.path().join("projects/app/spec.md");
+    fs::write(
+        &spec_note,
+        format!(
+            "---\ntitle: Spec\nproject: demo\nterminal_dir: {}\n---\nBody\n",
+            doc_term.path().to_string_lossy()
+        ),
+    )
+    .expect("write spec.md");
+
+    let effective = resolve_effective_workspace_for_path(
+        &pm,
+        Some(&spec_note.to_string_lossy()),
+        None,
+    )
+    .expect("resolve effective workspace");
+    assert_eq!(
+        effective.default_terminal_cwd.as_deref(),
+        Some(doc_term.path().to_string_lossy().as_ref()),
+        "Frontmatter must beat ancestor .quicknote.yaml and global default"
+    );
+    assert_eq!(
+        effective.project_root.as_deref(),
+        Some(child_open.path().to_string_lossy().as_ref()),
+        "Nearest ancestor .quicknote.yaml must beat farther ancestor and global default"
+    );
+    assert_eq!(
+        effective.vscode_workspace_path.as_deref(),
+        Some(parent_ws_file.to_string_lossy().as_ref()),
+        "Farther ancestor .quicknote.yaml must beat global default"
+    );
+
+    // Verify `external_actions_resolve` reflects the exact 3-tier cascade.
+    let states = external_actions_resolve(
+        &pm,
+        ResolveExternalArgs {
+            abs_path: Some(spec_note.to_string_lossy().to_string()),
+            workspace_key: None,
+            command_id: None,
+        },
+    )
+    .expect("resolve states");
+    assert_eq!(
+        find_state(&states, ExternalActionId::ExternalTerminal)
+            .resolved_path
+            .as_deref(),
+        Some(doc_term.path().to_string_lossy().as_ref())
+    );
+    assert_eq!(
+        find_state(&states, ExternalActionId::ExternalVscode)
+            .resolved_path
+            .as_deref(),
+        Some(child_open.path().to_string_lossy().as_ref())
+    );
+    assert_eq!(
+        find_state(&states, ExternalActionId::ExternalWorkspace)
+            .resolved_path
+            .as_deref(),
+        Some(parent_ws_file.to_string_lossy().as_ref())
+    );
+
+    // Verify `external_action_run` without explicit `dir_path` resolves via 3-tier cascade.
+    let launcher = RecordingLauncher::default();
+    external_action_run(
+        &pm,
+        &launcher,
+        RunExternalArgs {
+            id: ExternalActionId::ExternalTerminal,
+            abs_path: Some(spec_note.to_string_lossy().to_string()),
+            dir_path: None,
+        },
+    )
+    .expect("run terminal via cascade");
+    external_action_run(
+        &pm,
+        &launcher,
+        RunExternalArgs {
+            id: ExternalActionId::ExternalVscode,
+            abs_path: Some(spec_note.to_string_lossy().to_string()),
+            dir_path: None,
+        },
+    )
+    .expect("run vscode via cascade");
+    external_action_run(
+        &pm,
+        &launcher,
+        RunExternalArgs {
+            id: ExternalActionId::ExternalWorkspace,
+            abs_path: Some(spec_note.to_string_lossy().to_string()),
+            dir_path: None,
+        },
+    )
+    .expect("run workspace via cascade");
+
+    let calls = launcher.calls();
+    assert_eq!(
+        calls[0],
+        (
+            "terminal:com.googlecode.iterm2".to_string(),
+            doc_term.path().to_string_lossy().to_string()
+        )
+    );
+    assert_eq!(
+        calls[1],
+        (
+            "app:com.microsoft.VSCode".to_string(),
+            child_open.path().to_string_lossy().to_string()
+        )
+    );
+    assert_eq!(
+        calls[2],
+        (
+            "app:com.microsoft.VSCode".to_string(),
+            parent_ws_file.to_string_lossy().to_string()
+        )
+    );
+
+    // Fallback to global default when no Frontmatter dir and no ancestor `.quicknote.yaml`.
+    fs::create_dir_all(lib.path().join("other")).expect("mkdir other");
+    let global_only_note = lib.path().join("other/global_only.md");
+    fs::write(&global_only_note, "---\ntitle: GlobalOnly\nproject: demo\n---\nBody\n")
+        .expect("write global_only.md");
+    let global_effective = resolve_effective_workspace_for_path(
+        &pm,
+        Some(&global_only_note.to_string_lossy()),
+        None,
+    )
+    .expect("resolve global fallback");
+    assert_eq!(
+        global_effective.project_root.as_deref(),
+        Some(global_open.path().to_string_lossy().as_ref())
+    );
+    assert_eq!(
+        global_effective.default_terminal_cwd.as_deref(),
+        Some(global_term.path().to_string_lossy().as_ref())
+    );
+    assert_eq!(
+        global_effective.vscode_workspace_path.as_deref(),
+        Some(global_ws_file.to_string_lossy().as_ref())
+    );
+
+    // Manually dropped root markdown + `.quicknote.yaml` reconciled via `index_rebuild`.
+    let manual_dir = lib.path().join("manual_sub");
+    fs::create_dir_all(&manual_dir).expect("mkdir manual_sub");
+    fs::write(
+        manual_dir.join(".quicknote.yaml"),
+        format!("project_root: {}\n", parent_open.path().to_string_lossy()),
+    )
+    .expect("write manual .quicknote.yaml");
+    fs::write(lib.path().join("root_drop.md"), "# Dropped in root\n")
+        .expect("write root_drop.md");
+    let rebuild_status = index_rebuild(&pm, None).expect("index_rebuild via reconciler");
+    assert!(rebuild_status.notes_count >= 1);
+    let manual_cfg = directory_workspace_config_get(&pm, "manual_sub")
+        .expect("get manual_sub cfg")
+        .expect("manual_sub cfg indexed by index_rebuild");
+    assert_eq!(
+        manual_cfg.project_root.as_deref(),
+        Some(parent_open.path().to_string_lossy().as_ref())
+    );
+}
+
+#[test]
+fn external_fs_browser_bookmarks_and_settings_v5_fields() {
+    let (app_dir, _lib, pm) = setup_pm();
+
+    // 1. `max_active_editor_renders` defaults to 5 and validates 2..=20.
+    let initial = pm.settings_get().expect("settings_get").settings;
+    assert_eq!(initial.max_active_editor_renders, 5);
+    assert!(initial.external_bookmarks.is_empty());
+
+    let err_low = pm
+        .settings_update(SettingsPatch {
+            max_active_editor_renders: Some(1),
+            ..Default::default()
+        })
+        .expect_err("1 must fail validation");
+    assert_eq!(err_low.code, ErrorCode::ValidationError);
+
+    let err_high = pm
+        .settings_update(SettingsPatch {
+            max_active_editor_renders: Some(21),
+            ..Default::default()
+        })
+        .expect_err("21 must fail validation");
+    assert_eq!(err_high.code, ErrorCode::ValidationError);
+
+    let updated = pm
+        .settings_update(SettingsPatch {
+            max_active_editor_renders: Some(8),
+            ..Default::default()
+        })
+        .expect("8 must succeed");
+    assert_eq!(updated.settings.max_active_editor_renders, 8);
+
+    // 2. Legacy settings.yaml with `workspaces` deserializes without error and applies defaults.
+    let legacy_yaml = r#"
+workspaces:
+  legacy:
+    name: Legacy
+    key: legacy
+    root: /tmp
+    open_dir: /tmp
+"#;
+    let (parsed_legacy, status) = parse_settings_yaml(legacy_yaml, None);
+    assert!(status.valid);
+    assert_eq!(parsed_legacy.max_active_editor_renders, 5);
+    assert!(parsed_legacy.external_bookmarks.is_empty());
+    assert!(parsed_legacy.workspaces.contains_key("legacy"));
+
+    // 3. External fs browser: probe, directory listing (including hidden), siblings, and search_roots.
+    let ext_root = TempDir::new().expect("ext_root");
+    let hidden_dir = ext_root.path().join(".hidden_cfg");
+    fs::create_dir_all(&hidden_dir).expect("mkdir .hidden_cfg");
+    let cfg_file = hidden_dir.join("app.conf");
+    let sibling_file = hidden_dir.join("sibling.toml");
+    fs::write(&cfg_file, "port=8080\n").expect("write app.conf");
+    fs::write(&sibling_file, "name = 'demo'\n").expect("write sibling.toml");
+
+    let probe = external_probe_path(&cfg_file.to_string_lossy());
+    assert!(probe.exists);
+    assert_eq!(probe.kind, PathEntryKind::File);
+    assert!(probe.is_text);
+
+    let listing = external_list_directory(
+        &ext_root.path().to_string_lossy(),
+        Some(ListDirectoryOptions {
+            max_depth: 2,
+            include_hidden: true,
+            query: Some("app.conf".to_string()),
+            max_entries: 50,
+        }),
+    )
+    .expect("list directory");
+    assert_eq!(listing.entries.len(), 1);
+    assert_eq!(listing.entries[0].name, "app.conf");
+
+    let siblings = external_list_sibling_files(&cfg_file.to_string_lossy(), Some(1))
+        .expect("list siblings");
+    let sibling_names: Vec<&str> = siblings.entries.iter().map(|e| e.name.as_str()).collect();
+    assert!(sibling_names.contains(&"app.conf"));
+    assert!(sibling_names.contains(&"sibling.toml"));
+
+    // 4. External bookmarks persist in `settings.yaml` (independent of SQLite) and power `external_search_roots`.
+    let added = external_bookmark_add(
+        &pm,
+        &ext_root.path().to_string_lossy(),
+        Some("Ext Config".to_string()),
+        true,
+    )
+    .expect("add bookmark");
+    assert_eq!(added.len(), 1);
+    assert_eq!(added[0].kind, ExternalBookmarkKind::Directory);
+    assert_eq!(added[0].alias.as_deref(), Some("Ext Config"));
+    assert!(added[0].pinned);
+
+    let settings_raw = fs::read_to_string(pm.settings_path()).expect("read settings.yaml");
+    assert!(settings_raw.contains("external_bookmarks"));
+
+    // Reload a fresh PersistenceManager from the same config_dir to prove non-SQLite persistence.
+    let pm_reloaded = PersistenceManager::open_with_dirs(
+        app_dir.path().to_path_buf(),
+        app_dir.path().join("cache_reloaded"),
+    )
+    .expect("reload pm");
+    let reloaded_bookmarks =
+        external_bookmarks_list(&pm_reloaded).expect("list reloaded bookmarks");
+    assert_eq!(reloaded_bookmarks.len(), 1);
+    assert_eq!(reloaded_bookmarks[0].alias.as_deref(), Some("Ext Config"));
+
+    let search_hits = external_search_roots(&pm_reloaded, "sibling.toml", Some(3), Some(20))
+        .expect("external_search_roots");
+    assert!(
+        search_hits.iter().any(|e| e.name == "sibling.toml"),
+        "expected pure-Rust external_search_roots to find hidden dir file via bookmark"
+    );
+
+    let after_remove =
+        external_bookmark_remove(&pm, &ext_root.path().to_string_lossy()).expect("remove bookmark");
+    assert!(after_remove.is_empty());
 }

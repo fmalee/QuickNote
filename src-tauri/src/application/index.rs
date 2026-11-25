@@ -1,12 +1,11 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
 use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::application::persistence::PersistenceManager;
+use crate::application::reconciler::reconcile_vault;
 use crate::domain::command_book::parse_command_book;
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::markdown::extract_relative_note_links;
@@ -16,8 +15,7 @@ use crate::domain::note::{
 use crate::domain::tokenizer::tokenize_mixed;
 use crate::infra::fs::map_io_error;
 use crate::infra::sqlite::{
-    count_notes, get_library_meta, replace_all_notes_index, set_library_meta, upsert_note_index,
-    NoteIndexRecord,
+    count_notes, get_library_meta, upsert_note_index, NoteIndexRecord,
 };
 
 /// Returns the current index status (`C4.2`, `C4.3`).
@@ -36,7 +34,11 @@ pub fn index_get_status(pm: &PersistenceManager) -> Result<IndexStatus, AppError
     })
 }
 
-/// Rebuilds the SQLite + FTS5 derived index from `library_root` (`C5.2`, `C5.3`).
+/// Reconciles and rebuilds the SQLite + FTS5 derived index from `library_root` (`C5.2`, `C5.3`, v5 Refactor).
+///
+/// Unified entry point for both startup initialization and manual index rebuilds, delegating
+/// read-only disk-to-SQLite convergence (including root-level `.md` files and directory-level
+/// `.quicknote.yaml` configs) to [`reconcile_vault`].
 pub fn index_rebuild(
     pm: &PersistenceManager,
     app: Option<&AppHandle>,
@@ -68,94 +70,19 @@ pub fn index_rebuild(
         );
     }
 
-    let files = scan_library_markdown_files(&root)?;
-    let now_ms = Utc::now().timestamp_millis();
-
-    struct ScannedFile {
-        rel_path: String,
-        raw: String,
-        mtime_ms: i64,
-        size_bytes: i64,
-        id: Option<String>,
-    }
-
-    let mut scanned = Vec::with_capacity(files.len());
-    let mut id_counts: HashMap<String, usize> = HashMap::new();
-
-    for (rel_path, abs_path) in files {
-        let raw = fs::read_to_string(&abs_path)
-            .map_err(|e| map_io_error(e, "Failed to read markdown file during index rebuild"))?;
-        let meta = fs::metadata(&abs_path)
-            .map_err(|e| map_io_error(e, "Failed to stat markdown file during index rebuild"))?;
-        let mtime_ms = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(now_ms);
-        let size_bytes = meta.len() as i64;
-
-        let stem = Path::new(&rel_path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("untitled");
-        let parsed = parse_note(&raw, stem);
-        if let Some(ref id) = parsed.meta.id {
-            *id_counts.entry(id.clone()).or_insert(0) += 1;
-        }
-
-        scanned.push(ScannedFile {
-            rel_path,
-            raw,
-            mtime_ms,
-            size_bytes,
-            id: parsed.meta.id,
-        });
-    }
-
-    let mut used_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut records = Vec::with_capacity(scanned.len());
-
-    for item in scanned {
-        let dup_err = item.id.as_ref().and_then(|id| {
-            if id_counts.get(id).copied().unwrap_or(0) > 1 {
-                Some(format!("Duplicate id: {id}"))
-            } else {
-                None
-            }
-        });
-
-        let key = match &item.id {
-            Some(id) if !used_keys.contains(id) => {
-                used_keys.insert(id.clone());
-                id.clone()
-            }
-            _ => format!("path:{}", item.rel_path),
-        };
-
-        records.push(build_note_index_record(
-            &item.rel_path,
-            &item.raw,
-            item.mtime_ms,
-            item.size_bytes,
-            now_ms,
-            dup_err.as_deref(),
-            Some(key),
-        ));
-    }
-
-    let notes_count = records.len() as u32;
-    pm.with_db(|conn| {
-        replace_all_notes_index(conn, &records)?;
-        set_library_meta(conn, "last_indexed_at", &now_ms.to_string())?;
-        Ok(())
+    let (notes_count, last_completed_at) = pm.with_db(|conn| {
+        let _report = reconcile_vault(&root, conn)?;
+        mark_duplicate_note_ids(conn)?;
+        let count = count_notes(conn)?;
+        let last = get_library_meta(conn, "last_indexed_at")?.and_then(|s| s.parse::<i64>().ok());
+        Ok((count, last))
     })?;
 
     let status = IndexStatus {
         phase: IndexPhase::Idle,
         notes_count,
         fts_degraded: false,
-        last_completed_at: Some(now_ms),
+        last_completed_at,
     };
 
     if let Some(handle) = app {
@@ -163,6 +90,63 @@ pub fn index_rebuild(
     }
 
     Ok(status)
+}
+
+fn mark_duplicate_note_ids(conn: &rusqlite::Connection) -> Result<(), AppError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id FROM notes
+             WHERE id IS NOT NULL AND id != '' AND doc_type != 'template'
+             GROUP BY id HAVING COUNT(*) > 1",
+        )
+        .map_err(|e| {
+            AppError::with_detail(
+                ErrorCode::InternalError,
+                "Failed to query duplicate note ids",
+                e.to_string(),
+            )
+        })?;
+
+    let dup_ids: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| {
+            AppError::with_detail(
+                ErrorCode::InternalError,
+                "Failed to iterate duplicate note ids",
+                e.to_string(),
+            )
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| {
+            AppError::with_detail(
+                ErrorCode::InternalError,
+                "Failed to collect duplicate note ids",
+                e.to_string(),
+            )
+        })?;
+
+    for dup_id in dup_ids {
+        let dup_msg = format!("Duplicate id: {dup_id}");
+        conn.execute(
+            "UPDATE notes
+             SET meta_error = CASE
+                 WHEN meta_error IS NULL OR meta_error = '' THEN ?1
+                 WHEN instr(meta_error, ?1) > 0 THEN meta_error
+                 ELSE meta_error || '; ' || ?1
+             END
+             WHERE id = ?2 AND doc_type != 'template'",
+            rusqlite::params![dup_msg, dup_id],
+        )
+        .map_err(|e| {
+            AppError::with_detail(
+                ErrorCode::InternalError,
+                "Failed to mark duplicate note id",
+                e.to_string(),
+            )
+        })?;
+    }
+
+    Ok(())
 }
 
 /// Upserts a single library note into SQLite (`notes`, `note_tags`, `notes_fts`).

@@ -3,7 +3,17 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::domain::bookmark::{
+    normalize_and_sort_bookmarks, ExternalBookmark, ExternalBookmarkKind,
+};
 use crate::domain::error::{AppError, ErrorCode};
+
+/// Default upper bound for the CM6 EditorState LRU pool (v5 Refactor).
+pub const DEFAULT_MAX_ACTIVE_EDITOR_RENDERS: u32 = 5;
+
+fn default_max_active_editor_renders() -> u32 {
+    DEFAULT_MAX_ACTIVE_EDITOR_RENDERS
+}
 
 /// Main window presentation mode (`C3.4`, `C6.2`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
@@ -68,7 +78,10 @@ pub struct ImportPathArgs {
     pub src_path: String,
 }
 
-/// Workspace configuration entry (`C3.4`, `C6.2`).
+/// Legacy global workspace configuration entry (`C3.4`, `C6.2`).
+///
+/// Deprecated in v5 refactor: directory-bound `.quicknote.yaml` replaces global workspaces.
+/// Retained for backward-compatible deserialization of existing `settings.yaml` files.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceConfig {
@@ -271,6 +284,13 @@ pub struct Settings {
     pub terminal: ExternalAppConfig,
     pub editors: EditorsSettings,
     pub search_roots: Vec<String>,
+    #[serde(default = "default_max_active_editor_renders")]
+    pub max_active_editor_renders: u32,
+    #[serde(default)]
+    pub external_bookmarks: Vec<ExternalBookmark>,
+    /// Deprecated in v5 refactor: replaced by directory-level `.quicknote.yaml`.
+    /// Kept with `#[serde(default)]` for backward-compatible reading of legacy `settings.yaml`.
+    #[serde(default)]
     pub workspaces: BTreeMap<String, WorkspaceConfig>,
 }
 
@@ -294,6 +314,8 @@ impl Default for Settings {
                 "~/.config".to_string(),
                 "/opt/homebrew/etc".to_string(),
             ],
+            max_active_editor_renders: DEFAULT_MAX_ACTIVE_EDITOR_RENDERS,
+            external_bookmarks: Vec::new(),
             workspaces: BTreeMap::new(),
         }
     }
@@ -458,6 +480,11 @@ pub struct SettingsPatch {
     #[serde(default)]
     pub search_roots: Option<Vec<String>>,
     #[serde(default)]
+    pub max_active_editor_renders: Option<u32>,
+    #[serde(default)]
+    pub external_bookmarks: Option<Vec<ExternalBookmark>>,
+    /// Deprecated in v5 refactor; kept for backward compatibility.
+    #[serde(default)]
     pub workspaces: Option<BTreeMap<String, WorkspaceConfig>>,
 }
 
@@ -590,6 +617,14 @@ pub fn apply_settings_patch(base: &Settings, patch: &SettingsPatch) -> Result<Se
         next.search_roots = roots.clone();
     }
 
+    if let Some(max_renders) = patch.max_active_editor_renders {
+        next.max_active_editor_renders = max_renders;
+    }
+
+    if let Some(ref bookmarks) = patch.external_bookmarks {
+        next.external_bookmarks = normalize_and_sort_bookmarks(bookmarks.clone());
+    }
+
     if let Some(ref ws) = patch.workspaces {
         next.workspaces = ws.clone();
     }
@@ -671,6 +706,12 @@ fn validate_settings(s: &Settings) -> Result<(), AppError> {
         return Err(AppError::new(
             ErrorCode::ValidationError,
             "quickBar.lastActiveTtlHours must be >= 1",
+        ));
+    }
+    if !(2..=20).contains(&s.max_active_editor_renders) {
+        return Err(AppError::new(
+            ErrorCode::ValidationError,
+            "maxActiveEditorRenders must be between 2 and 20",
         ));
     }
     Ok(())
@@ -880,6 +921,30 @@ impl Default for EditorsSettingsYaml {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+struct ExternalBookmarkYaml {
+    path: String,
+    kind: ExternalBookmarkKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    alias: Option<String>,
+    pinned: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_opened_at: Option<i64>,
+}
+
+impl Default for ExternalBookmarkYaml {
+    fn default() -> Self {
+        Self {
+            path: String::new(),
+            kind: ExternalBookmarkKind::File,
+            alias: None,
+            pinned: false,
+            last_opened_at: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 struct SettingsYaml {
     library_root: Option<String>,
     hotkey: HotkeySettingsYaml,
@@ -891,6 +956,10 @@ struct SettingsYaml {
     terminal: ExternalAppConfigYaml,
     editors: EditorsSettingsYaml,
     search_roots: Vec<String>,
+    max_active_editor_renders: u32,
+    external_bookmarks: Vec<ExternalBookmarkYaml>,
+    /// Deprecated in v5 refactor; kept with `#[serde(default)]` for legacy `settings.yaml` compatibility.
+    #[serde(default)]
     workspaces: BTreeMap<String, WorkspaceConfigYaml>,
 }
 
@@ -911,6 +980,8 @@ impl Default for SettingsYaml {
             },
             editors: EditorsSettingsYaml::default(),
             search_roots: d.search_roots,
+            max_active_editor_renders: d.max_active_editor_renders,
+            external_bookmarks: Vec::new(),
             workspaces: BTreeMap::new(),
         }
     }
@@ -943,6 +1014,19 @@ impl From<SettingsYaml> for Settings {
                 )
             })
             .collect();
+
+        let external_bookmarks = normalize_and_sort_bookmarks(
+            y.external_bookmarks
+                .into_iter()
+                .map(|b| ExternalBookmark {
+                    path: b.path,
+                    kind: b.kind,
+                    alias: b.alias,
+                    pinned: b.pinned,
+                    last_opened_at: b.last_opened_at,
+                })
+                .collect(),
+        );
 
         Self {
             library_root,
@@ -1000,6 +1084,8 @@ impl From<SettingsYaml> for Settings {
                 },
             },
             search_roots: y.search_roots,
+            max_active_editor_renders: y.max_active_editor_renders,
+            external_bookmarks,
             workspaces,
         }
     }
@@ -1024,6 +1110,18 @@ impl From<&Settings> for SettingsYaml {
                         default_entry_doc: w.default_entry_doc.clone(),
                     },
                 )
+            })
+            .collect();
+
+        let external_bookmarks = s
+            .external_bookmarks
+            .iter()
+            .map(|b| ExternalBookmarkYaml {
+                path: b.path.clone(),
+                kind: b.kind,
+                alias: b.alias.clone(),
+                pinned: b.pinned,
+                last_opened_at: b.last_opened_at,
             })
             .collect();
 
@@ -1083,6 +1181,8 @@ impl From<&Settings> for SettingsYaml {
                 },
             },
             search_roots: s.search_roots.clone(),
+            max_active_editor_renders: s.max_active_editor_renders,
+            external_bookmarks,
             workspaces,
         }
     }
