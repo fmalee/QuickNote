@@ -6,6 +6,24 @@ function normalizeRel(p) {
   return p.split(path.sep).join('/');
 }
 
+/**
+ * Explicit v5 refactor module & directory allowlist.
+ * Keeps C1.2 unidirectional layering intact while permitting upcoming v5 modules:
+ * - Rust domain: `src-tauri/src/domain/bookmark.rs`, `src-tauri/src/domain/workspace_context.rs`
+ * - Rust application: `src-tauri/src/application/reconciler.rs`
+ * - Rust infra: `src-tauri/src/infra/fs_browser.rs`
+ * - Frontend editor core: `src/features/editor/core/` (intra-feature only; cross-feature deep imports remain forbidden)
+ */
+export const V5_MODULE_ALLOWLIST = Object.freeze({
+  rustDomain: [
+    'src-tauri/src/domain/bookmark.rs',
+    'src-tauri/src/domain/workspace_context.rs',
+  ],
+  rustApplication: ['src-tauri/src/application/reconciler.rs'],
+  rustInfra: ['src-tauri/src/infra/fs_browser.rs'],
+  frontendFeatureDirs: ['src/features/editor/core/'],
+});
+
 function walkFiles(dir, predicate, out = []) {
   if (!fs.existsSync(dir)) {
     return out;

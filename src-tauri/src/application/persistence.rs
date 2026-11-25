@@ -19,7 +19,7 @@ use crate::domain::watch::{QuickBarDraft, RecoverySnapshot, SelfWriteGuard};
 use crate::infra::fs::{
     atomic_write_str, expand_tilde, init_app_data_dir, map_io_error, prune_backups,
 };
-use crate::infra::sqlite::{get_library_meta, init_sqlite};
+use crate::infra::sqlite::{get_library_meta, init_sqlite, remove_sqlite_files};
 
 /// Normalizes a filesystem path for `SelfWriteGuard` and watcher comparisons (`C8.5`).
 /// Handles macOS `/var` -> `/private/var` symlinks even when the target file no longer exists.
@@ -35,9 +35,37 @@ pub fn canonicalize_watch_path(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
 
-/// Coordinates `$APP_DATA_DIR` persistence (`settings.yaml`, `ui-state.json`, `index.sqlite`) (`C6.1`–`C6.3`).
+/// Computes a stable, deterministic cache key from a Vault's canonical absolute path.
+pub fn vault_cache_key(vault_root: &Path) -> String {
+    let canonical = canonicalize_watch_path(vault_root);
+    let trimmed = if canonical.len() > 1 {
+        canonical.trim_end_matches(['/', '\\'])
+    } else {
+        canonical.as_str()
+    };
+    compute_body_hash(trimmed)
+}
+
+/// Resolves the isolated SQLite `.db` path inside `cache_dir` for a given Vault root.
+/// Never places SQLite files inside the Vault root directory.
+pub fn resolve_vault_db_path(cache_dir: &Path, vault_root: &Path) -> PathBuf {
+    cache_dir
+        .join("vaults")
+        .join(format!("{}.db", vault_cache_key(vault_root)))
+}
+
+fn resolve_active_db_path(cache_dir: &Path, library_root: Option<&str>) -> PathBuf {
+    match library_root.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(root) => resolve_vault_db_path(cache_dir, Path::new(root)),
+        None => cache_dir.join("index.db"),
+    }
+}
+
+/// Coordinates user config persistence (`config_dir`: `settings.yaml`, `ui-state.json`, bookmarks)
+/// separately from rebuildable SQLite index caches (`cache_dir`: `<vault_hash>.db`) (`C6.1`–`C6.3`).
 pub struct PersistenceManager {
-    app_data_dir: PathBuf,
+    config_dir: PathBuf,
+    cache_dir: PathBuf,
     settings: RwLock<Settings>,
     settings_status: RwLock<SettingsLoadStatus>,
     last_valid_settings: RwLock<Option<Settings>>,
@@ -47,11 +75,23 @@ pub struct PersistenceManager {
 }
 
 impl PersistenceManager {
-    /// Initializes `$APP_DATA_DIR`, loads `settings.yaml` and `ui-state.json`, and migrates `index.sqlite`.
+    /// Initializes `app_data_dir` with separated `config_dir` (`app_data_dir`) and `cache_dir` (`app_data_dir/cache`).
     pub fn open(app_data_dir: PathBuf) -> Result<Self, AppError> {
-        init_app_data_dir(&app_data_dir)?;
+        let cache_dir = app_data_dir.join("cache");
+        Self::open_with_dirs(app_data_dir, cache_dir)
+    }
 
-        let settings_path = app_data_dir.join("settings.yaml");
+    /// Initializes persistence with explicit, separated `config_dir` and `cache_dir`.
+    /// User configuration (`settings.yaml`, `ui-state.json`, bookmarks) lives in `config_dir`;
+    /// rebuildable SQLite caches (`.db`/`.db-wal`/`.db-shm`) live strictly in `cache_dir`.
+    pub fn open_with_dirs(config_dir: PathBuf, cache_dir: PathBuf) -> Result<Self, AppError> {
+        init_app_data_dir(&config_dir)?;
+        if !cache_dir.exists() {
+            fs::create_dir_all(&cache_dir)
+                .map_err(|e| map_io_error(e, "Failed to create cache directory"))?;
+        }
+
+        let settings_path = config_dir.join("settings.yaml");
         let (settings, settings_status, last_valid) = if settings_path.exists() {
             let raw = fs::read_to_string(&settings_path)
                 .map_err(|e| map_io_error(e, "Failed to read settings.yaml"))?;
@@ -79,7 +119,7 @@ impl PersistenceManager {
             )
         };
 
-        let ui_state_path = app_data_dir.join("ui-state.json");
+        let ui_state_path = config_dir.join("ui-state.json");
         let ui_state = if ui_state_path.exists() {
             let raw = fs::read_to_string(&ui_state_path)
                 .map_err(|e| map_io_error(e, "Failed to read ui-state.json"))?;
@@ -91,7 +131,7 @@ impl PersistenceManager {
                         err.line(),
                         err.column()
                     );
-                    let backups_dir = app_data_dir.join("backups");
+                    let backups_dir = config_dir.join("backups");
                     let ts = Local::now().format("%Y%m%d-%H%M%S").to_string();
                     let mut backup_path =
                         backups_dir.join(format_backup_filename("ui-state.json", &ts));
@@ -138,11 +178,12 @@ impl PersistenceManager {
             default_ui
         };
 
-        let db_path = app_data_dir.join("index.sqlite");
+        let db_path = resolve_active_db_path(&cache_dir, settings.library_root.as_deref());
         let conn = init_sqlite(&db_path)?;
 
         Ok(Self {
-            app_data_dir,
+            config_dir,
+            cache_dir,
             settings: RwLock::new(settings),
             settings_status: RwLock::new(settings_status),
             last_valid_settings: RwLock::new(last_valid),
@@ -152,37 +193,73 @@ impl PersistenceManager {
         })
     }
 
+    pub fn config_dir(&self) -> &Path {
+        &self.config_dir
+    }
+
+    pub fn cache_dir(&self) -> &Path {
+        &self.cache_dir
+    }
+
     pub fn app_data_dir(&self) -> &Path {
-        &self.app_data_dir
+        &self.config_dir
     }
 
     pub fn settings_path(&self) -> PathBuf {
-        self.app_data_dir.join("settings.yaml")
+        self.config_dir.join("settings.yaml")
     }
 
     pub fn ui_state_path(&self) -> PathBuf {
-        self.app_data_dir.join("ui-state.json")
+        self.config_dir.join("ui-state.json")
     }
 
     pub fn backups_dir(&self) -> PathBuf {
-        self.app_data_dir.join("backups")
+        self.config_dir.join("backups")
     }
 
     pub fn quickbar_draft_path(&self) -> PathBuf {
-        self.app_data_dir.join("quickbar-draft.json")
+        self.config_dir.join("quickbar-draft.json")
     }
 
     pub fn pinned_files_path(&self) -> PathBuf {
-        self.app_data_dir.join("pinned-files.json")
+        self.config_dir.join("pinned-files.json")
+    }
+
+    pub fn external_bookmarks_path(&self) -> PathBuf {
+        self.config_dir.join("bookmarks.json")
     }
 
     pub fn recovery_dir(&self) -> PathBuf {
-        self.app_data_dir.join("recovery")
+        self.config_dir.join("recovery")
     }
 
     pub fn recovery_snapshot_path(&self, abs_path: &str) -> PathBuf {
         self.recovery_dir()
             .join(format!("{}.json", compute_body_hash(abs_path)))
+    }
+
+    /// Returns the isolated SQLite `.db` path inside `cache_dir` for `vault_root`.
+    pub fn vault_db_path(&self, vault_root: &Path) -> PathBuf {
+        resolve_vault_db_path(&self.cache_dir, vault_root)
+    }
+
+    /// Switches the active SQLite connection to the Vault-isolated cache DB inside `cache_dir`.
+    pub fn switch_vault_db(&self, vault_root: &Path) -> Result<PathBuf, AppError> {
+        let db_path = self.vault_db_path(vault_root);
+        let conn = init_sqlite(&db_path)?;
+        let mut guard = self
+            .db
+            .lock()
+            .map_err(|_| AppError::new(ErrorCode::InternalError, "SQLite lock poisoned"))?;
+        *guard = conn;
+        Ok(db_path)
+    }
+
+    /// Removes only the Vault's SQLite cache files (`.db`/`.db-wal`/`.db-shm`) in `cache_dir`,
+    /// leaving `config_dir` (`settings.yaml`, bookmarks, etc.) untouched.
+    pub fn clear_vault_cache(&self, vault_root: &Path) -> Result<(), AppError> {
+        let db_path = self.vault_db_path(vault_root);
+        remove_sqlite_files(&db_path)
     }
 
     /// Records an internal write in `SelfWriteGuard` to suppress `notify` loopbacks (`C8.5`).
