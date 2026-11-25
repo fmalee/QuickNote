@@ -3,7 +3,12 @@ use std::path::Path;
 use specta::Types;
 use specta_typescript::Typescript;
 
+use crate::commands::external::{
+    DirectoryWorkspaceConfigEntry, ExternalDirectoryEntry, ExternalDirectoryListing,
+    ExternalPathEntryKind, ExternalPathProbeResult,
+};
 use crate::domain::app::{ActivationPolicy, AppInfo, OpenExternalUrlArgs, SetMenuAcceleratorsArgs};
+use crate::domain::bookmark::{ExternalBookmark, ExternalBookmarkKind};
 use crate::domain::capture::{
     AppendNoteArgs, AppendResult, InboxExtractArgs, ResolvedTarget, TargetKind, TargetResolveInput,
     UndoAppendResult,
@@ -47,6 +52,7 @@ use crate::domain::watch::{
 use crate::domain::window::{
     HideQuickBarArgs, HideReason, MainWindowArgs, QuickBarArgs, QuickBarMode, WindowState,
 };
+use crate::domain::workspace_context::{DirectoryWorkspaceConfig, EffectiveWorkspaceContext};
 
 /// Exact header line required at line 1 of `src/bindings/types.ts` (`C1.4`).
 pub const GENERATED_HEADER: &str = "/* GENERATED — DO NOT EDIT. */";
@@ -143,6 +149,15 @@ pub fn collect_types() -> Types {
         .register::<ExternalActionState>()
         .register::<ResolveExternalArgs>()
         .register::<RunExternalArgs>()
+        .register::<ExternalBookmarkKind>()
+        .register::<ExternalBookmark>()
+        .register::<DirectoryWorkspaceConfig>()
+        .register::<EffectiveWorkspaceContext>()
+        .register::<ExternalPathEntryKind>()
+        .register::<ExternalPathProbeResult>()
+        .register::<ExternalDirectoryEntry>()
+        .register::<ExternalDirectoryListing>()
+        .register::<DirectoryWorkspaceConfigEntry>()
         .register::<CommandEntry>()
         .register::<CommandSearchArgs>()
         .register::<RelatedReason>()

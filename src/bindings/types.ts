@@ -83,6 +83,33 @@ export type DirNode = {
 	children: DirNode[],
 };
 
+/**  Optional workspace overrides declared in a `.quicknote.yaml`, note frontmatter, or global defaults. */
+export type DirectoryWorkspaceConfig = ({
+	vscodeWorkspacePath?: string | null,
+} & {
+	vscode_workspace_path?: string | null,
+}) & ({
+	projectRoot?: string | null,
+} & {
+	project_root?: string | null,
+}) & ({
+	defaultTerminalCwd?: string | null,
+} & {
+	default_terminal_cwd?: string | null,
+}) & ({
+	externalAppOverrides?: { [key in string]: string } | null,
+} & {
+	external_app_overrides?: { [key in string]: string } | null,
+});
+
+/**  Serializable IPC entry for `list_directory_workspace_configs`. */
+export type DirectoryWorkspaceConfigEntry = {
+	vaultRelDir: string,
+	config: DirectoryWorkspaceConfig | null,
+	mtimeMs: number,
+	parseError: string | null,
+};
+
 /**  Editor configuration section (`C6.2`). */
 export type EditorSettings = {
 	theme: EditorTheme,
@@ -124,6 +151,14 @@ export type EditorsSettingsPatch = {
 	sublime?: ExternalAppConfigPatch | null,
 };
 
+/**  Resolved effective workspace context after 3-tier cascade merging. */
+export type EffectiveWorkspaceContext = {
+	vscodeWorkspacePath: string | null,
+	projectRoot: string | null,
+	defaultTerminalCwd: string | null,
+	externalAppOverrides: { [key in string]: string },
+};
+
 /**  Unified application error code for all Tauri IPC responses (`C3.3`). */
 export type ErrorCode = "validationError" | "libraryNotConfigured" | "notFound" | "permissionDenied" | "conflict" | "undoUnavailable" | "invalidFrontmatter" | "settingsParseError" | "externalAppMissing" | "workspaceDirMissing" | "terminalLimitReached" | "terminalSpawnFailed" | "internalError";
 
@@ -161,6 +196,19 @@ export type ExternalAppConfigPatch = {
 	bundleId?: string | null,
 };
 
+/**  Persisted external file/directory bookmark entry. */
+export type ExternalBookmark = {
+	/**  Lexically normalized absolute path. */
+	path: string,
+	kind: ExternalBookmarkKind,
+	alias?: string | null,
+	pinned?: boolean,
+	lastOpenedAt?: number | null,
+};
+
+/**  Target kind of an external filesystem bookmark. */
+export type ExternalBookmarkKind = "file" | "directory";
+
 /**  Payload for `"fs:external-change"` events (`C4.3`, `C8.5`). */
 export type ExternalChangeEvent = {
 	absPath: string,
@@ -172,6 +220,42 @@ export type ExternalChangeEvent = {
 
 /**  Kind of external filesystem change emitted to the frontend (`C4.3`, `C8.5`). */
 export type ExternalChangeKind = "modified" | "deleted";
+
+/**  Serializable IPC entry for external directory listings. */
+export type ExternalDirectoryEntry = {
+	name: string,
+	path: string,
+	relPath: string,
+	kind: ExternalPathEntryKind,
+	depth: number,
+	size: number | null,
+	isHidden: boolean,
+	matchScore: number,
+};
+
+/**  Serializable IPC listing payload for `list_external_directory` and `list_current_doc_siblings`. */
+export type ExternalDirectoryListing = {
+	rootPath: string,
+	entries: ExternalDirectoryEntry[],
+	truncated: boolean,
+	visitedCount: number,
+};
+
+/**  Serializable IPC entry kind mirroring `infra::fs_browser::PathEntryKind`. */
+export type ExternalPathEntryKind = "file" | "directory" | "other" | "not_found";
+
+/**  Serializable IPC result for `probe_external_path`. */
+export type ExternalPathProbeResult = {
+	rawInput: string,
+	resolvedPath: string,
+	exists: boolean,
+	kind: ExternalPathEntryKind,
+	readable: boolean,
+	size: number | null,
+	isText: boolean,
+	isUtf8: boolean,
+	isHidden: boolean,
+};
 
 /**  Navigation filter state (`C6.3`). */
 export type FiltersUiState = {
@@ -594,7 +678,13 @@ export type Settings = {
 	terminal: ExternalAppConfig,
 	editors: EditorsSettings,
 	searchRoots: string[],
-	workspaces: { [key in string]: WorkspaceConfig },
+	maxActiveEditorRenders?: number,
+	externalBookmarks?: ExternalBookmark[],
+	/**
+	 *  Deprecated in v5 refactor: replaced by directory-level `.quicknote.yaml`.
+	 *  Kept with `#[serde(default)]` for backward-compatible reading of legacy `settings.yaml`.
+	 */
+	workspaces?: { [key in string]: WorkspaceConfig },
 };
 
 /**  Diagnostic status of loading `settings.yaml` (`C3.4`, `D-0008`). */
@@ -618,6 +708,9 @@ export type SettingsPatch = {
 	terminal?: ExternalAppConfigPatch | null,
 	editors?: EditorsSettingsPatch | null,
 	searchRoots?: string[] | null,
+	maxActiveEditorRenders?: number | null,
+	externalBookmarks?: ExternalBookmark[] | null,
+	/**  Deprecated in v5 refactor; kept for backward compatibility. */
 	workspaces?: { [key in string]: WorkspaceConfig } | null,
 };
 
@@ -805,7 +898,12 @@ export type WindowsUiState = {
 	main: MainWindowState,
 };
 
-/**  Workspace configuration entry (`C3.4`, `C6.2`). */
+/**
+ *  Legacy global workspace configuration entry (`C3.4`, `C6.2`).
+ * 
+ *  Deprecated in v5 refactor: directory-bound `.quicknote.yaml` replaces global workspaces.
+ *  Retained for backward-compatible deserialization of existing `settings.yaml` files.
+ */
 export type WorkspaceConfig = {
 	name: string,
 	key: string,
