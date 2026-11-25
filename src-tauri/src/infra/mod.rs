@@ -1,5 +1,6 @@
 pub mod external_open;
 pub mod fs;
+pub mod fs_browser;
 pub mod macos;
 pub mod pty;
 pub mod settings_watch;
