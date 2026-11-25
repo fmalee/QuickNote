@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- 背景：圆角正方形，填充 #2563eb，画布四角透明 -->
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="#2563eb" />
+  <!-- 主体：居中白色圆角矩形便签 (520x640, rx=72) -->
+  <rect x="252" y="192" width="520" height="640" rx="72" fill="#ffffff" />
+  <!-- 三条蓝色横线 (280x40, rx=20, 垂直间距 110) -->
+  <rect x="372" y="382" width="280" height="40" rx="20" fill="#2563eb" />
+  <rect x="372" y="492" width="280" height="40" rx="20" fill="#2563eb" />
+  <rect x="372" y="602" width="280" height="40" rx="20" fill="#2563eb" />
+  <!-- 右下角：白色描边的蓝色实心圆点（快速捕捉） -->
+  <circle cx="732" cy="792" r="96" fill="#2563eb" stroke="#ffffff" stroke-width="28" />
+</svg>

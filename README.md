@@ -122,8 +122,17 @@ cargo test --manifest-path src-tauri/Cargo.toml --release --test m4_performance_
 # 仅构建前端生产产物
 pnpm build
 
-# 打包 macOS 桌面应用（打包前将 src-tauri/tauri.conf.json 中 bundle.active 设为 true）
+# 打包 macOS 桌面应用（产出 .app 与 .dmg）
 pnpm tauri build
+
+# 仅打包 macOS .app（不生成 .dmg）
+pnpm build:app
 ```
+
+### 打包产物说明
+
+- `pnpm tauri build` 产出：`src-tauri/target/release/bundle/macos/QuickNote.app`（约 18.7 MiB）与 `src-tauri/target/release/bundle/dmg/QuickNote_2.0.0_x64.dmg`（约 6.3 MiB）。
+- `pnpm build:app` 产出：仅 `src-tauri/target/release/bundle/macos/QuickNote.app`。
+- `.app` 内部结构干净：`Contents/MacOS`（19M，内嵌前端静态资源与 bundled SQLite）、`Contents/Resources`（52K，仅 `icon.icns`，无多余 `.lproj` 语言包）、`Contents/Info.plist`（4.0K）。`src-tauri/icons/` 仅保留源图 `app-icon.svg` 与 macOS 打包所需的 4 个图标文件，其余平台图标已清理。
 
 > 开发者与 AI 协作规范见 [AGENTS.md](AGENTS.md)，快速模块定位见 [spec/CODEBASE_MAP.md](spec/CODEBASE_MAP.md)。
