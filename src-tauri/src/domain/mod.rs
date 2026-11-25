@@ -1,5 +1,6 @@
 pub mod app;
 pub mod backup;
+pub mod bookmark;
 pub mod capture;
 pub mod command_book;
 pub mod error;
@@ -15,3 +16,4 @@ pub mod tokenizer;
 pub mod ui_state;
 pub mod watch;
 pub mod window;
+pub mod workspace_context;
