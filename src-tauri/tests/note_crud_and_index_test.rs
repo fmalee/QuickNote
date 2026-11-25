@@ -1,10 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
+use quicknote_lib::application::external::directory_workspace_config_delete_uc_with;
 use quicknote_lib::application::index::{index_get_status, index_rebuild};
 use quicknote_lib::application::library::set_library_root;
 use quicknote_lib::application::notes::{
-    note_create, note_delete, note_read, note_rename, note_update_meta, note_write,
+    note_create, note_delete_with, note_read, note_rename, note_update_meta, note_write,
     notes_get_tree_and_tags, notes_list, search_notes_and_files,
 };
 use quicknote_lib::application::persistence::PersistenceManager;
@@ -12,7 +14,7 @@ use quicknote_lib::application::reconciler::{
     reconcile_path, reconcile_vault, reconcile_watched_path, write_directory_workspace_config,
     ReconcilePathOutcome,
 };
-use quicknote_lib::domain::error::ErrorCode;
+use quicknote_lib::domain::error::{AppError, ErrorCode};
 use quicknote_lib::domain::note::{
     CreateNoteArgs, IndexPhase, NoteMetaPatch, NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs,
     RelPathArgs, RenameNoteArgs, SearchQueryArgs, WriteNoteArgs,
@@ -20,6 +22,30 @@ use quicknote_lib::domain::note::{
 use quicknote_lib::domain::settings::SetRootArgs;
 use quicknote_lib::domain::workspace_context::DirectoryWorkspaceConfig;
 use quicknote_lib::infra::sqlite::{get_note_key_by_rel_path, list_directory_workspace_configs};
+use quicknote_lib::infra::trash::FileRemover;
+
+#[derive(Default)]
+struct FakeRemover {
+    removed: Mutex<Vec<PathBuf>>,
+}
+
+impl FakeRemover {
+    fn removed_paths(&self) -> Vec<PathBuf> {
+        self.removed.lock().expect("lock removed").clone()
+    }
+}
+
+impl FileRemover for FakeRemover {
+    fn remove(&self, path: &Path) -> Result<(), AppError> {
+        self.removed
+            .lock()
+            .expect("lock removed")
+            .push(path.to_path_buf());
+        fs::remove_file(path).map_err(|e| {
+            AppError::with_detail(ErrorCode::InternalError, "fake remove", e.to_string())
+        })
+    }
+}
 
 static TEST_DIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -308,13 +334,19 @@ fn test_crud_and_fts_search() {
     );
 
     // Delete
-    note_delete(
+    let fake_remover = FakeRemover::default();
+    note_delete_with(
         &pm,
         RelPathArgs {
             rel_path: "notes/git-workflow-renamed.md".to_string(),
         },
+        &fake_remover,
     )
-    .expect("note_delete");
+    .expect("note_delete_with");
+    assert_eq!(
+        fake_remover.removed_paths(),
+        vec![PathBuf::from(&renamed.abs_path)]
+    );
 
     let deleted_read = note_read(
         &pm,
@@ -572,4 +604,31 @@ fn test_update_meta_tags_visible_immediately_in_list_and_tree() {
     .expect("notes_list after write");
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].tags, vec!["zz-a".to_string(), "zz-b".to_string()]);
+}
+
+#[test]
+fn test_directory_workspace_config_delete_uses_file_remover() {
+    let (_tmp, vault, pm) = setup_test_env();
+    fs::create_dir_all(vault.join("proj")).expect("create proj dir");
+
+    let cfg = DirectoryWorkspaceConfig {
+        vscode_workspace_path: None,
+        project_root: Some("/tmp/proj".to_string()),
+        default_terminal_cwd: None,
+        external_app_overrides: None,
+    };
+    let config_path =
+        write_directory_workspace_config(&pm, &vault, "proj", &cfg).expect("write .quicknote.yaml");
+    assert!(config_path.is_file());
+
+    let fake_remover = FakeRemover::default();
+    directory_workspace_config_delete_uc_with(&pm, "proj", &fake_remover)
+        .expect("delete directory workspace config");
+
+    assert_eq!(fake_remover.removed_paths(), vec![config_path.clone()]);
+    assert!(!config_path.exists());
+    let rows = pm
+        .with_db(list_directory_workspace_configs)
+        .expect("list_directory_workspace_configs");
+    assert!(rows.is_empty());
 }

@@ -32,6 +32,7 @@ use crate::infra::sqlite::{
     delete_note_index_by_rel_path, get_note_key_by_rel_path, list_all_commands,
     list_all_indexed_notes, list_backlink_sources, search_notes_fts,
 };
+use crate::infra::trash::{default_file_remover, FileRemover};
 
 static ULID_SEQ: AtomicU64 = AtomicU64::new(1);
 
@@ -940,8 +941,18 @@ pub fn note_rename(pm: &PersistenceManager, args: RenameNoteArgs) -> Result<Note
     )
 }
 
-/// Deletes a library note (`inbox.md` cannot be deleted) and removes it from SQLite (`C4.2`).
+/// Deletes a library note (`inbox.md` cannot be deleted) by moving it to the system Trash
+/// and removes it from SQLite (`C4.2`).
 pub fn note_delete(pm: &PersistenceManager, args: RelPathArgs) -> Result<(), AppError> {
+    note_delete_with(pm, args, default_file_remover().as_ref())
+}
+
+/// Injectable variant of [`note_delete`] for tests.
+pub fn note_delete_with(
+    pm: &PersistenceManager,
+    args: RelPathArgs,
+    remover: &dyn FileRemover,
+) -> Result<(), AppError> {
     let root = require_library_root(pm)?;
     let rel = normalize_rel_path(&args.rel_path)?;
     if rel == INBOX_REL_PATH {
@@ -960,7 +971,7 @@ pub fn note_delete(pm: &PersistenceManager, args: RelPathArgs) -> Result<(), App
         ));
     }
 
-    fs::remove_file(&abs_path).map_err(|e| map_io_error(e, "Failed to delete note file"))?;
+    remover.remove(&abs_path)?;
     pm.with_db(|conn| delete_note_index_by_rel_path(conn, &rel))?;
     pm.clear_self_write(&abs_path);
     Ok(())

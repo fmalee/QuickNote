@@ -1,21 +1,46 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use quicknote_lib::application::index::index_rebuild;
 use quicknote_lib::application::library::set_library_root;
 use quicknote_lib::application::notes::{
-    commands_search, note_delete, note_read, note_update_meta, note_write, notes_get_related,
+    commands_search, note_delete_with, note_read, note_update_meta, note_write, notes_get_related,
     notes_list, tags_batch_rename,
 };
 use quicknote_lib::application::persistence::PersistenceManager;
 use quicknote_lib::domain::command_book::{filter_and_rank_commands, parse_command_book};
-use quicknote_lib::domain::error::ErrorCode;
+use quicknote_lib::domain::error::{AppError, ErrorCode};
 use quicknote_lib::domain::markdown::extract_relative_note_links;
 use quicknote_lib::domain::note::{
     compute_body_hash, parse_note, NoteMetaPatch, NoteType, NoteUpdateMetaArgs, NotesFilterArgs,
     ReadNoteArgs, RelPathArgs, RelatedReason, TagRenameArgs, WriteNoteArgs,
 };
 use quicknote_lib::domain::settings::SetRootArgs;
+use quicknote_lib::infra::trash::FileRemover;
+
+#[derive(Default)]
+struct FakeRemover {
+    removed: Mutex<Vec<PathBuf>>,
+}
+
+impl FakeRemover {
+    fn removed_paths(&self) -> Vec<PathBuf> {
+        self.removed.lock().expect("lock removed").clone()
+    }
+}
+
+impl FileRemover for FakeRemover {
+    fn remove(&self, path: &Path) -> Result<(), AppError> {
+        self.removed
+            .lock()
+            .expect("lock removed")
+            .push(path.to_path_buf());
+        fs::remove_file(path).map_err(|e| {
+            AppError::with_detail(ErrorCode::InternalError, "fake remove", e.to_string())
+        })
+    }
+}
 
 static TEST_DIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -193,14 +218,22 @@ fn index_rebuild_and_commands_search_sync_on_write_and_delete() {
     assert_eq!(after_write.len(), 1);
     assert_eq!(after_write[0].title, "查看监听端口");
 
-    // Incremental delete via note_delete
-    note_delete(
+    // Incremental delete via note_delete_with
+    let fake_remover = FakeRemover::default();
+    note_delete_with(
         &pm,
         RelPathArgs {
             rel_path: "commands/常用命令.md".to_string(),
         },
+        &fake_remover,
     )
     .expect("note_delete command book");
+    assert_eq!(
+        fake_remover.removed_paths(),
+        vec![fs::canonicalize(&vault_dir)
+            .expect("canonicalize vault")
+            .join("commands/常用命令.md")]
+    );
     let after_delete = commands_search(
         &pm,
         quicknote_lib::domain::command_book::CommandSearchArgs {

@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -6,6 +5,7 @@ use specta::Type;
 use tauri::State;
 
 use crate::application::external::{
+    directory_workspace_config_delete_uc,
     directory_workspace_config_write as directory_workspace_config_write_uc,
     external_action_run as external_action_run_uc,
     external_actions_resolve as external_actions_resolve_uc,
@@ -16,11 +16,10 @@ use crate::application::external::{
     external_probe_path as external_probe_path_uc,
 };
 use crate::application::persistence::PersistenceManager;
-use crate::application::reconciler::reconcile_path;
 use crate::domain::bookmark::ExternalBookmark;
-use crate::domain::error::{AppError, ErrorCode};
+use crate::domain::error::AppError;
 use crate::domain::external::{ExternalActionState, ResolveExternalArgs, RunExternalArgs};
-use crate::domain::workspace_context::{DirectoryWorkspaceConfig, DIRECTORY_CONFIG_FILENAME};
+use crate::domain::workspace_context::DirectoryWorkspaceConfig;
 use crate::infra::external_open::ExternalLauncher;
 use crate::infra::fs_browser::{
     DirectoryEntry, DirectoryListing, ListDirectoryOptions, PathEntryKind, PathProbeResult,
@@ -231,22 +230,6 @@ pub fn list_directory_workspace_configs(
         .collect())
 }
 
-fn normalize_vault_rel_dir_checked(raw: &str) -> Option<String> {
-    let trimmed = raw.trim().replace('\\', "/");
-    if trimmed.starts_with('/') {
-        return None;
-    }
-    let mut parts = Vec::new();
-    for segment in trimmed.split('/') {
-        match segment {
-            "" | "." => continue,
-            ".." => return None,
-            part => parts.push(part),
-        }
-    }
-    Some(parts.join("/"))
-}
-
 #[tauri::command]
 pub fn set_directory_workspace_config(
     pm: State<'_, Arc<PersistenceManager>>,
@@ -258,42 +241,6 @@ pub fn set_directory_workspace_config(
             directory_workspace_config_write_uc(&pm, &vault_rel_dir, &cfg)?;
             Ok(())
         }
-        None => {
-            let root_str = pm.current_library_root()?.ok_or_else(|| {
-                AppError::new(
-                    ErrorCode::LibraryNotConfigured,
-                    "Library root is not configured",
-                )
-            })?;
-            let normalized_dir =
-                normalize_vault_rel_dir_checked(&vault_rel_dir).ok_or_else(|| {
-                    AppError::with_detail(
-                        ErrorCode::ValidationError,
-                        "Invalid vault relative directory for .quicknote.yaml",
-                        vault_rel_dir.clone(),
-                    )
-                })?;
-            let rel_path = if normalized_dir.is_empty() {
-                DIRECTORY_CONFIG_FILENAME.to_string()
-            } else {
-                format!("{normalized_dir}/{DIRECTORY_CONFIG_FILENAME}")
-            };
-            let target_path = Path::new(&root_str).join(&rel_path);
-            if target_path.exists() {
-                pm.record_self_write(&target_path, "");
-                if let Err(err) = std::fs::remove_file(&target_path) {
-                    if err.kind() != std::io::ErrorKind::NotFound {
-                        return Err(AppError::with_detail(
-                            ErrorCode::InternalError,
-                            "Failed to remove directory .quicknote.yaml",
-                            err.to_string(),
-                        ));
-                    }
-                }
-                pm.record_self_write(&target_path, "");
-            }
-            pm.with_db(|conn| reconcile_path(Path::new(&root_str), &rel_path, conn))?;
-            Ok(())
-        }
+        None => directory_workspace_config_delete_uc(&pm, &vault_rel_dir),
     }
 }

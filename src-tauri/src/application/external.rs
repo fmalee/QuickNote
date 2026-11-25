@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 
 use crate::application::persistence::PersistenceManager;
-use crate::application::reconciler::write_directory_workspace_config;
+use crate::application::reconciler::{reconcile_path, write_directory_workspace_config};
 use crate::domain::bookmark::{
     normalize_and_sort_bookmarks, normalize_bookmark_alias, normalize_bookmark_path,
     ExternalBookmark, ExternalBookmarkKind,
@@ -36,6 +36,7 @@ use crate::infra::fs_browser::{
 };
 use crate::infra::spotlight::{expand_tilde, SpotlightRunner, SPOTLIGHT_HARD_LIMIT};
 use crate::infra::sqlite::list_ancestor_directory_workspace_configs;
+use crate::infra::trash::{default_file_remover, FileRemover};
 
 const PATH_COMPLETE_LIMIT: usize = 50;
 
@@ -315,6 +316,66 @@ pub fn directory_workspace_config_write(
         )
     })?;
     write_directory_workspace_config(pm, Path::new(&root_str), vault_rel_dir, config)
+}
+
+/// Normalizes and validates a vault-relative directory path (rejecting absolute paths and `..`).
+pub fn normalize_vault_rel_dir_checked(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().replace('\\', "/");
+    if trimmed.starts_with('/') {
+        return None;
+    }
+    let mut parts = Vec::new();
+    for segment in trimmed.split('/') {
+        match segment {
+            "" | "." => continue,
+            ".." => return None,
+            part => parts.push(part),
+        }
+    }
+    Some(parts.join("/"))
+}
+
+/// Removes a directory-level `.quicknote.yaml` by moving it to the system Trash
+/// (with SelfWriteGuard protection and immediate SQLite convergence).
+pub fn directory_workspace_config_delete_uc(
+    pm: &PersistenceManager,
+    vault_rel_dir: &str,
+) -> Result<(), AppError> {
+    directory_workspace_config_delete_uc_with(pm, vault_rel_dir, default_file_remover().as_ref())
+}
+
+/// Injectable variant of [`directory_workspace_config_delete_uc`] for tests.
+pub fn directory_workspace_config_delete_uc_with(
+    pm: &PersistenceManager,
+    vault_rel_dir: &str,
+    remover: &dyn FileRemover,
+) -> Result<(), AppError> {
+    let root_str = pm.current_library_root()?.ok_or_else(|| {
+        AppError::new(
+            ErrorCode::LibraryNotConfigured,
+            "Library root is not configured",
+        )
+    })?;
+    let normalized_dir = normalize_vault_rel_dir_checked(vault_rel_dir).ok_or_else(|| {
+        AppError::with_detail(
+            ErrorCode::ValidationError,
+            "Invalid vault relative directory for .quicknote.yaml",
+            vault_rel_dir.to_string(),
+        )
+    })?;
+    let rel_path = if normalized_dir.is_empty() {
+        DIRECTORY_CONFIG_FILENAME.to_string()
+    } else {
+        format!("{normalized_dir}/{DIRECTORY_CONFIG_FILENAME}")
+    };
+    let target_path = Path::new(&root_str).join(&rel_path);
+    if target_path.exists() {
+        pm.record_self_write(&target_path, "");
+        remover.remove(&target_path)?;
+        pm.record_self_write(&target_path, "");
+    }
+    pm.with_db(|conn| reconcile_path(Path::new(&root_str), &rel_path, conn))?;
+    Ok(())
 }
 
 /// Resolves the effective workspace context for `abs_path` using the 3-tier cascade:
