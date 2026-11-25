@@ -2,10 +2,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl,
-    WebviewWindow, WebviewWindowBuilder,
-};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+#[cfg(not(target_os = "macos"))]
+use tauri::{PhysicalPosition, PhysicalSize, Position, Size};
 
 use crate::domain::app::ActivationPolicy;
 use crate::domain::capture::AppendResult;
@@ -259,7 +258,10 @@ impl WindowManager {
 
     /// Returns the existing `toast` window or creates and configures it as a native
     /// non-activating `NSPanel` on demand.
-    pub fn ensure_or_create_toast_window(&self, app: &AppHandle) -> Result<WebviewWindow, AppError> {
+    pub fn ensure_or_create_toast_window(
+        &self,
+        app: &AppHandle,
+    ) -> Result<WebviewWindow, AppError> {
         if let Some(existing) = app.get_webview_window(TOAST_WINDOW_LABEL) {
             return Ok(existing);
         }
@@ -306,8 +308,7 @@ impl WindowManager {
             guard.show_main(mode)
         };
 
-        let effective_mode =
-            mode.unwrap_or_else(|| win_state.mode.unwrap_or(WindowMode::Standard));
+        let effective_mode = mode.unwrap_or_else(|| win_state.mode.unwrap_or(WindowMode::Standard));
 
         let layout_transition = if effective_mode == WindowMode::Fullscreen {
             let mut layout = self.layout_state.lock().map_err(|_| {
@@ -328,24 +329,51 @@ impl WindowManager {
             None
         };
 
-        self.apply_activation_policy(app, policy);
+        if effective_mode == WindowMode::Auxiliary {
+            // Keep macOS app in Accessory policy while entering auxiliary sidebar mode so
+            // presenting and focusing over fullscreen apps (e.g. Chrome) never pulls the
+            // user back to the desktop Space.
+            self.apply_activation_policy(app, ActivationPolicy::Accessory);
 
-        if let Some(win) = main_win {
-            let _ = win.show();
-            let _ = win.unminimize();
-            let _ = win.set_focus();
+            if let Some(win) = main_win {
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
 
-            if effective_mode == WindowMode::Fullscreen {
-                if let Ok(ns_ptr) = window_ns_ptr_from_window(&win) {
-                    let _ = self.bridge.configure_main_window_mode(
-                        ns_ptr,
-                        WindowMode::Fullscreen,
-                        clamped_pct,
+                if let Some(transition) = layout_transition {
+                    self.apply_main_layout_transition(
+                        app,
+                        &win,
+                        transition,
+                        ActivationPolicy::Accessory,
                     );
                 }
-                let _ = win.set_fullscreen(true);
-            } else if let Some(transition) = layout_transition {
-                self.apply_main_layout_transition(app, &win, transition, policy);
+            }
+        } else {
+            if let (Some(win), Some(transition)) = (main_win.as_ref(), layout_transition) {
+                self.apply_main_layout_transition(app, win, transition, policy);
+            }
+
+            self.apply_activation_policy(app, policy);
+
+            if let Some(win) = main_win {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+
+                if effective_mode == WindowMode::Fullscreen {
+                    if let Ok(ns_ptr) = window_ns_ptr_from_window(&win) {
+                        let _ = self.bridge.configure_main_window_mode(
+                            ns_ptr,
+                            WindowMode::Fullscreen,
+                            clamped_pct,
+                        );
+                    }
+                    let _ = win.set_fullscreen(true);
+                }
             }
         }
 
@@ -354,8 +382,9 @@ impl WindowManager {
     }
 
     /// Toggles the resident main window between `Regular` and `AuxiliarySidebar45` mode.
-    /// If the main window is hidden, shows it directly in `AuxiliarySidebar45` mode.
-    pub fn toggle_auxiliary_sidebar_45(
+    /// If the main window is hidden, shows it directly in `AuxiliarySidebar45` mode,
+    /// invokes the native auxiliary sidebar bridge, and broadcasts `window:state` to the frontend.
+    pub fn toggle_auxiliary_sidebar_mode(
         &self,
         app: &AppHandle,
         auxiliary_width_percent: u8,
@@ -380,6 +409,15 @@ impl WindowManager {
         self.set_main_layout_mode(app, target_layout, auxiliary_width_percent)
     }
 
+    /// Compatibility alias forwarding to `toggle_auxiliary_sidebar_mode`.
+    pub fn toggle_auxiliary_sidebar_45(
+        &self,
+        app: &AppHandle,
+        auxiliary_width_percent: u8,
+    ) -> Result<WindowState, AppError> {
+        self.toggle_auxiliary_sidebar_mode(app, auxiliary_width_percent)
+    }
+
     /// Switches the resident main window to an explicit `Regular` or `AuxiliarySidebar45` layout.
     pub fn set_main_layout_mode(
         &self,
@@ -387,7 +425,11 @@ impl WindowManager {
         target: MainWindowLayoutMode,
         auxiliary_width_percent: u8,
     ) -> Result<WindowState, AppError> {
-        self.show_main(app, Some(target.into_window_mode()), auxiliary_width_percent)
+        self.show_main(
+            app,
+            Some(target.into_window_mode()),
+            auxiliary_width_percent,
+        )
     }
 
     /// Unified native bridge & window-geometry hook for `Regular` <-> `AuxiliarySidebar45` transitions.
@@ -398,8 +440,6 @@ impl WindowManager {
         transition: MainWindowModeTransition,
         policy: ActivationPolicy,
     ) {
-        let target_domain_mode = transition.target_mode.into_window_mode();
-
         if transition.target_mode == MainWindowLayoutMode::Regular
             && win.is_fullscreen().unwrap_or(false)
         {
@@ -407,15 +447,21 @@ impl WindowManager {
         }
 
         // Unified native bridge invocation point: handles macOS full-screen Space overlay
-        // (`collectionBehavior`) and right-docked 45% frame / async exit-fullscreen coordination.
+        // (`collectionBehavior`), non-Space-switching focus, and frame save/restore.
         if let Ok(ns_ptr) = window_ns_ptr_from_window(win) {
-            if let Ok(diag) = self.bridge.configure_main_window_mode(
-                ns_ptr,
-                target_domain_mode,
-                transition.auxiliary_width_percent,
-            ) {
+            let bridge_result = match transition.target_mode {
+                MainWindowLayoutMode::AuxiliarySidebar45 => self
+                    .bridge
+                    .enter_auxiliary_sidebar_mode(ns_ptr, transition.auxiliary_width_percent)
+                    .map(|diag| ("auxiliary_enter", diag)),
+                MainWindowLayoutMode::Regular => self
+                    .bridge
+                    .exit_auxiliary_sidebar_mode(ns_ptr)
+                    .map(|diag| ("auxiliary_exit", diag)),
+            };
+            if let Ok((event_name, diag)) = bridge_result {
                 log_native_event(
-                    "main_mode_switch",
+                    event_name,
                     policy,
                     diag.collection_behavior,
                     diag.is_key_window,
@@ -424,6 +470,7 @@ impl WindowManager {
             }
         }
 
+        #[cfg(not(target_os = "macos"))]
         if transition.target_mode == MainWindowLayoutMode::Regular {
             if let Some(bounds) = transition.restore_bounds {
                 let _ = win.set_size(Size::Physical(PhysicalSize::new(

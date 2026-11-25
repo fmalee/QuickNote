@@ -8,6 +8,12 @@ use crate::domain::ui_state::HotkeySelfCheck;
 use crate::domain::window::HideReason;
 use crate::infra::fs::atomic_write_bytes;
 
+/// `NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorStationary`
+/// (strictly excludes `NSWindowCollectionBehaviorMoveToActiveSpace`).
+pub const AUXILIARY_COLLECTION_BEHAVIOR: u64 = (1 << 0) | (1 << 8) | (1 << 4);
+/// `NSWindowCollectionBehaviorFullScreenPrimary`
+pub const STANDARD_COLLECTION_BEHAVIOR: u64 = 1 << 7;
+
 /// Diagnostics captured from native panel operations (`C2.4`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PanelDiagnostics {
@@ -79,6 +85,23 @@ pub trait NativeWindowBridge: Send + Sync {
     ) -> Result<PanelDiagnostics, AppError> {
         Ok(PanelDiagnostics::default())
     }
+    fn enter_auxiliary_sidebar_mode(
+        &self,
+        ns_window_ptr: usize,
+        auxiliary_width_percent: u8,
+    ) -> Result<PanelDiagnostics, AppError> {
+        self.configure_main_window_mode(
+            ns_window_ptr,
+            WindowMode::Auxiliary,
+            auxiliary_width_percent,
+        )
+    }
+    fn exit_auxiliary_sidebar_mode(
+        &self,
+        ns_window_ptr: usize,
+    ) -> Result<PanelDiagnostics, AppError> {
+        self.configure_main_window_mode(ns_window_ptr, WindowMode::Standard, 45)
+    }
 }
 
 /// Headless / non-macOS no-op bridge for automated tests.
@@ -143,10 +166,40 @@ impl NativeWindowBridge for NoopNativeBridge {
     fn configure_main_window_mode(
         &self,
         _ns_window_ptr: usize,
-        _mode: WindowMode,
+        mode: WindowMode,
         _auxiliary_width_percent: u8,
     ) -> Result<PanelDiagnostics, AppError> {
-        Ok(PanelDiagnostics::default())
+        match mode {
+            WindowMode::Auxiliary => Ok(PanelDiagnostics {
+                collection_behavior: AUXILIARY_COLLECTION_BEHAVIOR,
+                is_key_window: true,
+            }),
+            WindowMode::Standard | WindowMode::Fullscreen => Ok(PanelDiagnostics {
+                collection_behavior: STANDARD_COLLECTION_BEHAVIOR,
+                is_key_window: false,
+            }),
+        }
+    }
+
+    fn enter_auxiliary_sidebar_mode(
+        &self,
+        _ns_window_ptr: usize,
+        _auxiliary_width_percent: u8,
+    ) -> Result<PanelDiagnostics, AppError> {
+        Ok(PanelDiagnostics {
+            collection_behavior: AUXILIARY_COLLECTION_BEHAVIOR,
+            is_key_window: true,
+        })
+    }
+
+    fn exit_auxiliary_sidebar_mode(
+        &self,
+        _ns_window_ptr: usize,
+    ) -> Result<PanelDiagnostics, AppError> {
+        Ok(PanelDiagnostics {
+            collection_behavior: STANDARD_COLLECTION_BEHAVIOR,
+            is_key_window: false,
+        })
     }
 }
 
@@ -207,6 +260,12 @@ pub mod darwin {
             auxiliary_width_percent: u8,
             out_diag: *mut QnPanelDiag,
         );
+        fn qn_enter_auxiliary_sidebar_mode(
+            ns_window_ptr: *mut c_void,
+            auxiliary_width_percent: u8,
+            out_diag: *mut QnPanelDiag,
+        );
+        fn qn_exit_auxiliary_sidebar_mode(ns_window_ptr: *mut c_void, out_diag: *mut QnPanelDiag);
     }
 
     static ESC_CALLBACK_PTR: AtomicUsize = AtomicUsize::new(0);
@@ -382,6 +441,9 @@ pub mod darwin {
             mode: WindowMode,
             auxiliary_width_percent: u8,
         ) -> Result<PanelDiagnostics, AppError> {
+            if ns_window_ptr == 0 {
+                return Ok(PanelDiagnostics::default());
+            }
             let mode_code = match mode {
                 WindowMode::Standard => 0,
                 WindowMode::Fullscreen => 1,
@@ -395,6 +457,39 @@ pub mod darwin {
                     auxiliary_width_percent,
                     &mut diag,
                 );
+            }
+            Ok(diag.into())
+        }
+
+        fn enter_auxiliary_sidebar_mode(
+            &self,
+            ns_window_ptr: usize,
+            auxiliary_width_percent: u8,
+        ) -> Result<PanelDiagnostics, AppError> {
+            if ns_window_ptr == 0 {
+                return Ok(PanelDiagnostics::default());
+            }
+            let mut diag = QnPanelDiag::default();
+            unsafe {
+                qn_enter_auxiliary_sidebar_mode(
+                    ns_window_ptr as *mut c_void,
+                    auxiliary_width_percent,
+                    &mut diag,
+                );
+            }
+            Ok(diag.into())
+        }
+
+        fn exit_auxiliary_sidebar_mode(
+            &self,
+            ns_window_ptr: usize,
+        ) -> Result<PanelDiagnostics, AppError> {
+            if ns_window_ptr == 0 {
+                return Ok(PanelDiagnostics::default());
+            }
+            let mut diag = QnPanelDiag::default();
+            unsafe {
+                qn_exit_auxiliary_sidebar_mode(ns_window_ptr as *mut c_void, &mut diag);
             }
             Ok(diag.into())
         }
