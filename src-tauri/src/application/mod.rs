@@ -5,6 +5,7 @@ pub mod index;
 pub mod library;
 pub mod notes;
 pub mod persistence;
+pub mod reconciler;
 pub mod terminal;
 pub mod watch;
 pub mod window;

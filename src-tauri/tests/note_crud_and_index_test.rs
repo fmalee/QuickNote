@@ -8,12 +8,20 @@ use quicknote_lib::application::notes::{
     notes_get_tree_and_tags, notes_list, search_notes_and_files,
 };
 use quicknote_lib::application::persistence::PersistenceManager;
+use quicknote_lib::application::reconciler::{
+    reconcile_path, reconcile_vault, reconcile_watched_path, write_directory_workspace_config,
+    ReconcilePathOutcome,
+};
 use quicknote_lib::domain::error::ErrorCode;
 use quicknote_lib::domain::note::{
     CreateNoteArgs, IndexPhase, NoteMetaPatch, NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs,
     RelPathArgs, RenameNoteArgs, SearchQueryArgs, WriteNoteArgs,
 };
 use quicknote_lib::domain::settings::SetRootArgs;
+use quicknote_lib::domain::workspace_context::DirectoryWorkspaceConfig;
+use quicknote_lib::infra::sqlite::{
+    get_note_key_by_rel_path, list_directory_workspace_configs,
+};
 
 static TEST_DIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -317,4 +325,183 @@ fn test_crud_and_fts_search() {
         },
     );
     assert!(deleted_read.is_err());
+}
+
+#[test]
+fn test_reconcile_vault_indexes_root_manual_md_without_frontmatter_and_handles_broken_yaml() {
+    let (_tmp, vault, pm) = setup_test_env();
+
+    // 1. Place a plain Markdown file with no Frontmatter directly at Vault root.
+    let manual_path = vault.join("manual.md");
+    let manual_raw = "# 根目录手工文档\n\n无需 Frontmatter 即可收录的关键词：蓝鲸灯塔。\n";
+    fs::write(&manual_path, manual_raw).expect("write manual.md");
+
+    // 2. Place a valid .quicknote.yaml, a malformed .quicknote.yaml, a note after it, and an excluded .git file.
+    fs::create_dir_all(vault.join("proj-broken")).expect("create proj-broken");
+    fs::write(
+        vault.join("proj-broken").join(".quicknote.yaml"),
+        "projectRoot: [unterminated\n  bad: :::yaml",
+    )
+    .expect("write broken .quicknote.yaml");
+    fs::write(
+        vault.join("proj-broken").join("after-broken.md"),
+        "# 损坏配置之后的笔记\n\n确认扫描未中断：海豚港湾。\n",
+    )
+    .expect("write after-broken.md");
+
+    fs::create_dir_all(vault.join("proj-ok")).expect("create proj-ok");
+    fs::write(
+        vault.join("proj-ok").join(".quicknote.yaml"),
+        "projectRoot: /tmp/proj-ok\ndefaultTerminalCwd: /tmp/proj-ok/src\n",
+    )
+    .expect("write valid .quicknote.yaml");
+
+    fs::create_dir_all(vault.join(".git")).expect("create .git");
+    fs::write(vault.join(".git").join("ignored.md"), "# 不应被收录\n").expect("write .git file");
+
+    // 3. Run full incremental reconciliation.
+    let report = pm
+        .with_db(|conn| reconcile_vault(&vault, conn))
+        .expect("reconcile_vault");
+    assert!(report.notes_upserted >= 2);
+    assert_eq!(report.configs_scanned, 2);
+    assert_eq!(report.configs_upserted, 2);
+    assert_eq!(report.config_parse_errors, 1);
+
+    // 4. Read-only guarantee: manual.md must remain byte-for-byte untouched on disk.
+    assert_eq!(
+        fs::read_to_string(&manual_path).expect("read manual.md"),
+        manual_raw
+    );
+
+    // 5. manual.md must be indexed with deterministic rel_path fallback key and searchable via FTS.
+    let manual_key = pm
+        .with_db(|conn| get_note_key_by_rel_path(conn, "manual.md"))
+        .expect("query manual.md key");
+    assert_eq!(manual_key.as_deref(), Some("path:manual.md"));
+
+    let manual_search = search_notes_and_files(
+        &pm,
+        SearchQueryArgs {
+            query: "蓝鲸灯塔".to_string(),
+            limit: Some(10),
+            request_id: 201,
+        },
+    )
+    .expect("search 蓝鲸灯塔");
+    assert!(manual_search
+        .items
+        .iter()
+        .any(|item| item.rel_path.as_deref() == Some("manual.md")));
+
+    // 6. Malformed YAML must not interrupt scanning subsequent notes.
+    let after_broken_search = search_notes_and_files(
+        &pm,
+        SearchQueryArgs {
+            query: "海豚港湾".to_string(),
+            limit: Some(10),
+            request_id: 202,
+        },
+    )
+    .expect("search 海豚港湾");
+    assert!(after_broken_search
+        .items
+        .iter()
+        .any(|item| item.rel_path.as_deref() == Some("proj-broken/after-broken.md")));
+
+    // 7. .quicknote.yaml and .git/ignored.md must never appear in notes list or FTS.
+    let all_notes = notes_list(
+        &pm,
+        NotesFilterArgs {
+            tab: "all".to_string(),
+            ..Default::default()
+        },
+    )
+    .expect("notes_list all");
+    assert!(!all_notes
+        .iter()
+        .any(|n| n.rel_path.as_deref().unwrap_or("").ends_with(".quicknote.yaml")));
+    assert!(!all_notes
+        .iter()
+        .any(|n| n.rel_path.as_deref() == Some(".git/ignored.md")));
+
+    // 8. Verify directory_workspace_configs rows.
+    let configs = pm
+        .with_db(list_directory_workspace_configs)
+        .expect("list_directory_workspace_configs");
+    let broken_cfg = configs
+        .iter()
+        .find(|c| c.vault_rel_dir == "proj-broken")
+        .expect("proj-broken config row");
+    assert!(broken_cfg.parse_error.is_some());
+    assert_eq!(broken_cfg.config_json, "{}");
+
+    let ok_cfg = configs
+        .iter()
+        .find(|c| c.vault_rel_dir == "proj-ok")
+        .expect("proj-ok config row");
+    assert!(ok_cfg.parse_error.is_none());
+    assert!(ok_cfg.config_json.contains("/tmp/proj-ok"));
+
+    // 9. Second reconciliation with unchanged files must skip all unchanged notes and configs.
+    let second_report = pm
+        .with_db(|conn| reconcile_vault(&vault, conn))
+        .expect("second reconcile_vault");
+    assert_eq!(second_report.notes_upserted, 0);
+    assert_eq!(second_report.configs_upserted, 0);
+    assert_eq!(second_report.notes_pruned, 0);
+    assert_eq!(second_report.configs_pruned, 0);
+
+    // 10. Deleting files and reconciling prunes them from SQLite.
+    fs::remove_file(&manual_path).expect("remove manual.md");
+    let prune_note = pm
+        .with_db(|conn| reconcile_path(&vault, "manual.md", conn))
+        .expect("reconcile_path deleted manual.md");
+    assert_eq!(prune_note, ReconcilePathOutcome::NotePruned);
+    assert_eq!(
+        pm.with_db(|conn| get_note_key_by_rel_path(conn, "manual.md"))
+            .expect("query deleted manual.md"),
+        None
+    );
+
+    fs::remove_file(vault.join("proj-broken").join(".quicknote.yaml"))
+        .expect("remove broken .quicknote.yaml");
+    let prune_cfg = pm
+        .with_db(|conn| reconcile_path(&vault, "proj-broken/.quicknote.yaml", conn))
+        .expect("reconcile_path deleted .quicknote.yaml");
+    assert_eq!(prune_cfg, ReconcilePathOutcome::ConfigPruned);
+    let configs_after = pm
+        .with_db(list_directory_workspace_configs)
+        .expect("list configs after prune");
+    assert!(!configs_after.iter().any(|c| c.vault_rel_dir == "proj-broken"));
+}
+
+#[test]
+fn test_write_directory_workspace_config_uses_atomic_write_and_self_write_guard() {
+    let (_tmp, vault, pm) = setup_test_env();
+    let cfg = DirectoryWorkspaceConfig {
+        vscode_workspace_path: Some("/tmp/demo.code-workspace".to_string()),
+        project_root: Some("/tmp/demo".to_string()),
+        default_terminal_cwd: Some("/tmp/demo/app".to_string()),
+        external_app_overrides: None,
+    };
+
+    let written_path = write_directory_workspace_config(&pm, &vault, "workspace-dir", &cfg)
+        .expect("write_directory_workspace_config");
+    assert!(written_path.is_file());
+
+    let cached = pm
+        .with_db(list_directory_workspace_configs)
+        .expect("list configs");
+    let row = cached
+        .iter()
+        .find(|c| c.vault_rel_dir == "workspace-dir")
+        .expect("cached workspace-dir row");
+    assert!(row.parse_error.is_none());
+    assert!(row.config_json.contains("/tmp/demo.code-workspace"));
+
+    // Immediate watcher callback for the just-written .quicknote.yaml must be suppressed by SelfWriteGuard.
+    let outcome = reconcile_watched_path(&pm, &vault, &written_path)
+        .expect("reconcile_watched_path self-write");
+    assert_eq!(outcome, ReconcilePathOutcome::SuppressedSelfWrite);
 }

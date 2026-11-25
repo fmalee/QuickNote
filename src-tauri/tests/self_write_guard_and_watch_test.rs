@@ -10,6 +10,9 @@ use quicknote_lib::application::notes::{
     note_create, note_update_meta, note_write, notes_list, search_notes_and_files,
 };
 use quicknote_lib::application::persistence::PersistenceManager;
+use quicknote_lib::application::reconciler::{
+    reconcile_watched_path, write_directory_workspace_config, ReconcilePathOutcome,
+};
 use quicknote_lib::application::watch::process_external_fs_path;
 use quicknote_lib::domain::capture::AppendNoteArgs;
 use quicknote_lib::domain::note::{
@@ -19,6 +22,8 @@ use quicknote_lib::domain::note::{
 use quicknote_lib::domain::settings::SetRootArgs;
 use quicknote_lib::domain::ui_state::CaptureMode;
 use quicknote_lib::domain::watch::{ExternalChangeEvent, ExternalChangeKind, SelfWriteGuard};
+use quicknote_lib::domain::workspace_context::DirectoryWorkspaceConfig;
+use quicknote_lib::infra::sqlite::{get_note_key_by_rel_path, list_directory_workspace_configs};
 use quicknote_lib::infra::vault_watch::VaultWatcher;
 
 static TEST_DIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -272,6 +277,133 @@ fn external_modify_and_delete_update_index_and_emit_events(
         },
     )?;
     assert!(!listed.iter().any(|n| n.rel_path == doc.rel_path));
+
+    Ok(())
+}
+
+#[test]
+fn vault_watcher_converges_root_manual_md_and_quicknote_yaml_with_self_write_guard(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_app_dir, vault_dir, pm) = setup_pm_with_library()?;
+    let vault_root = vault_dir.path().to_path_buf();
+
+    let outcomes: Arc<Mutex<Vec<(PathBuf, ReconcilePathOutcome)>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let outcomes_clone = Arc::clone(&outcomes);
+    let pm_clone = Arc::clone(&pm);
+    let vault_root_clone = vault_root.clone();
+
+    let _watcher = VaultWatcher::start(Some(&vault_root), move |path| {
+        if let Ok(outcome) = reconcile_watched_path(&pm_clone, &vault_root_clone, path) {
+            if let Ok(mut guard) = outcomes_clone.lock() {
+                guard.push((path.to_path_buf(), outcome));
+            }
+        }
+    })?;
+
+    thread::sleep(Duration::from_millis(120));
+
+    // 1. Create a root-level manual.md with no Frontmatter -> watcher must converge it into SQLite.
+    let manual_path = vault_root.join("manual.md");
+    fs::write(&manual_path, "# 根目录监听文档\n\n监听测试：极光观测站。\n")?;
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if pm.with_db(|conn| get_note_key_by_rel_path(conn, "manual.md"))?
+            == Some("path:manual.md".to_string())
+            || Instant::now() >= deadline
+        {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(
+        pm.with_db(|conn| get_note_key_by_rel_path(conn, "manual.md"))?,
+        Some("path:manual.md".to_string())
+    );
+
+    // 2. Rename manual.md -> manual-renamed.md at Vault root.
+    let renamed_path = vault_root.join("manual-renamed.md");
+    fs::rename(&manual_path, &renamed_path)?;
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let old_gone = pm
+            .with_db(|conn| get_note_key_by_rel_path(conn, "manual.md"))?
+            .is_none();
+        let new_present = pm.with_db(|conn| get_note_key_by_rel_path(conn, "manual-renamed.md"))?
+            == Some("path:manual-renamed.md".to_string());
+        if (old_gone && new_present) || Instant::now() >= deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(
+        pm.with_db(|conn| get_note_key_by_rel_path(conn, "manual.md"))?,
+        None
+    );
+    assert_eq!(
+        pm.with_db(|conn| get_note_key_by_rel_path(conn, "manual-renamed.md"))?,
+        Some("path:manual-renamed.md".to_string())
+    );
+
+    // 3. External creation of root .quicknote.yaml must trigger debounced convergence.
+    let root_cfg_path = vault_root.join(".quicknote.yaml");
+    fs::write(&root_cfg_path, "projectRoot: /tmp/watched-root\n")?;
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let configs = pm.with_db(list_directory_workspace_configs)?;
+        if configs
+            .iter()
+            .any(|c| c.vault_rel_dir.is_empty() && c.config_json.contains("/tmp/watched-root"))
+            || Instant::now() >= deadline
+        {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    let configs = pm.with_db(list_directory_workspace_configs)?;
+    assert!(configs
+        .iter()
+        .any(|c| c.vault_rel_dir.is_empty() && c.config_json.contains("/tmp/watched-root")));
+
+    // 4. Internal write via write_directory_workspace_config must be suppressed by SelfWriteGuard.
+    {
+        let mut guard = outcomes.lock().map_err(|_| "outcomes mutex poisoned")?;
+        guard.clear();
+    }
+    let sub_cfg = DirectoryWorkspaceConfig {
+        project_root: Some("/tmp/internal-sub".to_string()),
+        ..Default::default()
+    };
+    let sub_cfg_path = write_directory_workspace_config(&pm, &vault_root, "sub-ws", &sub_cfg)?;
+    thread::sleep(Duration::from_millis(350));
+
+    let observed = outcomes.lock().map_err(|_| "outcomes mutex poisoned")?;
+    assert!(
+        !observed.iter().any(|(p, o)| {
+            p.ends_with(".quicknote.yaml")
+                && p.to_string_lossy().contains("sub-ws")
+                && *o == ReconcilePathOutcome::ConfigUpserted
+        }),
+        "Internal .quicknote.yaml write should not trigger external ConfigUpserted, got {:?}",
+        *observed
+    );
+    drop(observed);
+
+    // 5. External deletion of .quicknote.yaml must prune cached row.
+    fs::remove_file(&sub_cfg_path)?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let configs = pm.with_db(list_directory_workspace_configs)?;
+        if !configs.iter().any(|c| c.vault_rel_dir == "sub-ws") || Instant::now() >= deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    let configs_after = pm.with_db(list_directory_workspace_configs)?;
+    assert!(!configs_after.iter().any(|c| c.vault_rel_dir == "sub-ws"));
 
     Ok(())
 }
