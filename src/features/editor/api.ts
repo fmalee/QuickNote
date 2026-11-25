@@ -1,6 +1,8 @@
 import type {
   ExternalActionState,
+  ExternalBookmark,
   ExternalChangeEvent,
+  ExternalDirectoryListing,
   ExportPdfArgs,
   InboxExtractArgs,
   NoteDoc,
@@ -23,14 +25,18 @@ import {
   externalActionsResolve,
   inboxExtractToNote,
   isAppError,
+  listCurrentDocSiblings as listCurrentDocSiblingsIpc,
   noteExportPdf,
   noteRead,
   noteSaveImage,
   noteUpdateMeta,
   noteWrite,
   notesList,
+  removeExternalBookmark as removeExternalBookmarkIpc,
+  settingsGet,
   uiStateGet,
   uiStateSet,
+  upsertExternalBookmark as upsertExternalBookmarkIpc,
 } from '@/lib/ipc/commands';
 import { onFsExternalChange, type UnlistenFn } from '@/lib/ipc/events';
 
@@ -69,6 +75,23 @@ export function resolveExternalActions(args: ResolveExternalArgs): Promise<Exter
 
 export function runExternalAction(args: RunExternalArgs): Promise<void> {
   return externalActionRun(args);
+}
+
+export function listCurrentDocSiblings(docPath: string): Promise<ExternalDirectoryListing> {
+  return listCurrentDocSiblingsIpc(docPath);
+}
+
+export async function fetchExternalBookmarks(): Promise<ExternalBookmark[]> {
+  const snapshot = await settingsGet();
+  return snapshot?.settings?.externalBookmarks ?? [];
+}
+
+export function upsertExternalBookmark(bookmark: ExternalBookmark): Promise<ExternalBookmark[]> {
+  return upsertExternalBookmarkIpc(bookmark);
+}
+
+export function removeExternalBookmark(path: string): Promise<ExternalBookmark[]> {
+  return removeExternalBookmarkIpc(path);
 }
 
 export function exportNotePdf(args: ExportPdfArgs): Promise<void> {

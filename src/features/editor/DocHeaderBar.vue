@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue';
-import type { NoteMetaPatch, NoteType } from '@/bindings/types';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import type {
+  ExternalBookmark,
+  ExternalDirectoryListing,
+  NoteMetaPatch,
+  NoteType,
+} from '@/bindings/types';
 import {
   type ContextMenuEntry,
   QnBadge,
@@ -9,8 +14,16 @@ import {
   QnModalShell,
 } from '@/components';
 import { actionRegistry } from '@/lib/actions';
+import {
+  extractEditorErrorMessage,
+  fetchExternalBookmarks,
+  listCurrentDocSiblings,
+  removeExternalBookmark,
+  upsertExternalBookmark,
+} from './api';
 import DocPropertiesPopover from './DocPropertiesPopover.vue';
 import { copyMarkdownAsRichText } from './export/markdownExport';
+import SiblingFilesPopover from './SiblingFilesPopover.vue';
 import { needsExternalFrontmatterConfirm, useEditorTabsStore } from './store';
 import { isExternalActionId, useExternalActions } from './useExternalActions';
 
@@ -20,6 +33,10 @@ const externalActions = useExternalActions();
 const titleDraft = ref('');
 const tagInputDraft = ref('');
 const propertiesOpen = ref(false);
+const siblingsOpen = ref(false);
+const siblingDirPath = ref<string | null>(null);
+const externalBookmarks = ref<ExternalBookmark[]>([]);
+const bookmarkBusy = ref(false);
 const externalMenuOpen = ref(false);
 const externalMenuPos = ref({ x: 0, y: 0 });
 const moreMenuOpen = ref(false);
@@ -33,6 +50,7 @@ const pendingAction = ref<
 
 const doc = computed(() => editorTabsStore.activeDoc);
 const tab = computed(() => editorTabsStore.activeTab);
+const isExternalDoc = computed(() => Boolean(doc.value && !doc.value.isLibrary));
 
 const isMarkdown = computed(() => {
   const currentDoc = doc.value;
@@ -52,6 +70,56 @@ const isInboxWithSelection = computed(() => {
   return (currentDoc.isInbox || currentDoc.relPath === 'inbox.md') && currentTab.hasSelection;
 });
 
+const isCurrentFileBookmarked = computed(() => {
+  const currentDoc = doc.value;
+  if (!currentDoc || currentDoc.isLibrary) {
+    return false;
+  }
+  if (currentDoc.meta.pinned) {
+    return true;
+  }
+  return externalBookmarks.value.some(
+    (item) => item.kind === 'file' && item.path === currentDoc.absPath,
+  );
+});
+
+const resolvedExternalDirPath = computed(() => {
+  if (!isExternalDoc.value) {
+    return null;
+  }
+  return (
+    siblingDirPath.value ??
+    externalActions.getResolvedPath('external.vscode') ??
+    externalActions.getResolvedPath('external.terminal') ??
+    null
+  );
+});
+
+const isCurrentDirBookmarked = computed(() => {
+  const dirPath = resolvedExternalDirPath.value;
+  if (!dirPath) {
+    return false;
+  }
+  return externalBookmarks.value.some(
+    (item) => item.kind === 'directory' && item.path === dirPath,
+  );
+});
+
+const vsCodeActionTitle = computed(
+  () => externalActions.getDisabledReason('external.vscode') ?? '在 VS Code 中打开',
+);
+
+async function loadExternalBookmarks(): Promise<void> {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    externalBookmarks.value = await fetchExternalBookmarks();
+  } catch {
+    // 独立单元测试或非桌面环境容错
+  }
+}
+
 watch(
   () => doc.value?.meta.title ?? doc.value?.relPath ?? '',
   (nextTitle) => {
@@ -70,12 +138,23 @@ watch(
   () => doc.value?.absPath,
   () => {
     propertiesOpen.value = false;
+    siblingsOpen.value = false;
+    siblingDirPath.value = null;
     externalMenuOpen.value = false;
     moreMenuOpen.value = false;
     externalConfirmOpen.value = false;
     pendingAction.value = null;
+    if (isExternalDoc.value) {
+      void loadExternalBookmarks();
+    }
   },
 );
+
+onMounted(() => {
+  if (isExternalDoc.value) {
+    void loadExternalBookmarks();
+  }
+});
 
 onUnmounted(() => {
   if (copyFeedbackTimer !== null) {
@@ -257,8 +336,99 @@ async function handleMoreMenuSelect(id: string): Promise<void> {
   }
 }
 
-async function handleQuickPinExternal(): Promise<void> {
-  await externalActions.executeAction('external.pin', { pinned: doc.value?.meta.pinned });
+async function handleToggleFileBookmark(): Promise<void> {
+  const currentDoc = doc.value;
+  if (!currentDoc || currentDoc.isLibrary || bookmarkBusy.value) {
+    return;
+  }
+  bookmarkBusy.value = true;
+  try {
+    if (isCurrentFileBookmarked.value) {
+      externalBookmarks.value = await removeExternalBookmark(currentDoc.absPath);
+      if (currentDoc.meta.pinned) {
+        await externalActions.executeAction('external.pin', { pinned: true });
+      }
+      showCopyFeedback('已取消收藏文件书签');
+    } else {
+      externalBookmarks.value = await upsertExternalBookmark({
+        path: currentDoc.absPath,
+        kind: 'file',
+        alias: null,
+        pinned: true,
+        lastOpenedAt: null,
+      });
+      showCopyFeedback('已收藏此文件为书签');
+    }
+  } catch (error) {
+    externalActions.feedback = {
+      tone: 'danger',
+      message: extractEditorErrorMessage(error, '更新外部文件书签失败'),
+    };
+  } finally {
+    bookmarkBusy.value = false;
+  }
+}
+
+async function handleToggleDirBookmark(): Promise<void> {
+  const currentDoc = doc.value;
+  if (!currentDoc || currentDoc.isLibrary || bookmarkBusy.value) {
+    return;
+  }
+  bookmarkBusy.value = true;
+  try {
+    let dirPath = resolvedExternalDirPath.value;
+    if (!dirPath) {
+      const listing = await listCurrentDocSiblings(currentDoc.absPath);
+      siblingDirPath.value = listing.rootPath;
+      dirPath = listing.rootPath;
+    }
+    if (!dirPath) {
+      externalActions.feedback = {
+        tone: 'warning',
+        message: '未能解析当前外部文件所在目录',
+      };
+      return;
+    }
+    if (isCurrentDirBookmarked.value) {
+      externalBookmarks.value = await removeExternalBookmark(dirPath);
+      showCopyFeedback('已取消收藏常用目录书签');
+    } else {
+      externalBookmarks.value = await upsertExternalBookmark({
+        path: dirPath,
+        kind: 'directory',
+        alias: null,
+        pinned: true,
+        lastOpenedAt: null,
+      });
+      showCopyFeedback('已收藏所在目录为常用目录书签');
+    }
+  } catch (error) {
+    externalActions.feedback = {
+      tone: 'danger',
+      message: extractEditorErrorMessage(error, '更新常用目录书签失败'),
+    };
+  } finally {
+    bookmarkBusy.value = false;
+  }
+}
+
+function handleToggleSiblingsPopover(): void {
+  if (siblingsOpen.value) {
+    siblingsOpen.value = false;
+    return;
+  }
+  propertiesOpen.value = false;
+  externalMenuOpen.value = false;
+  moreMenuOpen.value = false;
+  siblingsOpen.value = true;
+}
+
+function handleSiblingsLoaded(listing: ExternalDirectoryListing): void {
+  siblingDirPath.value = listing.rootPath;
+}
+
+async function handleOpenInVsCode(): Promise<void> {
+  await externalActions.executeAction('external.vscode');
 }
 
 async function confirmExternalFrontmatter(): Promise<void> {
@@ -305,23 +475,13 @@ function cancelExternalFrontmatter(): void {
 
       <div class="qn-doc-header__controls">
         <QnBadge
-          v-if="!doc.isLibrary"
+          v-if="isExternalDoc"
           tone="accent"
           size="sm"
           data-testid="doc-header-external-badge"
         >
           外部
         </QnBadge>
-
-        <QnButton
-          v-if="!doc.isLibrary"
-          variant="ghost"
-          size="sm"
-          data-testid="doc-header-pin-external-btn"
-          @click="handleQuickPinExternal"
-        >
-          {{ doc.meta.pinned ? '取消固定' : '固定常用' }}
-        </QnButton>
 
         <select
           v-if="isMarkdown"
@@ -345,6 +505,16 @@ function cancelExternalFrontmatter(): void {
           @click="editorTabsStore.openInboxExtractModal()"
         >
           移到新笔记…
+        </QnButton>
+
+        <QnButton
+          variant="ghost"
+          size="sm"
+          data-testid="doc-header-open-vscode-btn"
+          :title="vsCodeActionTitle"
+          @click="handleOpenInVsCode"
+        >
+          在 VS Code 中打开
         </QnButton>
 
         <div class="qn-doc-header__prop-anchor">
@@ -410,6 +580,75 @@ function cancelExternalFrontmatter(): void {
           />
         </div>
       </div>
+    </div>
+
+    <div v-if="isExternalDoc" class="qn-doc-header__external-bar" data-testid="doc-header-external-bar">
+      <span
+        class="qn-doc-header__external-path"
+        data-testid="doc-header-external-path"
+        :title="doc.absPath"
+      >
+        {{ doc.absPath }}
+      </span>
+
+      <div class="qn-doc-header__external-actions">
+        <QnButton
+          variant="ghost"
+          size="sm"
+          :disabled="bookmarkBusy"
+          data-testid="doc-header-pin-external-btn"
+          @click="handleToggleFileBookmark"
+        >
+          {{ isCurrentFileBookmarked ? '取消固定书签' : '收藏文件书签' }}
+        </QnButton>
+
+        <QnButton
+          variant="ghost"
+          size="sm"
+          :disabled="bookmarkBusy"
+          data-testid="doc-header-bookmark-dir-btn"
+          @click="handleToggleDirBookmark"
+        >
+          {{ isCurrentDirBookmarked ? '取消目录书签' : '收藏目录书签' }}
+        </QnButton>
+
+        <div class="qn-doc-header__prop-anchor">
+          <QnButton
+            variant="ghost"
+            size="sm"
+            data-testid="doc-header-siblings-btn"
+            @click="handleToggleSiblingsPopover"
+          >
+            同目录文件 ▾
+          </QnButton>
+          <SiblingFilesPopover
+            :open="siblingsOpen"
+            :doc-path="doc.absPath"
+            @close="siblingsOpen = false"
+            @loaded="handleSiblingsLoaded"
+          />
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="externalActions.feedback"
+      class="qn-doc-header__external-feedback"
+      :class="`is-${externalActions.feedback.tone}`"
+      data-testid="doc-header-external-feedback"
+      role="status"
+    >
+      <span class="qn-doc-header__external-feedback-text">
+        {{ externalActions.feedback.message }}
+      </span>
+      <button
+        type="button"
+        class="qn-doc-header__external-feedback-close"
+        aria-label="关闭提示"
+        @click="externalActions.clearFeedback()"
+      >
+        ×
+      </button>
     </div>
 
     <div
@@ -611,5 +850,82 @@ function cancelExternalFrontmatter(): void {
   font-size: var(--qn-text-sm);
   color: var(--qn-text-primary);
   line-height: 1.5;
+}
+
+.qn-doc-header__external-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--qn-space-2);
+  padding: var(--qn-space-1) var(--qn-space-2);
+  border-radius: var(--qn-radius-sm);
+  background-color: var(--qn-bg-sidebar);
+  border: 1px solid var(--qn-border-subtle);
+}
+
+.qn-doc-header__external-path {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--qn-text-xs);
+  font-family: var(--qn-font-mono);
+  color: var(--qn-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qn-doc-header__external-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--qn-space-1);
+  flex-shrink: 0;
+}
+
+.qn-doc-header__external-feedback {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--qn-space-2);
+  padding: var(--qn-space-1) var(--qn-space-2);
+  border-radius: var(--qn-radius-sm);
+  font-size: var(--qn-text-xs);
+  border: 1px solid var(--qn-border-subtle);
+}
+
+.qn-doc-header__external-feedback.is-success {
+  background-color: var(--qn-success-soft);
+  border-color: var(--qn-success-border);
+  color: var(--qn-success);
+}
+
+.qn-doc-header__external-feedback.is-warning {
+  background-color: var(--qn-warning-soft);
+  border-color: var(--qn-warning-border);
+  color: var(--qn-warning);
+}
+
+.qn-doc-header__external-feedback.is-danger {
+  background-color: var(--qn-danger-soft);
+  border-color: var(--qn-danger-border);
+  color: var(--qn-danger);
+}
+
+.qn-doc-header__external-feedback-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qn-doc-header__external-feedback-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 var(--qn-space-1);
+  font-size: var(--qn-text-sm);
+  line-height: 1;
+  flex-shrink: 0;
 }
 </style>

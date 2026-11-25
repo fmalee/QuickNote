@@ -13,6 +13,7 @@ import type {
   ExportPathArgs,
   ExportPdfArgs,
   ExternalActionState,
+  ExternalBookmark,
   ExternalDirectoryListing,
   ExternalPathProbeResult,
   HideQuickBarArgs,
@@ -271,6 +272,18 @@ export function listExternalDirectory(args: {
     query: args.query ?? null,
     includeHidden: args.includeHidden ?? true,
   });
+}
+
+export function listCurrentDocSiblings(docPath: string): Promise<ExternalDirectoryListing> {
+  return invoke<ExternalDirectoryListing>('list_current_doc_siblings', { docPath });
+}
+
+export function upsertExternalBookmark(bookmark: ExternalBookmark): Promise<ExternalBookmark[]> {
+  return invoke<ExternalBookmark[]>('upsert_external_bookmark', { bookmark });
+}
+
+export function removeExternalBookmark(path: string): Promise<ExternalBookmark[]> {
+  return invoke<ExternalBookmark[]>('remove_external_bookmark', { path });
 }
 
 export function terminalSpawn(

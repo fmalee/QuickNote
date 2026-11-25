@@ -8,6 +8,7 @@ import type {
 } from '@/bindings/types';
 import type { ContextMenuEntry } from '@/components/QnContextMenu.vue';
 import { useNotesStore } from '@/features/notes';
+import { isAppError } from '@/lib/ipc/commands';
 import { extractEditorErrorMessage, resolveExternalActions, runExternalAction } from './api';
 import { useEditorTabsStore } from './store';
 
@@ -36,6 +37,47 @@ const EXTERNAL_SPEC_MAP = new Map<ExternalActionId, ExternalActionSpec>(
 export interface ExternalActionFeedback {
   tone: 'success' | 'warning' | 'danger';
   message: string;
+}
+
+export function formatExternalActionError(
+  error: unknown,
+  fallback = '执行外部动作失败',
+): ExternalActionFeedback {
+  if (isAppError(error)) {
+    const detailSuffix = error.detail ? `（${error.detail}）` : '';
+    if (error.code === 'workspaceDirMissing') {
+      return {
+        tone: 'warning',
+        message: error.message
+          ? `未配置工作区：${error.message}${detailSuffix}`
+          : `当前文档未配置关联工作区，请在文档属性或目录 .quicknote.yaml 中配置后再试${detailSuffix}`,
+      };
+    }
+    if (error.code === 'notFound') {
+      return {
+        tone: 'warning',
+        message: error.message
+          ? `目标路径不存在：${error.message}${detailSuffix}`
+          : `目标路径不存在，请检查文件或工作区目录是否已移动或删除${detailSuffix}`,
+      };
+    }
+    if (error.code === 'externalAppMissing') {
+      return {
+        tone: 'warning',
+        message: extractEditorErrorMessage(error, '未找到对应的外部应用，请在设置中检查应用配置'),
+      };
+    }
+    if (error.code === 'permissionDenied') {
+      return {
+        tone: 'danger',
+        message: extractEditorErrorMessage(error, '无权限访问目标路径'),
+      };
+    }
+  }
+  return {
+    tone: 'danger',
+    message: extractEditorErrorMessage(error, fallback),
+  };
 }
 
 export function isExternalActionId(id: string): id is ExternalActionId {
@@ -113,6 +155,10 @@ export const useExternalActions = defineStore('externalActions', () => {
     return state.disabledReason;
   }
 
+  function getResolvedPath(id: ExternalActionId): string | null {
+    return stateMap.value.get(id)?.resolvedPath ?? null;
+  }
+
   async function refreshForDoc(
     doc: Pick<NoteDoc, 'absPath' | 'meta'> | null,
   ): Promise<ExternalActionState[]> {
@@ -142,10 +188,7 @@ export const useExternalActions = defineStore('externalActions', () => {
         return states.value;
       }
       states.value = [];
-      feedback.value = {
-        tone: 'danger',
-        message: extractEditorErrorMessage(error, '解析外部动作状态失败'),
-      };
+      feedback.value = formatExternalActionError(error, '解析外部动作状态失败');
       return [];
     } finally {
       if (reqSeq === resolveSeq) {
@@ -179,12 +222,10 @@ export const useExternalActions = defineStore('externalActions', () => {
     const state = targetList.find((item) => item.id === id);
 
     if (!state || !state.enabled || !state.resolvedPath) {
-      if (state?.disabledReason) {
-        feedback.value = {
-          tone: 'warning',
-          message: state.disabledReason,
-        };
-      }
+      feedback.value = {
+        tone: 'warning',
+        message: state?.disabledReason ?? '当前文档未配置工作区或目标路径不存在',
+      };
       return false;
     }
 
@@ -238,10 +279,7 @@ export const useExternalActions = defineStore('externalActions', () => {
       }
       return true;
     } catch (error) {
-      feedback.value = {
-        tone: 'danger',
-        message: extractEditorErrorMessage(error, '执行外部动作失败'),
-      };
+      feedback.value = formatExternalActionError(error, '执行外部动作失败');
       return false;
     }
   }
@@ -258,6 +296,7 @@ export const useExternalActions = defineStore('externalActions', () => {
     menuItems,
     isActionEnabled,
     getDisabledReason,
+    getResolvedPath,
     refreshForDoc,
     resolveForTarget,
     executeAction,
