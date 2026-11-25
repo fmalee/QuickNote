@@ -135,16 +135,22 @@ pub fn external_search_roots(
 
     if trimmed_query.is_empty() {
         results.sort_by(|a, b| {
-            a.depth
-                .cmp(&b.depth)
-                .then_with(|| a.path.to_ascii_lowercase().cmp(&b.path.to_ascii_lowercase()))
+            a.depth.cmp(&b.depth).then_with(|| {
+                a.path
+                    .to_ascii_lowercase()
+                    .cmp(&b.path.to_ascii_lowercase())
+            })
         });
     } else {
         results.sort_by(|a, b| {
             b.match_score
                 .cmp(&a.match_score)
                 .then_with(|| a.depth.cmp(&b.depth))
-                .then_with(|| a.path.to_ascii_lowercase().cmp(&b.path.to_ascii_lowercase()))
+                .then_with(|| {
+                    a.path
+                        .to_ascii_lowercase()
+                        .cmp(&b.path.to_ascii_lowercase())
+                })
         });
     }
     results.truncate(limit);
@@ -250,15 +256,14 @@ pub fn directory_workspace_config_get(
         if rec.parse_error.is_some() {
             return Ok(None);
         }
-        let parsed = serde_json::from_str::<DirectoryWorkspaceConfig>(&rec.config_json).map_err(
-            |err| {
+        let parsed =
+            serde_json::from_str::<DirectoryWorkspaceConfig>(&rec.config_json).map_err(|err| {
                 AppError::with_detail(
                     ErrorCode::InternalError,
                     "Failed to decode cached directory workspace config",
                     err.to_string(),
                 )
-            },
-        )?;
+            })?;
         return Ok(Some(parsed));
     }
 
@@ -329,7 +334,9 @@ pub fn resolve_effective_workspace_for_path(
     };
 
     let ancestor_layers = match (resolved_path.as_deref(), library_root.as_deref()) {
-        (Some(abs), Some(root)) => load_ancestor_workspace_layers(pm, Path::new(abs), Path::new(root))?,
+        (Some(abs), Some(root)) => {
+            load_ancestor_workspace_layers(pm, Path::new(abs), Path::new(root))?
+        }
         _ => Vec::new(),
     };
 
@@ -337,8 +344,7 @@ pub fn resolve_effective_workspace_for_path(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .or(doc_project.as_deref());
-    let global_layer =
-        effective_ws_key.and_then(|k| lookup_workspace_as_layer(&settings, k));
+    let global_layer = effective_ws_key.and_then(|k| lookup_workspace_as_layer(&settings, k));
 
     Ok(resolve_effective_workspace(
         doc_layer.as_ref(),
@@ -508,7 +514,11 @@ pub fn external_actions_resolve(
         (None, None)
     };
 
-    let ancestor_layers = match (is_library_doc, file_path.as_deref(), library_root.as_deref()) {
+    let ancestor_layers = match (
+        is_library_doc,
+        file_path.as_deref(),
+        library_root.as_deref(),
+    ) {
         (true, Some(abs), Some(root)) => {
             load_ancestor_workspace_layers(pm, Path::new(abs), Path::new(root))?
         }
@@ -521,11 +531,9 @@ pub fn external_actions_resolve(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .or(doc_project.as_deref());
-    let global_layer =
-        effective_ws_key.and_then(|k| lookup_workspace_as_layer(&settings, k));
+    let global_layer = effective_ws_key.and_then(|k| lookup_workspace_as_layer(&settings, k));
 
-    let inherited_ctx =
-        resolve_effective_workspace(None, &ancestor_layers, global_layer.as_ref());
+    let inherited_ctx = resolve_effective_workspace(None, &ancestor_layers, global_layer.as_ref());
     let workspace = effective_context_to_workspace_target(&inherited_ctx);
 
     let has_command_id = args
@@ -551,8 +559,7 @@ pub fn external_actions_resolve(
         let cmd_global = cmd_proj
             .as_deref()
             .and_then(|k| lookup_workspace_as_layer(&settings, k));
-        let cmd_inherited =
-            resolve_effective_workspace(None, &cmd_ancestors, cmd_global.as_ref());
+        let cmd_inherited = resolve_effective_workspace(None, &cmd_ancestors, cmd_global.as_ref());
         let cmd_ws = effective_context_to_workspace_target(&cmd_inherited);
 
         let recent_ws_key = ui_state
@@ -829,7 +836,10 @@ fn vault_rel_dir_for_abs_path(abs_path: &Path, library_root: &Path) -> Option<St
     } else {
         let canonical_abs = fs::canonicalize(abs_path).ok()?;
         let canonical_root = fs::canonicalize(library_root).ok()?;
-        canonical_abs.strip_prefix(&canonical_root).ok()?.to_path_buf()
+        canonical_abs
+            .strip_prefix(&canonical_root)
+            .ok()?
+            .to_path_buf()
     };
 
     let rel_dir = if abs_path.is_dir() {
@@ -868,7 +878,8 @@ fn load_ancestor_workspace_layers(
     let Some(vault_rel_dir) = vault_rel_dir_for_abs_path(abs_path, library_root) else {
         return Ok(Vec::new());
     };
-    let records = pm.with_db(|conn| list_ancestor_directory_workspace_configs(conn, &vault_rel_dir))?;
+    let records =
+        pm.with_db(|conn| list_ancestor_directory_workspace_configs(conn, &vault_rel_dir))?;
     let mut layers = Vec::with_capacity(records.len());
     for rec in records {
         if rec.parse_error.is_some() {

@@ -417,7 +417,8 @@ fn scan_vault_recursive(
     out_notes: &mut Vec<ScannedNoteFile>,
     out_configs: &mut Vec<ScannedConfigFile>,
 ) -> Result<(), AppError> {
-    let entries = fs::read_dir(dir).map_err(|e| map_io_error(e, "Failed to read vault directory"))?;
+    let entries =
+        fs::read_dir(dir).map_err(|e| map_io_error(e, "Failed to read vault directory"))?;
     for entry_res in entries {
         let entry = match entry_res {
             Ok(item) => item,
@@ -614,7 +615,9 @@ fn build_reconciled_note_record(
     )
 }
 
-fn load_existing_notes_meta(db: &Connection) -> Result<HashMap<String, ExistingNoteMeta>, AppError> {
+fn load_existing_notes_meta(
+    db: &Connection,
+) -> Result<HashMap<String, ExistingNoteMeta>, AppError> {
     let mut stmt = db
         .prepare("SELECT rel_path, key, mtime_ms, size_bytes FROM notes")
         .map_err(|e| {

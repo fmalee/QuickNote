@@ -19,9 +19,7 @@ use quicknote_lib::domain::note::{
 };
 use quicknote_lib::domain::settings::SetRootArgs;
 use quicknote_lib::domain::workspace_context::DirectoryWorkspaceConfig;
-use quicknote_lib::infra::sqlite::{
-    get_note_key_by_rel_path, list_directory_workspace_configs,
-};
+use quicknote_lib::infra::sqlite::{get_note_key_by_rel_path, list_directory_workspace_configs};
 
 static TEST_DIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -418,9 +416,11 @@ fn test_reconcile_vault_indexes_root_manual_md_without_frontmatter_and_handles_b
         },
     )
     .expect("notes_list all");
-    assert!(!all_notes
-        .iter()
-        .any(|n| n.rel_path.as_deref().unwrap_or("").ends_with(".quicknote.yaml")));
+    assert!(!all_notes.iter().any(|n| n
+        .rel_path
+        .as_deref()
+        .unwrap_or("")
+        .ends_with(".quicknote.yaml")));
     assert!(!all_notes
         .iter()
         .any(|n| n.rel_path.as_deref() == Some(".git/ignored.md")));
@@ -473,7 +473,9 @@ fn test_reconcile_vault_indexes_root_manual_md_without_frontmatter_and_handles_b
     let configs_after = pm
         .with_db(list_directory_workspace_configs)
         .expect("list configs after prune");
-    assert!(!configs_after.iter().any(|c| c.vault_rel_dir == "proj-broken"));
+    assert!(!configs_after
+        .iter()
+        .any(|c| c.vault_rel_dir == "proj-broken"));
 }
 
 #[test]

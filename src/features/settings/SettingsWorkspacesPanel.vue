@@ -261,16 +261,15 @@ onMounted(() => {
         {{ loadError }}
       </p>
 
-      <div v-if="loadingList" class="qn-workspaces-panel__empty">
-        正在读取笔记库目录工作区绑定…
-      </div>
+      <div v-if="loadingList" class="qn-workspaces-panel__empty">正在读取笔记库目录工作区绑定…</div>
 
       <div
         v-else-if="sortedEntries.length === 0"
         class="qn-workspaces-panel__empty"
         data-testid="workspace-empty-state"
       >
-        暂无目录级 .quicknote.yaml 绑定。点击右上角「新增目录绑定」为笔记库目录关联代码仓库与终端目录。
+        暂无目录级 .quicknote.yaml
+        绑定。点击右上角「新增目录绑定」为笔记库目录关联代码仓库与终端目录。
       </div>
 
       <div v-else class="qn-workspaces-panel__list">
@@ -341,7 +340,10 @@ onMounted(() => {
       data-testid="workspace-form"
     >
       <div class="qn-workspaces-panel__form">
-        <div v-if="editingOriginalDir === null && vaultDirs.length > 0" class="qn-workspaces-panel__field">
+        <div
+          v-if="editingOriginalDir === null && vaultDirs.length > 0"
+          class="qn-workspaces-panel__field"
+        >
           <label class="qn-workspaces-panel__field">
             <span class="qn-workspaces-panel__label">从笔记库已有目录选择</span>
             <select

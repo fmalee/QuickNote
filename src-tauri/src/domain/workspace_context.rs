@@ -168,10 +168,7 @@ mod tests {
             vscode_workspace_path: Some("/repo/nearest.code-workspace".to_string()),
             project_root: Some("/repo/app".to_string()),
             default_terminal_cwd: None,
-            external_app_overrides: Some(map_of(&[
-                ("editor", "VSCode"),
-                ("terminal", "Ghostty"),
-            ])),
+            external_app_overrides: Some(map_of(&[("editor", "VSCode"), ("terminal", "Ghostty")])),
         };
 
         let farther_ancestor = DirectoryWorkspaceConfig {
@@ -236,7 +233,10 @@ mod tests {
             effective.project_root.as_deref(),
             Some("/Users/dev/default-workspace")
         );
-        assert_eq!(effective.default_terminal_cwd.as_deref(), Some("/Users/dev"));
+        assert_eq!(
+            effective.default_terminal_cwd.as_deref(),
+            Some("/Users/dev")
+        );
         assert_eq!(
             effective.external_app_overrides,
             map_of(&[("terminal", "Terminal.app")])

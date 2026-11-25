@@ -63,12 +63,8 @@ const EXPECTED_COMMANDS_COLUMNS: &[&str] = &[
     "line",
 ];
 
-const EXPECTED_DIRECTORY_WORKSPACE_CONFIGS_COLUMNS: &[&str] = &[
-    "vault_rel_dir",
-    "config_json",
-    "mtime_ms",
-    "parse_error",
-];
+const EXPECTED_DIRECTORY_WORKSPACE_CONFIGS_COLUMNS: &[&str] =
+    &["vault_rel_dir", "config_json", "mtime_ms", "parse_error"];
 
 fn map_sqlite_error(err: rusqlite::Error, context: &str) -> AppError {
     AppError::with_detail(ErrorCode::InternalError, context, err.to_string())
@@ -866,11 +862,12 @@ pub fn list_ancestor_directory_workspace_configs(
          ORDER BY LENGTH(vault_rel_dir) DESC, vault_rel_dir ASC"
     );
 
-    let mut stmt = conn
-        .prepare(&sql)
-        .map_err(|e| {
-            map_sqlite_error(e, "Failed to prepare list_ancestor_directory_workspace_configs")
-        })?;
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        map_sqlite_error(
+            e,
+            "Failed to prepare list_ancestor_directory_workspace_configs",
+        )
+    })?;
 
     let rows = stmt
         .query_map(params_from_iter(ancestors.iter()), |row| {
@@ -884,7 +881,10 @@ pub fn list_ancestor_directory_workspace_configs(
         .map_err(|e| map_sqlite_error(e, "Failed to query ancestor directory_workspace_configs"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| {
-            map_sqlite_error(e, "Failed to read ancestor directory_workspace_configs rows")
+            map_sqlite_error(
+                e,
+                "Failed to read ancestor directory_workspace_configs rows",
+            )
         })?;
 
     Ok(rows)

@@ -111,8 +111,7 @@ pub fn deduplicate_bookmarks(bookmarks: Vec<ExternalBookmark>) -> Vec<ExternalBo
                 let incoming_is_newer = incoming.last_opened_at > existing.last_opened_at;
 
                 existing.pinned = existing.pinned || incoming.pinned;
-                existing.last_opened_at = match (existing.last_opened_at, incoming.last_opened_at)
-                {
+                existing.last_opened_at = match (existing.last_opened_at, incoming.last_opened_at) {
                     (Some(a), Some(b)) => Some(a.max(b)),
                     (Some(a), None) => Some(a),
                     (None, Some(b)) => Some(b),
@@ -306,8 +305,8 @@ mod tests {
             vec![
                 "/Users/dev/beta",  // pinned, last_opened_at = 300
                 "/Users/dev/alpha", // pinned, last_opened_at = 100
-                "/etc/hosts",       // unpinned, 500, basename "hosts", path "/etc/hosts" < "/opt/hosts"
-                "/opt/hosts",       // unpinned, 500, basename "hosts"
+                "/etc/hosts", // unpinned, 500, basename "hosts", path "/etc/hosts" < "/opt/hosts"
+                "/opt/hosts", // unpinned, 500, basename "hosts"
                 "/Users/dev/gamma", // unpinned, None
             ]
         );

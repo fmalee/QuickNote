@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import type {
-  ExternalAppConfig,
-  ExternalBookmark,
-  ExternalBookmarkKind,
-} from '@/bindings/types';
+import type { ExternalAppConfig, ExternalBookmark, ExternalBookmarkKind } from '@/bindings/types';
 import { QnBadge, QnBanner, QnButton, QnInput, QnPanelCard } from '@/components';
 import { removeExternalBookmark, upsertExternalBookmark } from '@/lib/ipc/commands';
 import { extractSettingsErrorMessage } from './api';

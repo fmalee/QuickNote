@@ -27,11 +27,7 @@ export const QUICKOPEN_DEBOUNCE_MS = 80;
 export type QuickOpenOpenMode = 'open' | 'newTab';
 
 export type QuickOpenResultSource =
-  | Exclude<SearchSource, 'spotlight'>
-  | 'file_bookmark'
-  | 'dir_bookmark'
-  | 'action'
-  | 'tag';
+  Exclude<SearchSource, 'spotlight'> | 'file_bookmark' | 'dir_bookmark' | 'action' | 'tag';
 
 export interface QuickOpenDirectoryScope {
   dirPath: string;
@@ -102,7 +98,9 @@ function matchesBookmarkQuery(bookmark: ExternalBookmark, lowerQuery: string): b
   const alias = (bookmark.alias ?? '').toLowerCase();
   const baseName = getPathBaseName(bookmark.path).toLowerCase();
   const fullPath = bookmark.path.toLowerCase();
-  return alias.includes(lowerQuery) || baseName.includes(lowerQuery) || fullPath.includes(lowerQuery);
+  return (
+    alias.includes(lowerQuery) || baseName.includes(lowerQuery) || fullPath.includes(lowerQuery)
+  );
 }
 
 function sortBookmarks(items: ExternalBookmark[]): ExternalBookmark[] {

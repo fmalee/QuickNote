@@ -38,7 +38,9 @@ function focusOpenInput(): void {
   });
 }
 
-function getOpenBadgeTone(group: QuickBarOpenGroupId): 'neutral' | 'accent' | 'warning' | 'success' {
+function getOpenBadgeTone(
+  group: QuickBarOpenGroupId,
+): 'neutral' | 'accent' | 'warning' | 'success' {
   switch (group) {
     case 'path_direct':
       return 'accent';
@@ -443,7 +445,11 @@ function handleKeydown(event: KeyboardEvent): void {
       </div>
 
       <div class="qn-quickbar__open-results" data-testid="quickbar-open-results">
-        <div v-if="store.openError" class="qn-quickbar__open-empty" data-testid="quickbar-open-error">
+        <div
+          v-if="store.openError"
+          class="qn-quickbar__open-empty"
+          data-testid="quickbar-open-error"
+        >
           {{ store.openError }}
         </div>
         <div

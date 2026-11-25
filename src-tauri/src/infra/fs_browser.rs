@@ -45,20 +45,16 @@ const BLACKLISTED_DIR_NAMES: &[&str] = &[
 ];
 
 /// Two-segment directory suffixes (parent, child) always skipped during traversal.
-const BLACKLISTED_DIR_PAIRS: &[(&str, &str)] = &[
-    (".git", "objects"),
-    (".git", "logs"),
-    (".git", "refs"),
-];
+const BLACKLISTED_DIR_PAIRS: &[(&str, &str)] =
+    &[(".git", "objects"), (".git", "logs"), (".git", "refs")];
 
 /// File extensions immediately rejected as binary without reading file contents.
 const BINARY_EXTENSIONS: &[&str] = &[
-    "png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "tiff", "tif", "psd", "heic",
-    "pdf", "zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar", "zst",
-    "dmg", "pkg", "iso", "exe", "dll", "so", "dylib", "wasm", "o", "a", "class", "pyc", "pyo",
-    "mp3", "mp4", "mov", "avi", "mkv", "wav", "flac", "ogg", "m4a", "webm",
-    "woff", "woff2", "ttf", "otf", "eot",
-    "sqlite", "sqlite3", "db", "bin", "dat",
+    "png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "tiff", "tif", "psd", "heic", "pdf", "zip",
+    "tar", "gz", "tgz", "bz2", "xz", "7z", "rar", "zst", "dmg", "pkg", "iso", "exe", "dll", "so",
+    "dylib", "wasm", "o", "a", "class", "pyc", "pyo", "mp3", "mp4", "mov", "avi", "mkv", "wav",
+    "flac", "ogg", "m4a", "webm", "woff", "woff2", "ttf", "otf", "eot", "sqlite", "sqlite3", "db",
+    "bin", "dat",
 ];
 
 #[derive(Debug, Error)]
@@ -414,9 +410,7 @@ fn is_valid_utf8_prefix(sample: &[u8]) -> bool {
 fn count_suspicious_control_bytes(sample: &[u8]) -> usize {
     sample
         .iter()
-        .filter(|&&b| {
-            matches!(b, 0x01..=0x08 | 0x0E..=0x1A | 0x1C..=0x1F | 0x7F)
-        })
+        .filter(|&&b| matches!(b, 0x01..=0x08 | 0x0E..=0x1A | 0x1C..=0x1F | 0x7F))
         .count()
 }
 
@@ -424,7 +418,11 @@ fn is_blacklisted_dir(path: &Path, name: &str) -> bool {
     if BLACKLISTED_DIR_NAMES.contains(&name) {
         return true;
     }
-    if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()) {
+    if let Some(parent_name) = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+    {
         if BLACKLISTED_DIR_PAIRS
             .iter()
             .any(|(parent, child)| *parent == parent_name && *child == name)
@@ -595,7 +593,11 @@ pub fn list_directory_entries(
             b.match_score
                 .cmp(&a.match_score)
                 .then_with(|| a.depth.cmp(&b.depth))
-                .then_with(|| a.rel_path.to_ascii_lowercase().cmp(&b.rel_path.to_ascii_lowercase()))
+                .then_with(|| {
+                    a.rel_path
+                        .to_ascii_lowercase()
+                        .cmp(&b.rel_path.to_ascii_lowercase())
+                })
         });
         if entries.len() > max_entries {
             entries.truncate(max_entries);
@@ -610,7 +612,11 @@ pub fn list_directory_entries(
                     let b_dir = b.kind == PathEntryKind::Directory;
                     b_dir.cmp(&a_dir)
                 })
-                .then_with(|| a.rel_path.to_ascii_lowercase().cmp(&b.rel_path.to_ascii_lowercase()))
+                .then_with(|| {
+                    a.rel_path
+                        .to_ascii_lowercase()
+                        .cmp(&b.rel_path.to_ascii_lowercase())
+                })
         });
     }
 
@@ -745,9 +751,11 @@ pub fn list_sibling_files(
     }
 
     entries.sort_by(|a, b| {
-        a.depth
-            .cmp(&b.depth)
-            .then_with(|| a.rel_path.to_ascii_lowercase().cmp(&b.rel_path.to_ascii_lowercase()))
+        a.depth.cmp(&b.depth).then_with(|| {
+            a.rel_path
+                .to_ascii_lowercase()
+                .cmp(&b.rel_path.to_ascii_lowercase())
+        })
     });
 
     Ok(DirectoryListing {
@@ -785,13 +793,21 @@ fn fuzzy_match_score(query: &str, name: &str, rel_path: &str) -> Option<u32> {
     }
 
     if let Some(pos) = name_lower.find(&q) {
-        let boundary_bonus = if is_word_boundary(&name_lower, pos) { 40 } else { 0 };
+        let boundary_bonus = if is_word_boundary(&name_lower, pos) {
+            40
+        } else {
+            0
+        };
         let pos_penalty = (pos as u32).min(50);
         return Some(600 + boundary_bonus - pos_penalty);
     }
 
     if let Some(pos) = rel_lower.find(&q) {
-        let boundary_bonus = if is_word_boundary(&rel_lower, pos) { 30 } else { 0 };
+        let boundary_bonus = if is_word_boundary(&rel_lower, pos) {
+            30
+        } else {
+            0
+        };
         let pos_penalty = (pos as u32).min(50);
         return Some(450 + boundary_bonus - pos_penalty);
     }
@@ -963,7 +979,11 @@ mod tests {
             max_entries: 100,
         };
         let listing = list_directory_entries(&hidden_root, &opts_no_hidden)?;
-        let rels: Vec<&str> = listing.entries.iter().map(|e| e.rel_path.as_str()).collect();
+        let rels: Vec<&str> = listing
+            .entries
+            .iter()
+            .map(|e| e.rel_path.as_str())
+            .collect();
         assert!(rels.contains(&"settings.yaml"));
         assert!(!rels.contains(&".env"));
         assert!(!rels.iter().any(|r| r.contains("node_modules")));
@@ -1050,7 +1070,11 @@ mod tests {
         tmp.write_bytes("etc/node_modules/a.js", b"ignored")?;
 
         let siblings = list_sibling_files(&target, 2)?;
-        let rels: Vec<&str> = siblings.entries.iter().map(|e| e.rel_path.as_str()).collect();
+        let rels: Vec<&str> = siblings
+            .entries
+            .iter()
+            .map(|e| e.rel_path.as_str())
+            .collect();
         assert!(rels.contains(&"nginx.conf"));
         assert!(rels.contains(&".hidden.conf"));
         assert!(rels.contains(&"sites/default.conf"));

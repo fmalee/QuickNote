@@ -179,30 +179,31 @@ describe('quick-open-engine (M3-03 / v5 Refactor)', () => {
     );
 
     mockSearchNotesAndFiles.mockImplementationOnce(() => oldSearchPromise);
-    mockSearchNotesAndFiles.mockImplementationOnce(async (args: { query: string; requestId: number }) =>
-      makeSearchResponse(args.requestId, [
-        {
-          kind: 'note',
-          key: `note:${args.query}`,
-          title: `本地-${args.query}`,
-          subtitle: `${args.query}.md`,
-          relPath: `${args.query}.md`,
-          absPath: `/vault/${args.query}.md`,
-          score: 100,
-          source: 'library',
-        },
-        // Spotlight legacy results must be ignored
-        {
-          kind: 'file',
-          key: 'spot:legacy',
-          title: 'legacy-spotlight.conf',
-          subtitle: '/etc/legacy-spotlight.conf',
-          relPath: null,
-          absPath: '/etc/legacy-spotlight.conf',
-          score: 80,
-          source: 'spotlight',
-        },
-      ]),
+    mockSearchNotesAndFiles.mockImplementationOnce(
+      async (args: { query: string; requestId: number }) =>
+        makeSearchResponse(args.requestId, [
+          {
+            kind: 'note',
+            key: `note:${args.query}`,
+            title: `本地-${args.query}`,
+            subtitle: `${args.query}.md`,
+            relPath: `${args.query}.md`,
+            absPath: `/vault/${args.query}.md`,
+            score: 100,
+            source: 'library',
+          },
+          // Spotlight legacy results must be ignored
+          {
+            kind: 'file',
+            key: 'spot:legacy',
+            title: 'legacy-spotlight.conf',
+            subtitle: '/etc/legacy-spotlight.conf',
+            relPath: null,
+            absPath: '/etc/legacy-spotlight.conf',
+            score: 80,
+            source: 'spotlight',
+          },
+        ]),
     );
 
     const engine = useQuickOpen();

@@ -176,7 +176,11 @@ onUnmounted(() => {
     </div>
 
     <div class="qn-sibling-files-popover__body">
-      <div v-if="loading" class="qn-sibling-files-popover__status" data-testid="sibling-files-loading">
+      <div
+        v-if="loading"
+        class="qn-sibling-files-popover__status"
+        data-testid="sibling-files-loading"
+      >
         正在读取目录文件…
       </div>
 
@@ -212,7 +216,10 @@ onUnmounted(() => {
                 当前
               </span>
             </span>
-            <span v-if="entry.relPath && entry.relPath !== entry.name" class="qn-sibling-files-popover__item-rel">
+            <span
+              v-if="entry.relPath && entry.relPath !== entry.name"
+              class="qn-sibling-files-popover__item-rel"
+            >
               {{ entry.relPath }}
             </span>
           </button>

@@ -138,7 +138,9 @@ function matchesBookmarkQuery(bookmark: ExternalBookmark, lowerQuery: string): b
   const alias = (bookmark.alias ?? '').toLowerCase();
   const baseName = getPathBaseName(bookmark.path).toLowerCase();
   const fullPath = bookmark.path.toLowerCase();
-  return alias.includes(lowerQuery) || baseName.includes(lowerQuery) || fullPath.includes(lowerQuery);
+  return (
+    alias.includes(lowerQuery) || baseName.includes(lowerQuery) || fullPath.includes(lowerQuery)
+  );
 }
 
 function sortBookmarks(items: ExternalBookmark[]): ExternalBookmark[] {

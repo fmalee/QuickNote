@@ -15,10 +15,7 @@ function normalizeRel(p) {
  * - Frontend editor core: `src/features/editor/core/` (intra-feature only; cross-feature deep imports remain forbidden)
  */
 export const V5_MODULE_ALLOWLIST = Object.freeze({
-  rustDomain: [
-    'src-tauri/src/domain/bookmark.rs',
-    'src-tauri/src/domain/workspace_context.rs',
-  ],
+  rustDomain: ['src-tauri/src/domain/bookmark.rs', 'src-tauri/src/domain/workspace_context.rs'],
   rustApplication: ['src-tauri/src/application/reconciler.rs'],
   rustInfra: ['src-tauri/src/infra/fs_browser.rs'],
   frontendFeatureDirs: ['src/features/editor/core/'],

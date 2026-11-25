@@ -14,9 +14,7 @@ use crate::domain::note::{
 };
 use crate::domain::tokenizer::tokenize_mixed;
 use crate::infra::fs::map_io_error;
-use crate::infra::sqlite::{
-    count_notes, get_library_meta, upsert_note_index, NoteIndexRecord,
-};
+use crate::infra::sqlite::{count_notes, get_library_meta, upsert_note_index, NoteIndexRecord};
 
 /// Returns the current index status (`C4.2`, `C4.3`).
 pub fn index_get_status(pm: &PersistenceManager) -> Result<IndexStatus, AppError> {

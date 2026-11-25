@@ -100,9 +100,7 @@ const isCurrentDirBookmarked = computed(() => {
   if (!dirPath) {
     return false;
   }
-  return externalBookmarks.value.some(
-    (item) => item.kind === 'directory' && item.path === dirPath,
-  );
+  return externalBookmarks.value.some((item) => item.kind === 'directory' && item.path === dirPath);
 });
 
 const vsCodeActionTitle = computed(
@@ -582,7 +580,11 @@ function cancelExternalFrontmatter(): void {
       </div>
     </div>
 
-    <div v-if="isExternalDoc" class="qn-doc-header__external-bar" data-testid="doc-header-external-bar">
+    <div
+      v-if="isExternalDoc"
+      class="qn-doc-header__external-bar"
+      data-testid="doc-header-external-bar"
+    >
       <span
         class="qn-doc-header__external-path"
         data-testid="doc-header-external-path"

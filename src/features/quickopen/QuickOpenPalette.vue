@@ -61,9 +61,7 @@ function itemBadgeLabel(item: QuickOpenResultItem): string {
   }
 }
 
-function itemBadgeTone(
-  item: QuickOpenResultItem,
-): 'neutral' | 'accent' | 'warning' | 'success' {
+function itemBadgeTone(item: QuickOpenResultItem): 'neutral' | 'accent' | 'warning' | 'success' {
   switch (item.source) {
     case 'library':
       return 'neutral';
@@ -236,7 +234,10 @@ watch(
         <span>↵ 进入目录 / 打开文件 · ⌘↵ 新标签 · 空输入 Backspace 返回上级 · ⌥↵ Finder</span>
       </template>
       <template v-else-if="variant === 'large'">
-        <span>↵ 打开 / 进入目录 · ⌘↵ 新标签 · ⌥↵ Finder · / 或 ~/ 路径直开 · # 全文 · @ 标签 · > 动作</span>
+        <span
+          >↵ 打开 / 进入目录 · ⌘↵ 新标签 · ⌥↵ Finder · / 或 ~/ 路径直开 · # 全文 · @ 标签 · >
+          动作</span
+        >
       </template>
       <template v-else>
         <span>↵ 打开 / 进入目录 · ⌘↵ 新标签 · ⌥↵ Finder · Tab 补全路径 · Esc 返回</span>

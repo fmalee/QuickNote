@@ -937,7 +937,10 @@ fn vault_rel_dir_for_abs_path(abs_path: &Path, library_root: &Path) -> Option<St
     } else {
         let canonical_abs = fs::canonicalize(abs_path).ok()?;
         let canonical_root = fs::canonicalize(library_root).ok()?;
-        canonical_abs.strip_prefix(&canonical_root).ok()?.to_path_buf()
+        canonical_abs
+            .strip_prefix(&canonical_root)
+            .ok()?
+            .to_path_buf()
     };
 
     let rel_dir = if abs_path.is_dir() {
@@ -985,7 +988,8 @@ fn load_ancestor_workspace_layers(
     }
 
     // Read-only filesystem fallback when SQLite cache is not populated yet.
-    let canonical_root = fs::canonicalize(library_root).unwrap_or_else(|_| library_root.to_path_buf());
+    let canonical_root =
+        fs::canonicalize(library_root).unwrap_or_else(|_| library_root.to_path_buf());
     let start_dir = if abs_path.is_dir() {
         abs_path.to_path_buf()
     } else {
