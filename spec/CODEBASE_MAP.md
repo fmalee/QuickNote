@@ -45,6 +45,18 @@
 | **SQLite FTS5 混合分词索引与性能压测** | — | `domain/tokenizer.rs`, `infra/sqlite.rs`, `src-tauri/migrations/0001_init.sql`, `application/index.rs` | `src-tauri/tests/domain_note_and_tokenizer_test.rs`, `sqlite_migration_test.rs`, `m4_performance_budget.rs` |
 | **设计 Token 与基础通用组件** | `src/styles/tokens.css`, `src/components/Qn*.vue` | — | `scripts/__tests__/check-architecture.test.ts` |
 
+### v5 Refactor · Phase A 新增模块
+
+| 模块路径 | 职责一句话说明 |
+| --- | --- |
+| `src-tauri/src/domain/bookmark.rs` | 外部文件/目录书签领域模型与纯内存规范化、去重及排序规则 |
+| `src-tauri/src/domain/workspace_context.rs` | 笔记库目录级 `.quicknote.yaml` 工作区配置模型与三级级联解析规则 |
+| `src-tauri/migrations/0002_directory_workspace_cache.sql` | 只追加 SQLite 迁移，新增 `directory_workspace_configs` 目录级工作区派生缓存表 |
+| `src-tauri/src/application/reconciler.rs` | 只读 Vault 全量/增量对账引擎，将磁盘 `.md` 与 `.quicknote.yaml` 单向收敛至 SQLite 且不改写用户文件 |
+| `src-tauri/src/infra/fs_browser.rs` | 纯 Rust 受控外部文件系统探测与目录直扫引擎（带深度/条目数熔断，支持隐藏目录与系统路径） |
+| `src/features/editor/core/docSession.ts` | 与框架解耦的编辑器标签轻量元数据桩 `DocTabStub`（仅存元数据与光标/滚动快照，不存全文与 CM6 实例） |
+| `src/features/editor/core/editorPool.ts` | 与框架解耦的泛型 `EditorStatePool<TState>` LRU 状态池，严格保护激活态与脏数据标签不被淘汰 |
+
 ---
 
 ## 3. 高频改动操作菜谱（最少文件集）
