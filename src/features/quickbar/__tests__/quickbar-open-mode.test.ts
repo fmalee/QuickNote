@@ -8,6 +8,8 @@ import { renderToString } from 'vue/server-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ExternalActionState,
+  ExternalDirectoryListing,
+  ExternalPathProbeResult,
   LibraryInfo,
   NavTreeSnapshot,
   NoteDoc,
@@ -30,6 +32,8 @@ const {
   mockSearchNotesAndFiles,
   mockSearchSpotlight,
   mockPathComplete,
+  mockProbeExternalPath,
+  mockListExternalDirectory,
   mockNotesGetTreeAndTags,
   mockNotesList,
   mockExternalActionsResolve,
@@ -51,6 +55,8 @@ const {
   mockSearchNotesAndFiles: vi.fn(),
   mockSearchSpotlight: vi.fn(),
   mockPathComplete: vi.fn(),
+  mockProbeExternalPath: vi.fn(),
+  mockListExternalDirectory: vi.fn(),
   mockNotesGetTreeAndTags: vi.fn(),
   mockNotesList: vi.fn(),
   mockExternalActionsResolve: vi.fn(),
@@ -75,6 +81,8 @@ vi.mock('@/lib/ipc/commands', () => ({
   searchNotesAndFiles: mockSearchNotesAndFiles,
   searchSpotlight: mockSearchSpotlight,
   pathComplete: mockPathComplete,
+  probeExternalPath: mockProbeExternalPath,
+  listExternalDirectory: mockListExternalDirectory,
   notesGetTreeAndTags: mockNotesGetTreeAndTags,
   notesList: mockNotesList,
   externalActionsResolve: mockExternalActionsResolve,
@@ -225,6 +233,23 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
       items: [],
       truncated: false,
     } satisfies SearchResponse);
+    mockProbeExternalPath.mockResolvedValue({
+      rawInput: '',
+      resolvedPath: '',
+      exists: false,
+      kind: 'not_found',
+      readable: false,
+      size: null,
+      isText: false,
+      isUtf8: false,
+      isHidden: false,
+    } satisfies ExternalPathProbeResult);
+    mockListExternalDirectory.mockResolvedValue({
+      rootPath: '',
+      entries: [],
+      truncated: false,
+      visitedCount: 0,
+    } satisfies ExternalDirectoryListing);
     mockNotesGetTreeAndTags.mockResolvedValue({
       inboxCount: 1,
       dirs: [],
@@ -825,6 +850,267 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
       reason: null,
     });
     expect(store.mode).toBe('capture');
+
+    store.dispose();
+  });
+
+  it('probes absolute and ~/ hidden paths directly and opens readable files in a new tab without Spotlight', async () => {
+    const store = useQuickBarStore();
+    await store.initialize();
+    store.setMode('open');
+
+    // 1. Absolute system path: /usr/local/etc/nginx/nginx.conf
+    mockProbeExternalPath.mockResolvedValueOnce({
+      rawInput: '/usr/local/etc/nginx/nginx.conf',
+      resolvedPath: '/usr/local/etc/nginx/nginx.conf',
+      exists: true,
+      kind: 'file',
+      readable: true,
+      size: 512,
+      isText: true,
+      isUtf8: true,
+      isHidden: false,
+    } satisfies ExternalPathProbeResult);
+
+    store.openQuery = '/usr/local/etc/nginx/nginx.conf';
+    await store.runOpenModeSearchNow();
+
+    expect(mockProbeExternalPath).toHaveBeenCalledWith('/usr/local/etc/nginx/nginx.conf');
+    expect(mockSearchSpotlight).not.toHaveBeenCalled();
+    expect(store.openGroups).toHaveLength(1);
+    expect(store.openGroups[0]?.id).toBe('path_direct');
+    expect(store.openGroups[0]?.items[0]?.badgeLabel).toBe('路径直开');
+    expect(store.openGroups[0]?.items[0]?.title).toContain('直接打开外部文件');
+
+    await store.confirmOpenSelection();
+    expect(consumePendingOpenFile()).toMatchObject({
+      absPath: '/usr/local/etc/nginx/nginx.conf',
+      newTab: true,
+      line: null,
+    });
+    expect(mockWindowShowMain).toHaveBeenCalledWith({ mode: null });
+
+    // 2. Home hidden file path: ~/.zshrc
+    store.setMode('open');
+    mockProbeExternalPath.mockResolvedValueOnce({
+      rawInput: '~/.zshrc',
+      resolvedPath: '/Users/demo/.zshrc',
+      exists: true,
+      kind: 'file',
+      readable: true,
+      size: 1024,
+      isText: true,
+      isUtf8: true,
+      isHidden: true,
+    } satisfies ExternalPathProbeResult);
+
+    store.openQuery = '~/.zshrc';
+    await store.runOpenModeSearchNow();
+    expect(store.openGroups[0]?.items[0]?.absPath).toBe('/Users/demo/.zshrc');
+
+    await store.confirmOpenSelection();
+    expect(consumePendingOpenFile()).toMatchObject({
+      absPath: '/Users/demo/.zshrc',
+      newTab: true,
+    });
+
+    // 3. Probing a directory lists entries including hidden files
+    store.setMode('open');
+    mockProbeExternalPath.mockResolvedValueOnce({
+      rawInput: '/usr/local/etc/nginx',
+      resolvedPath: '/usr/local/etc/nginx',
+      exists: true,
+      kind: 'directory',
+      readable: true,
+      size: null,
+      isText: false,
+      isUtf8: false,
+      isHidden: false,
+    } satisfies ExternalPathProbeResult);
+    mockListExternalDirectory.mockResolvedValueOnce({
+      rootPath: '/usr/local/etc/nginx',
+      entries: [
+        {
+          name: '.env.local',
+          path: '/usr/local/etc/nginx/.env.local',
+          relPath: '.env.local',
+          kind: 'file',
+          depth: 0,
+          size: 42,
+          isHidden: true,
+          matchScore: 100,
+        },
+        {
+          name: 'nginx.conf',
+          path: '/usr/local/etc/nginx/nginx.conf',
+          relPath: 'nginx.conf',
+          kind: 'file',
+          depth: 0,
+          size: 512,
+          isHidden: false,
+          matchScore: 90,
+        },
+      ],
+      truncated: false,
+      visitedCount: 2,
+    } satisfies ExternalDirectoryListing);
+
+    store.openQuery = '/usr/local/etc/nginx';
+    await store.runOpenModeSearchNow();
+    expect(mockListExternalDirectory).toHaveBeenCalledWith({
+      dirPath: '/usr/local/etc/nginx',
+      query: null,
+      includeHidden: true,
+    });
+    expect(store.openFlatItems.map((i) => i.title)).toEqual(['.env.local', 'nginx.conf']);
+
+    store.dispose();
+  });
+
+  it('groups vault notes, file bookmarks, and dir bookmarks, and supports dir bookmark drill-down with Backspace return', async () => {
+    const snapshot = makeSettingsSnapshot();
+    snapshot.settings.externalBookmarks = [
+      {
+        path: '/Users/demo/.zshrc',
+        kind: 'file',
+        alias: 'Zsh 配置',
+        pinned: true,
+        lastOpenedAt: 200,
+      },
+      {
+        path: '/usr/local/etc/nginx',
+        kind: 'directory',
+        alias: 'Nginx 目录',
+        pinned: true,
+        lastOpenedAt: 100,
+      },
+    ];
+    mockSettingsGet.mockResolvedValue(snapshot);
+    mockSearchNotesAndFiles.mockResolvedValue({
+      requestId: 1,
+      items: [
+        {
+          kind: 'note',
+          key: 'n1',
+          title: '架构设计笔记',
+          subtitle: 'docs/arch.md',
+          relPath: 'docs/arch.md',
+          absPath: '/Users/demo/Vault/docs/arch.md',
+          score: 100,
+          source: 'library',
+        },
+        {
+          kind: 'file',
+          key: 'sp1',
+          title: 'legacy-spotlight.txt',
+          subtitle: '/tmp/legacy-spotlight.txt',
+          relPath: null,
+          absPath: '/tmp/legacy-spotlight.txt',
+          score: 50,
+          source: 'spotlight',
+        },
+      ],
+      truncated: false,
+    } satisfies SearchResponse);
+
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useQuickBarStore();
+    await store.initialize();
+    store.setMode('open');
+    await store.refreshOpenMode(true);
+
+    // Spotlight result must be excluded; three groups rendered in order
+    expect(store.openGroups.map((g) => g.id)).toEqual(['note', 'file_bookmark', 'dir_bookmark']);
+    expect(store.openGroups[0]?.items[0]?.badgeLabel).toBe('笔记');
+    expect(store.openGroups[1]?.items[0]?.badgeLabel).toBe('文件书签');
+    expect(store.openGroups[2]?.items[0]?.badgeLabel).toBe('目录书签');
+
+    // SSR check verifies group labels and badges in QuickBarView
+    const app = createSSRApp(QuickBarView);
+    app.use(pinia);
+    const html = await renderToString(app);
+    expect(html).toContain('笔记库文档');
+    expect(html).toContain('外部文件书签');
+    expect(html).toContain('外部目录书签');
+    expect(html).toContain('文件书签');
+    expect(html).toContain('目录书签');
+
+    // Drill down into directory bookmark
+    mockListExternalDirectory.mockResolvedValueOnce({
+      rootPath: '/usr/local/etc/nginx',
+      entries: [
+        {
+          name: '.htpasswd',
+          path: '/usr/local/etc/nginx/.htpasswd',
+          relPath: '.htpasswd',
+          kind: 'file',
+          depth: 0,
+          size: 32,
+          isHidden: true,
+          matchScore: 100,
+        },
+        {
+          name: 'servers',
+          path: '/usr/local/etc/nginx/servers',
+          relPath: 'servers',
+          kind: 'directory',
+          depth: 0,
+          size: null,
+          isHidden: false,
+          matchScore: 80,
+        },
+      ],
+      truncated: false,
+      visitedCount: 2,
+    } satisfies ExternalDirectoryListing);
+
+    const dirBookmark = store.openGroups[2]!.items[0]!;
+    await store.selectOpenItem(dirBookmark);
+    expect(store.activeOpenDirectoryScope).toEqual({
+      dirPath: '/usr/local/etc/nginx',
+      title: 'Nginx 目录',
+    });
+    expect(mockListExternalDirectory).toHaveBeenCalledWith({
+      dirPath: '/usr/local/etc/nginx',
+      query: null,
+      includeHidden: true,
+    });
+    expect(store.openFlatItems.map((i) => i.title)).toEqual(['.htpasswd', 'servers']);
+
+    // Filter inside directory scope
+    mockListExternalDirectory.mockResolvedValueOnce({
+      rootPath: '/usr/local/etc/nginx',
+      entries: [
+        {
+          name: '.htpasswd',
+          path: '/usr/local/etc/nginx/.htpasswd',
+          relPath: '.htpasswd',
+          kind: 'file',
+          depth: 0,
+          size: 32,
+          isHidden: true,
+          matchScore: 100,
+        },
+      ],
+      truncated: false,
+      visitedCount: 1,
+    } satisfies ExternalDirectoryListing);
+    store.openQuery = 'htp';
+    await store.runOpenModeSearchNow();
+    expect(mockListExternalDirectory).toHaveBeenLastCalledWith({
+      dirPath: '/usr/local/etc/nginx',
+      query: 'htp',
+      includeHidden: true,
+    });
+    expect(store.openFlatItems).toHaveLength(1);
+
+    // Backspace on empty input returns to parent group view
+    store.openQuery = '';
+    const exited = await store.exitOpenDirectory();
+    expect(exited).toBe(true);
+    expect(store.activeOpenDirectoryScope).toBeNull();
+    expect(store.openGroups.map((g) => g.id)).toEqual(['note', 'file_bookmark', 'dir_bookmark']);
 
     store.dispose();
   });

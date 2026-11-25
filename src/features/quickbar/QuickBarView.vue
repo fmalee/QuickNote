@@ -2,18 +2,13 @@
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { QnBadge, QnBanner, QnButton } from '@/components';
 import { CommandBookPalette, joinLibraryPath, useCommandPalette } from '@/features/commands';
-import { QuickOpenPalette, useQuickOpen } from '@/features/quickopen';
-import {
-  ACTION_KEYBINDINGS_STORAGE_KEY,
-  actionRegistry,
-  formatKeyComboDisplay,
-} from '@/lib/actions';
+import { ACTION_KEYBINDINGS_STORAGE_KEY, actionRegistry } from '@/lib/actions';
 import QuickBarTargetPicker from './QuickBarTargetPicker.vue';
-import { useQuickBarStore } from './store';
+import { useQuickBarStore, type QuickBarOpenGroupId } from './store';
 
 const store = useQuickBarStore();
 const editorRef = ref<HTMLTextAreaElement | null>(null);
-const quickOpenFocusTick = ref(0);
+const openInputRef = ref<HTMLInputElement | null>(null);
 const commandFocusTick = ref(0);
 const actionDisposers: Array<() => void> = [];
 
@@ -34,33 +29,82 @@ const commandPaletteEngine = useCommandPalette({
   },
 });
 
-const quickOpenEngine = useQuickOpen({
-  getActionItems: () =>
-    actionRegistry
-      .getAll()
-      .filter((action) => action.scope === 'quickbar' || action.scope === 'global')
-      .map((action) => ({
-        id: action.id,
-        title: action.title,
-        subtitle: action.id,
-        shortcutLabel: formatKeyComboDisplay(actionRegistry.getEffectiveKeys(action.id)),
-      })),
-  onOpenItem: async (item, openMode) => {
-    if (!item.absPath) {
-      return;
-    }
-    await store.openFileInMain(item.absPath, openMode === 'newTab');
-  },
-  onExecuteAction: async (actionId) => {
-    await actionRegistry.executeById(actionId, {
-      activeScope: 'quickbar',
-      activeScopes: ['quickbar', 'global'],
-    });
-  },
-  onClose: () => {
+function focusOpenInput(): void {
+  if (store.isUnconfigured || store.mode !== 'open') {
+    return;
+  }
+  void nextTick(() => {
+    openInputRef.value?.focus();
+  });
+}
+
+function getOpenBadgeTone(group: QuickBarOpenGroupId): 'neutral' | 'accent' | 'warning' | 'success' {
+  switch (group) {
+    case 'path_direct':
+      return 'accent';
+    case 'file_bookmark':
+      return 'success';
+    case 'dir_bookmark':
+      return 'warning';
+    case 'note':
+      return 'neutral';
+  }
+}
+
+function getOpenItemFlatIndex(groupIndex: number, itemIndex: number): number {
+  let offset = 0;
+  for (let i = 0; i < groupIndex; i += 1) {
+    offset += store.openGroups[i]?.items.length ?? 0;
+  }
+  return offset + itemIndex;
+}
+
+function handleOpenInput(event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  store.setOpenQuery(target?.value ?? '');
+}
+
+function handleOpenKeydown(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229) {
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
     void store.handleEscape();
-  },
-});
+    return;
+  }
+
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    event.stopPropagation();
+    store.moveOpenSelection(1);
+    return;
+  }
+
+  if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    event.stopPropagation();
+    store.moveOpenSelection(-1);
+    return;
+  }
+
+  if (event.key === 'Backspace') {
+    if (store.openQuery.length === 0 && store.activeOpenDirectoryScope !== null) {
+      event.preventDefault();
+      event.stopPropagation();
+      void store.exitOpenDirectory();
+    }
+    return;
+  }
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    event.stopPropagation();
+    void store.confirmOpenSelection();
+  }
+}
 
 function focusEditor(): void {
   if (
@@ -176,7 +220,6 @@ onUnmounted(() => {
     const dispose = actionDisposers.pop();
     dispose?.();
   }
-  quickOpenEngine.dispose();
   commandPaletteEngine.dispose();
   store.dispose();
 });
@@ -195,8 +238,8 @@ watch(
       return;
     }
     if (currentMode === 'open') {
-      quickOpenEngine.refresh(true);
-      quickOpenFocusTick.value += 1;
+      void store.refreshOpenMode(true);
+      focusOpenInput();
       return;
     }
     if (currentMode === 'command') {
@@ -373,11 +416,77 @@ function handleKeydown(event: KeyboardEvent): void {
       class="qn-quickbar__open-body"
       data-testid="quickbar-open-mode"
     >
-      <QuickOpenPalette
-        :engine="quickOpenEngine"
-        variant="compact"
-        :focus-trigger="quickOpenFocusTick"
-      />
+      <div class="qn-quickbar__open-search">
+        <button
+          v-if="store.activeOpenDirectoryScope"
+          type="button"
+          class="qn-quickbar__open-scope-btn"
+          data-testid="quickbar-open-back"
+          @click="store.exitOpenDirectory()"
+        >
+          ← {{ store.activeOpenDirectoryScope.title }}
+        </button>
+        <input
+          ref="openInputRef"
+          type="text"
+          class="qn-quickbar__open-input"
+          data-testid="quickopen-input"
+          :value="store.openQuery"
+          :placeholder="
+            store.activeOpenDirectoryScope
+              ? '筛选目录文件（含隐藏文件），空输入按 Backspace 返回上级…'
+              : '搜索笔记、外部书签，或输入 / 与 ~/ 路径直接回车打开…'
+          "
+          @input="handleOpenInput"
+          @keydown="handleOpenKeydown"
+        />
+      </div>
+
+      <div class="qn-quickbar__open-results" data-testid="quickbar-open-results">
+        <div v-if="store.openError" class="qn-quickbar__open-empty" data-testid="quickbar-open-error">
+          {{ store.openError }}
+        </div>
+        <div
+          v-else-if="store.openGroups.length === 0"
+          class="qn-quickbar__open-empty"
+          data-testid="quickbar-open-empty"
+        >
+          {{ store.openLoading ? '正在检索…' : '暂无匹配项，可输入关键字或 /、~/ 绝对路径' }}
+        </div>
+        <template v-else>
+          <section
+            v-for="(group, groupIdx) in store.openGroups"
+            :key="group.id"
+            class="qn-quickbar__open-group"
+            :data-testid="`quickbar-open-group-${group.id}`"
+          >
+            <div class="qn-quickbar__open-group-title">{{ group.label }}</div>
+            <button
+              v-for="(item, itemIdx) in group.items"
+              :key="item.id"
+              type="button"
+              :class="[
+                'qn-quickbar__open-item',
+                {
+                  'qn-quickbar__open-item--active':
+                    store.openSelectedIndex === getOpenItemFlatIndex(groupIdx, itemIdx),
+                },
+              ]"
+              :data-testid="`quickbar-open-item-${item.group}-${itemIdx}`"
+              @mouseenter="store.openSelectedIndex = getOpenItemFlatIndex(groupIdx, itemIdx)"
+              @click="store.selectOpenItem(item)"
+            >
+              <div class="qn-quickbar__open-item-main">
+                <span class="qn-quickbar__open-item-title">{{ item.title }}</span>
+                <span class="qn-quickbar__open-item-sub">{{ item.subtitle }}</span>
+              </div>
+              <QnBadge :tone="getOpenBadgeTone(item.group)">
+                {{ item.badgeLabel }}
+              </QnBadge>
+            </button>
+          </section>
+        </template>
+      </div>
     </div>
 
     <div
@@ -700,8 +809,120 @@ function handleKeydown(event: KeyboardEvent): void {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  gap: var(--qn-space-2);
   padding: var(--qn-space-3);
   background-color: var(--qn-bg-elevated);
+}
+
+.qn-quickbar__open-search {
+  display: flex;
+  align-items: center;
+  gap: var(--qn-space-2);
+  padding: var(--qn-space-2) var(--qn-space-3);
+  border: 1px solid var(--qn-border-default);
+  border-radius: var(--qn-radius-md);
+  background-color: var(--qn-bg-base);
+}
+
+.qn-quickbar__open-scope-btn {
+  flex-shrink: 0;
+  padding: var(--qn-space-1) var(--qn-space-2);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qn-radius-sm);
+  background-color: var(--qn-bg-sidebar);
+  color: var(--qn-text-primary);
+  font-size: var(--qn-text-xs);
+  cursor: pointer;
+}
+
+.qn-quickbar__open-scope-btn:hover {
+  background-color: var(--qn-bg-hover);
+}
+
+.qn-quickbar__open-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--qn-text-primary);
+  font-size: var(--qn-text-sm);
+}
+
+.qn-quickbar__open-input:focus {
+  outline: none;
+}
+
+.qn-quickbar__open-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--qn-space-2);
+}
+
+.qn-quickbar__open-empty {
+  padding: var(--qn-space-4);
+  text-align: center;
+  font-size: var(--qn-text-sm);
+  color: var(--qn-text-muted);
+}
+
+.qn-quickbar__open-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qn-space-1);
+}
+
+.qn-quickbar__open-group-title {
+  padding: 0 var(--qn-space-2);
+  font-size: var(--qn-text-xs);
+  font-weight: 600;
+  color: var(--qn-text-muted);
+}
+
+.qn-quickbar__open-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--qn-space-3);
+  width: 100%;
+  padding: var(--qn-space-2) var(--qn-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--qn-radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.qn-quickbar__open-item:hover,
+.qn-quickbar__open-item--active {
+  border-color: var(--qn-border-subtle);
+  background-color: var(--qn-bg-active);
+}
+
+.qn-quickbar__open-item-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--qn-space-1);
+}
+
+.qn-quickbar__open-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--qn-text-sm);
+  font-weight: 500;
+  color: var(--qn-text-primary);
+}
+
+.qn-quickbar__open-item-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-muted);
 }
 
 .qn-quickbar__body {

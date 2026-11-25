@@ -1,10 +1,12 @@
 import {
   captureResolveTarget,
   libraryGetInfo,
+  listExternalDirectory as listExternalDirectoryIpc,
   noteAppend,
   noteCreate,
   notesGetTreeAndTags,
   notesList,
+  probeExternalPath as probeExternalPathIpc,
   searchNotesAndFiles,
   settingsGet,
   uiStateGet,
@@ -17,6 +19,9 @@ import type {
   AppendNoteArgs,
   AppendResult,
   CreateNoteArgs,
+  ExternalBookmark,
+  ExternalDirectoryListing,
+  ExternalPathProbeResult,
   HideReason,
   LibraryInfo,
   NavTreeSnapshot,
@@ -73,6 +78,26 @@ export function listQuickBarTemplates(): Promise<NoteSummary[]> {
 
 export function searchQuickBarNotes(args: SearchQueryArgs): Promise<SearchResponse> {
   return searchNotesAndFiles(args);
+}
+
+export function probeExternalPath(rawPath: string): Promise<ExternalPathProbeResult> {
+  return probeExternalPathIpc(rawPath);
+}
+
+export function listExternalDirectory(
+  dirPath: string,
+  options?: { query?: string | null; includeHidden?: boolean },
+): Promise<ExternalDirectoryListing> {
+  return listExternalDirectoryIpc({
+    dirPath,
+    query: options?.query ?? null,
+    includeHidden: options?.includeHidden ?? true,
+  });
+}
+
+export async function fetchQuickBarExternalBookmarks(): Promise<ExternalBookmark[]> {
+  const snapshot = await settingsGet();
+  return snapshot.settings.externalBookmarks ?? [];
 }
 
 export function fetchQuickBarNavTree(): Promise<NavTreeSnapshot> {

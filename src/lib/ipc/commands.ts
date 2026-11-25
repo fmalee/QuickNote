@@ -13,6 +13,8 @@ import type {
   ExportPathArgs,
   ExportPdfArgs,
   ExternalActionState,
+  ExternalDirectoryListing,
+  ExternalPathProbeResult,
   HideQuickBarArgs,
   HotkeyStatus,
   HotkeyUpdateArgs,
@@ -253,6 +255,22 @@ export function externalActionsResolve(args: ResolveExternalArgs): Promise<Exter
 
 export function externalActionRun(args: RunExternalArgs): Promise<void> {
   return invoke<void>('external_action_run', { args });
+}
+
+export function probeExternalPath(rawPath: string): Promise<ExternalPathProbeResult> {
+  return invoke<ExternalPathProbeResult>('probe_external_path', { rawPath });
+}
+
+export function listExternalDirectory(args: {
+  dirPath: string;
+  query?: string | null;
+  includeHidden?: boolean;
+}): Promise<ExternalDirectoryListing> {
+  return invoke<ExternalDirectoryListing>('list_external_directory', {
+    dirPath: args.dirPath,
+    query: args.query ?? null,
+    includeHidden: args.includeHidden ?? true,
+  });
 }
 
 export function terminalSpawn(

@@ -3,6 +3,9 @@ import { defineStore } from 'pinia';
 import type {
   AppendResult,
   CaptureMode,
+  ExternalBookmark,
+  ExternalDirectoryEntry,
+  ExternalPathProbeResult,
   HideReason,
   LibraryInfo,
   NavTreeSnapshot,
@@ -31,14 +34,17 @@ import type { UnlistenFn } from '@/lib/ipc/events';
 import {
   appendQuickBarNote,
   createQuickBarNote,
+  fetchQuickBarExternalBookmarks,
   fetchQuickBarLibraryInfo,
   fetchQuickBarNavTree,
   fetchQuickBarNotesList,
   fetchQuickBarSettings,
   fetchQuickBarUiState,
   hideQuickBarWindow,
+  listExternalDirectory,
   listQuickBarTemplates,
   patchQuickBarUiState,
+  probeExternalPath,
   resolveQuickBarTarget,
   searchQuickBarNotes,
   showMainWindowForOnboarding,
@@ -62,7 +68,112 @@ export interface QuickBarDraftStorage {
   updatedAt: number;
 }
 
+export type QuickBarOpenGroupId = 'path_direct' | 'note' | 'file_bookmark' | 'dir_bookmark';
+
+export type QuickBarOpenBadgeLabel = '路径直开' | '笔记' | '文件书签' | '目录书签';
+
+export type QuickBarOpenActionKind = 'open_file' | 'enter_directory';
+
+export interface QuickBarOpenItem {
+  id: string;
+  group: QuickBarOpenGroupId;
+  badgeLabel: QuickBarOpenBadgeLabel;
+  actionKind: QuickBarOpenActionKind;
+  title: string;
+  subtitle: string;
+  absPath: string;
+  isHidden?: boolean;
+  pinned?: boolean;
+}
+
+export interface QuickBarOpenGroup {
+  id: QuickBarOpenGroupId;
+  label: string;
+  items: QuickBarOpenItem[];
+}
+
+export interface QuickBarOpenDirectoryScope {
+  dirPath: string;
+  title: string;
+}
+
 type ExplicitTargetSource = 'picker' | 'related' | null;
+
+function isExternalPathQuery(raw: string): boolean {
+  return raw.startsWith('/') || raw.startsWith('~/') || raw === '~';
+}
+
+function getPathBaseName(targetPath: string): string {
+  const normalized = targetPath.replace(/\/+$/, '');
+  if (!normalized) {
+    return '/';
+  }
+  const idx = normalized.lastIndexOf('/');
+  return idx >= 0 ? normalized.slice(idx + 1) : normalized;
+}
+
+function joinVaultAbsPath(root: string, relPath: string): string {
+  const cleanRoot = root.replace(/\/+$/, '');
+  const cleanRel = relPath.replace(/^\/+/, '');
+  return `${cleanRoot}/${cleanRel}`;
+}
+
+function splitPartialExternalPath(raw: string): { parentDir: string; filterQuery: string } | null {
+  const lastSlash = raw.lastIndexOf('/');
+  if (lastSlash < 0) {
+    return null;
+  }
+  const parentDir = lastSlash === 0 ? '/' : raw.slice(0, lastSlash);
+  const filterQuery = raw.slice(lastSlash + 1);
+  if (!parentDir || !filterQuery) {
+    return null;
+  }
+  return { parentDir, filterQuery };
+}
+
+function matchesBookmarkQuery(bookmark: ExternalBookmark, lowerQuery: string): boolean {
+  if (!lowerQuery) {
+    return true;
+  }
+  const alias = (bookmark.alias ?? '').toLowerCase();
+  const baseName = getPathBaseName(bookmark.path).toLowerCase();
+  const fullPath = bookmark.path.toLowerCase();
+  return alias.includes(lowerQuery) || baseName.includes(lowerQuery) || fullPath.includes(lowerQuery);
+}
+
+function sortBookmarks(items: ExternalBookmark[]): ExternalBookmark[] {
+  return [...items].sort((a, b) => {
+    const pinnedDiff = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+    if (pinnedDiff !== 0) {
+      return pinnedDiff;
+    }
+    const openedDiff = (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0);
+    if (openedDiff !== 0) {
+      return openedDiff;
+    }
+    return a.path.localeCompare(b.path);
+  });
+}
+
+function mapDirectoryEntryToOpenItem(
+  entry: ExternalDirectoryEntry,
+  group: QuickBarOpenGroupId,
+): QuickBarOpenItem | null {
+  if (entry.kind !== 'file' && entry.kind !== 'directory') {
+    return null;
+  }
+  const isDir = entry.kind === 'directory';
+  return {
+    id: `${group}:${entry.kind}:${entry.path}`,
+    group,
+    badgeLabel: isDir ? '目录书签' : '路径直开',
+    actionKind: isDir ? 'enter_directory' : 'open_file',
+    title: entry.name,
+    subtitle: entry.path,
+    absPath: entry.path,
+    isHidden: entry.isHidden,
+  };
+}
 
 function createFallbackUiState(): UiState {
   return {
@@ -224,11 +335,22 @@ export const useQuickBarStore = defineStore('quickbar', () => {
   const pickerTags = ref<TagNode[]>([]);
   const pickerWorkspaces = ref<WorkspaceSummary[]>([]);
 
+  const externalBookmarks = ref<ExternalBookmark[]>([]);
+  const openQuery = ref<string>('');
+  const openLoading = ref<boolean>(false);
+  const openError = ref<string | null>(null);
+  const openGroups = ref<QuickBarOpenGroup[]>([]);
+  const openSelectedIndex = ref<number>(0);
+  const openDirectoryStack = ref<QuickBarOpenDirectoryScope[]>([]);
+  const openProbeResult = ref<ExternalPathProbeResult | null>(null);
+
   let unlistenWindowState: UnlistenFn | null = null;
   let relatedDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let pickerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let openDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let relatedRequestId = 0;
   let pickerRequestId = 0;
+  let openRequestId = 0;
   let suppressDraftWatch = false;
   let hasLiveMainWindowState = false;
 
@@ -304,6 +426,375 @@ export const useQuickBarStore = defineStore('quickbar', () => {
       openDir: item.openDir,
     }));
   });
+
+  const activeOpenDirectoryScope = computed<QuickBarOpenDirectoryScope | null>(() => {
+    if (openDirectoryStack.value.length === 0) {
+      return null;
+    }
+    return openDirectoryStack.value[openDirectoryStack.value.length - 1] ?? null;
+  });
+
+  const openFlatItems = computed<QuickBarOpenItem[]>(() => {
+    const out: QuickBarOpenItem[] = [];
+    for (const group of openGroups.value) {
+      for (const item of group.items) {
+        out.push(item);
+      }
+    }
+    return out;
+  });
+
+  function clearOpenTimer(): void {
+    if (openDebounceTimer !== null) {
+      clearTimeout(openDebounceTimer);
+      openDebounceTimer = null;
+    }
+  }
+
+  function resetOpenModeState(): void {
+    clearOpenTimer();
+    openRequestId += 1;
+    openQuery.value = '';
+    openLoading.value = false;
+    openError.value = null;
+    openGroups.value = [];
+    openSelectedIndex.value = 0;
+    openDirectoryStack.value = [];
+    openProbeResult.value = null;
+  }
+
+  function clampOpenSelection(): void {
+    const len = openFlatItems.value.length;
+    if (len === 0) {
+      openSelectedIndex.value = 0;
+      return;
+    }
+    if (openSelectedIndex.value < 0) {
+      openSelectedIndex.value = 0;
+    } else if (openSelectedIndex.value >= len) {
+      openSelectedIndex.value = len - 1;
+    }
+  }
+
+  function buildBookmarkGroups(trimmedQuery: string): QuickBarOpenGroup[] {
+    const lower = trimmedQuery.toLowerCase();
+    const sorted = sortBookmarks(externalBookmarks.value);
+    const fileItems: QuickBarOpenItem[] = [];
+    const dirItems: QuickBarOpenItem[] = [];
+
+    for (const bookmark of sorted) {
+      if (!matchesBookmarkQuery(bookmark, lower)) {
+        continue;
+      }
+      const title = bookmark.alias?.trim() || getPathBaseName(bookmark.path);
+      if (bookmark.kind === 'file') {
+        fileItems.push({
+          id: `file-bookmark:${bookmark.path}`,
+          group: 'file_bookmark',
+          badgeLabel: '文件书签',
+          actionKind: 'open_file',
+          title,
+          subtitle: bookmark.path,
+          absPath: bookmark.path,
+          pinned: Boolean(bookmark.pinned),
+        });
+      } else {
+        dirItems.push({
+          id: `dir-bookmark:${bookmark.path}`,
+          group: 'dir_bookmark',
+          badgeLabel: '目录书签',
+          actionKind: 'enter_directory',
+          title,
+          subtitle: bookmark.path,
+          absPath: bookmark.path,
+          pinned: Boolean(bookmark.pinned),
+        });
+      }
+    }
+
+    const groups: QuickBarOpenGroup[] = [];
+    if (fileItems.length > 0) {
+      groups.push({ id: 'file_bookmark', label: '外部文件书签', items: fileItems });
+    }
+    if (dirItems.length > 0) {
+      groups.push({ id: 'dir_bookmark', label: '外部目录书签', items: dirItems });
+    }
+    return groups;
+  }
+
+  async function runOpenModeSearchNow(): Promise<void> {
+    clearOpenTimer();
+    openRequestId += 1;
+    const reqId = openRequestId;
+    const trimmed = openQuery.value.trim();
+    const scope = activeOpenDirectoryScope.value;
+    openLoading.value = true;
+    openError.value = null;
+
+    try {
+      // 1. Directory bookmark / directory drill-down mode
+      if (scope) {
+        openProbeResult.value = null;
+        const listing = await listExternalDirectory(scope.dirPath, {
+          query: trimmed.length > 0 ? trimmed : null,
+          includeHidden: true,
+        });
+        if (reqId !== openRequestId) {
+          return;
+        }
+        const items = listing.entries
+          .map((entry) => mapDirectoryEntryToOpenItem(entry, 'path_direct'))
+          .filter((item): item is QuickBarOpenItem => item !== null);
+        openGroups.value =
+          items.length > 0
+            ? [
+                {
+                  id: 'path_direct',
+                  label: `目录文件 · ${scope.dirPath}`,
+                  items,
+                },
+              ]
+            : [];
+        openSelectedIndex.value = 0;
+        clampOpenSelection();
+        return;
+      }
+
+      // 2. Direct path mode (`/` or `~/`)
+      if (isExternalPathQuery(trimmed)) {
+        const probe = await probeExternalPath(trimmed);
+        if (reqId !== openRequestId) {
+          return;
+        }
+        openProbeResult.value = probe;
+
+        if (probe.exists && probe.kind === 'file' && probe.readable) {
+          const fileName = getPathBaseName(probe.resolvedPath);
+          openGroups.value = [
+            {
+              id: 'path_direct',
+              label: '路径直开',
+              items: [
+                {
+                  id: `path-direct:${probe.resolvedPath}`,
+                  group: 'path_direct',
+                  badgeLabel: '路径直开',
+                  actionKind: 'open_file',
+                  title: `直接打开外部文件：${fileName}`,
+                  subtitle: probe.resolvedPath,
+                  absPath: probe.resolvedPath,
+                  isHidden: probe.isHidden,
+                },
+              ],
+            },
+          ];
+          openSelectedIndex.value = 0;
+          return;
+        }
+
+        if (probe.exists && probe.kind === 'directory' && probe.readable) {
+          const listing = await listExternalDirectory(probe.resolvedPath, {
+            query: null,
+            includeHidden: true,
+          });
+          if (reqId !== openRequestId) {
+            return;
+          }
+          const items = listing.entries
+            .map((entry) => mapDirectoryEntryToOpenItem(entry, 'path_direct'))
+            .filter((item): item is QuickBarOpenItem => item !== null);
+          openGroups.value =
+            items.length > 0
+              ? [
+                  {
+                    id: 'path_direct',
+                    label: `目录内容 · ${probe.resolvedPath}`,
+                    items,
+                  },
+                ]
+              : [];
+          openSelectedIndex.value = 0;
+          clampOpenSelection();
+          return;
+        }
+
+        const partial = splitPartialExternalPath(trimmed);
+        if (partial) {
+          const listing = await Promise.resolve(
+            listExternalDirectory(partial.parentDir, {
+              query: partial.filterQuery,
+              includeHidden: true,
+            }),
+          ).catch(() => null);
+          if (reqId !== openRequestId) {
+            return;
+          }
+          const items = (listing?.entries ?? [])
+            .map((entry) => mapDirectoryEntryToOpenItem(entry, 'path_direct'))
+            .filter((item): item is QuickBarOpenItem => item !== null);
+          openGroups.value =
+            items.length > 0
+              ? [
+                  {
+                    id: 'path_direct',
+                    label: `路径筛选 · ${listing?.rootPath ?? partial.parentDir}`,
+                    items,
+                  },
+                ]
+              : [];
+          openSelectedIndex.value = 0;
+          clampOpenSelection();
+          return;
+        }
+
+        openGroups.value = [];
+        openSelectedIndex.value = 0;
+        return;
+      }
+
+      // 3. Normal keyword / empty input: vault notes + file bookmarks + directory bookmarks
+      openProbeResult.value = null;
+      const searchRes = await Promise.resolve(
+        searchQuickBarNotes({
+          query: trimmed,
+          limit: 20,
+          requestId: reqId,
+        }),
+      ).catch(() => null);
+      if (reqId !== openRequestId) {
+        return;
+      }
+
+      const root = libraryInfo.value?.root ?? null;
+      const noteItems: QuickBarOpenItem[] = [];
+      for (const item of searchRes?.items ?? []) {
+        if (item.kind !== 'note' || item.source === 'spotlight') {
+          continue;
+        }
+        const absPath =
+          item.absPath ?? (root && item.relPath ? joinVaultAbsPath(root, item.relPath) : null);
+        if (!absPath) {
+          continue;
+        }
+        noteItems.push({
+          id: `note:${item.key}`,
+          group: 'note',
+          badgeLabel: '笔记',
+          actionKind: 'open_file',
+          title: item.title,
+          subtitle: item.relPath ?? item.subtitle ?? absPath,
+          absPath,
+        });
+      }
+
+      const groups: QuickBarOpenGroup[] = [];
+      if (noteItems.length > 0) {
+        groups.push({ id: 'note', label: '笔记库文档', items: noteItems });
+      }
+      groups.push(...buildBookmarkGroups(trimmed));
+      openGroups.value = groups;
+      openSelectedIndex.value = 0;
+      clampOpenSelection();
+    } catch (error) {
+      if (reqId !== openRequestId) {
+        return;
+      }
+      openError.value = error instanceof Error ? error.message : '检索外部路径失败，请重试。';
+      openGroups.value = [];
+      openSelectedIndex.value = 0;
+    } finally {
+      if (reqId === openRequestId) {
+        openLoading.value = false;
+      }
+    }
+  }
+
+  function scheduleOpenModeSearch(): void {
+    clearOpenTimer();
+    openDebounceTimer = setTimeout(() => {
+      openDebounceTimer = null;
+      void runOpenModeSearchNow();
+    }, QUICKBAR_SEARCH_DEBOUNCE_MS);
+  }
+
+  function setOpenQuery(query: string): void {
+    openQuery.value = query;
+    openSelectedIndex.value = 0;
+    scheduleOpenModeSearch();
+  }
+
+  async function refreshOpenMode(resetQuery = false): Promise<void> {
+    if (resetQuery) {
+      openQuery.value = '';
+      openDirectoryStack.value = [];
+      openSelectedIndex.value = 0;
+    }
+    const latestBookmarks = await Promise.resolve(fetchQuickBarExternalBookmarks()).catch(
+      () => null,
+    );
+    if (latestBookmarks !== null) {
+      externalBookmarks.value = latestBookmarks;
+    } else if (settingsSnapshot.value?.settings.externalBookmarks) {
+      externalBookmarks.value = settingsSnapshot.value.settings.externalBookmarks;
+    }
+    await runOpenModeSearchNow();
+  }
+
+  function moveOpenSelection(delta: number): void {
+    const len = openFlatItems.value.length;
+    if (len === 0) {
+      openSelectedIndex.value = 0;
+      return;
+    }
+    openSelectedIndex.value = (openSelectedIndex.value + delta + len) % len;
+  }
+
+  async function enterOpenDirectory(dirPath: string, title?: string): Promise<void> {
+    openDirectoryStack.value = [
+      ...openDirectoryStack.value,
+      { dirPath, title: title?.trim() || getPathBaseName(dirPath) },
+    ];
+    openQuery.value = '';
+    openSelectedIndex.value = 0;
+    await runOpenModeSearchNow();
+  }
+
+  async function exitOpenDirectory(): Promise<boolean> {
+    if (openDirectoryStack.value.length === 0) {
+      return false;
+    }
+    openDirectoryStack.value = openDirectoryStack.value.slice(0, -1);
+    openQuery.value = '';
+    openSelectedIndex.value = 0;
+    await runOpenModeSearchNow();
+    return true;
+  }
+
+  async function selectOpenItem(item: QuickBarOpenItem): Promise<void> {
+    if (item.actionKind === 'enter_directory') {
+      await enterOpenDirectory(item.absPath, item.title);
+      return;
+    }
+    await openFileInMain(item.absPath, true);
+  }
+
+  async function confirmOpenSelection(): Promise<void> {
+    const current = openFlatItems.value[openSelectedIndex.value];
+    if (current) {
+      await selectOpenItem(current);
+      return;
+    }
+
+    // If user hit Enter on a path query before debounce settled, probe immediately
+    const trimmed = openQuery.value.trim();
+    if (!activeOpenDirectoryScope.value && isExternalPathQuery(trimmed)) {
+      await runOpenModeSearchNow();
+      const first = openFlatItems.value[0];
+      if (first) {
+        await selectOpenItem(first);
+      }
+    }
+  }
 
   function clearRelatedTimer(): void {
     if (relatedDebounceTimer !== null) {
@@ -383,6 +874,7 @@ export const useQuickBarStore = defineStore('quickbar', () => {
       ]);
       libraryInfo.value = info;
       settingsSnapshot.value = snapshot;
+      externalBookmarks.value = snapshot.settings.externalBookmarks ?? [];
       const normalizedUi = fetchedUiState ?? createFallbackUiState();
       uiState.value = normalizedUi;
       selectedWorkspaceKey.value = normalizedUi.selectedWorkspaceKey ?? null;
@@ -878,6 +1370,7 @@ export const useQuickBarStore = defineStore('quickbar', () => {
           mode.value = 'capture';
           targetPickerOpen.value = false;
           saveAsModalOpen.value = false;
+          resetOpenModeState();
         }
       });
     }
@@ -887,6 +1380,7 @@ export const useQuickBarStore = defineStore('quickbar', () => {
   function dispose(): void {
     clearRelatedTimer();
     clearPickerTimer();
+    clearOpenTimer();
     if (unlistenWindowState) {
       unlistenWindowState();
       unlistenWindowState = null;
@@ -918,6 +1412,7 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     mode.value = 'capture';
     targetPickerOpen.value = false;
     saveAsModalOpen.value = false;
+    resetOpenModeState();
     await hideQuickBarWindow(reason);
   }
 
@@ -974,6 +1469,16 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     pickerSearchItems,
     pickerTags,
     availableWorkspaces,
+    externalBookmarks,
+    openQuery,
+    openLoading,
+    openError,
+    openGroups,
+    openFlatItems,
+    openSelectedIndex,
+    openDirectoryStack,
+    activeOpenDirectoryScope,
+    openProbeResult,
     isUnconfigured,
     canSubmit,
     settingsStatus,
@@ -991,6 +1496,15 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     hide,
     setMode,
     openFileInMain,
+    setOpenQuery,
+    runOpenModeSearchNow,
+    refreshOpenMode,
+    resetOpenModeState,
+    moveOpenSelection,
+    enterOpenDirectory,
+    exitOpenDirectory,
+    selectOpenItem,
+    confirmOpenSelection,
     setCaptureMode,
     selectRelatedNote,
     cycleRelatedTarget,
