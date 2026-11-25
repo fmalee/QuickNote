@@ -10,9 +10,11 @@ import {
   settingsImport,
   settingsUpdate,
   uiStateGet,
+  uiStateSet,
 } from '@/lib/ipc/commands';
 import { onSettingsStatus, onWindowState, type UnlistenFn } from '@/lib/ipc/events';
 import type {
+  BackupPathsUiState,
   HotkeyStatus,
   HotkeyUpdateArgs,
   LibraryInfo,
@@ -32,6 +34,10 @@ export function fetchSettingsSnapshot(): Promise<SettingsSnapshot> {
 
 export function fetchUiState(): Promise<UiState> {
   return uiStateGet();
+}
+
+export function patchBackupPaths(value: BackupPathsUiState): Promise<UiState> {
+  return uiStateSet({ key: 'backupPaths', value });
 }
 
 export function saveSettingsPatch(patch: SettingsPatch): Promise<SettingsSnapshot> {

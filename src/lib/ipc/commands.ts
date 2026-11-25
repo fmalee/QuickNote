@@ -1,4 +1,5 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 
 export { Channel };
 import type {
@@ -339,4 +340,26 @@ export function settingsImport(args: ImportPathArgs): Promise<SettingsSnapshot> 
 
 export function noteExportPdf(args: ExportPdfArgs): Promise<void> {
   return invoke<void>('note_export_pdf', { args });
+}
+
+const BACKUP_YAML_FILTER = [{ name: 'YAML', extensions: ['yaml', 'yml'] }];
+
+/** 弹出系统保存窗口，返回所选路径；用户取消时返回 null。 */
+export async function pickBackupSavePath(defaultPath?: string | null): Promise<string | null> {
+  const picked = await saveDialog({
+    defaultPath: defaultPath ?? undefined,
+    filters: BACKUP_YAML_FILTER,
+  });
+  return typeof picked === 'string' && picked.length > 0 ? picked : null;
+}
+
+/** 弹出系统打开窗口，返回所选文件路径；用户取消时返回 null。 */
+export async function pickBackupOpenPath(defaultPath?: string | null): Promise<string | null> {
+  const picked = await openDialog({
+    multiple: false,
+    directory: false,
+    defaultPath: defaultPath ?? undefined,
+    filters: BACKUP_YAML_FILTER,
+  });
+  return typeof picked === 'string' && picked.length > 0 ? picked : null;
 }

@@ -28,7 +28,9 @@ vi.mock('@/lib/ipc/commands', () => ({
   settingsExport: mockSettingsExport,
   settingsImport: mockSettingsImport,
   uiStateGet: mockUiStateGet,
-  uiStateSet: vi.fn(),
+  uiStateSet: vi.fn().mockResolvedValue({}),
+  pickBackupSavePath: vi.fn(),
+  pickBackupOpenPath: vi.fn(),
   windowShowMain: vi.fn(),
   externalActionRun: vi.fn(),
   hotkeyUpdate: vi.fn(),
@@ -154,8 +156,10 @@ describe('M4-04 settings backup export/import & embedded terminal panel config',
     app.use(createPinia());
     const html = await renderToString(app);
     expect(html).toContain('data-testid="settings-backup-card"');
-    expect(html).toContain('data-testid="settings-export-btn"');
-    expect(html).toContain('data-testid="settings-import-btn"');
+    expect(html).toContain('data-testid="backup-export-pick-btn"');
+    expect(html).toContain('data-testid="backup-export-path"');
+    expect(html).toContain('data-testid="backup-import-pick-btn"');
+    expect(html).toContain('data-testid="backup-import-path"');
   });
 
   it('imports valid settings to hot-update store and preserves current settings on invalid YAML error', async () => {

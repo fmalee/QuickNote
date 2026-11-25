@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { WindowMode } from '@/bindings/types';
-import { QnBadge, QnBanner, QnButton, QnInput, QnPanelCard } from '@/components';
+import { QnBadge, QnBanner, QnButton, QnPanelCard } from '@/components';
 import { formatHotkeyCombo } from '@/lib/utils';
 import SettingsAppearancePanel from './SettingsAppearancePanel.vue';
 import SettingsErrorBanner from './SettingsErrorBanner.vue';
@@ -13,8 +13,6 @@ import VisualBaselinePreview from './VisualBaselinePreview.vue';
 import { BACKUP_HOTKEY_COMBO, type SettingsSection, useSettingsStore } from './store';
 
 const store = useSettingsStore();
-const exportPathDraft = ref('~/Desktop/quicknote-settings-backup.yaml');
-const importPathDraft = ref('');
 const auxiliaryWidthDraft = ref<number>(
   store.snapshot?.settings.mainWindow.auxiliaryWidthPercent ?? 45,
 );
@@ -58,11 +56,11 @@ async function handleQuickBarDestroyChange(): Promise<void> {
 }
 
 async function handleExportSettings(): Promise<void> {
-  await store.exportSettings(exportPathDraft.value);
+  await store.pickAndExportSettings();
 }
 
 async function handleImportSettings(): Promise<void> {
-  await store.importSettings(importPathDraft.value);
+  await store.pickAndImportSettings();
 }
 
 const sections: { id: SettingsSection; label: string }[] = [
@@ -335,43 +333,43 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
         >
           <div class="qn-settings__backup-stack">
             <div class="qn-settings__backup-row">
-              <QnInput
-                v-model="exportPathDraft"
-                label="导出备份路径"
-                placeholder="~/Desktop/quicknote-settings-backup.yaml"
-                monospace
-                :disabled="store.backupBusy"
-                data-testid="settings-export-path-input"
-              />
               <QnButton
                 variant="secondary"
                 size="sm"
                 :loading="store.backupBusy"
-                data-testid="settings-export-btn"
+                :disabled="store.backupBusy"
+                data-testid="backup-export-pick-btn"
                 @click="handleExportSettings"
               >
-                导出配置备份
+                选择位置并导出…
               </QnButton>
+              <span
+                class="qn-settings__backup-path"
+                :title="store.exportBackupPathDraft || undefined"
+                data-testid="backup-export-path"
+              >
+                {{ store.exportBackupPathDraft || '尚未导出' }}
+              </span>
             </div>
 
             <div class="qn-settings__backup-row">
-              <QnInput
-                v-model="importPathDraft"
-                label="导入备份路径"
-                placeholder="~/Desktop/quicknote-settings-backup.yaml"
-                monospace
-                :disabled="store.backupBusy"
-                data-testid="settings-import-path-input"
-              />
               <QnButton
                 variant="primary"
                 size="sm"
                 :loading="store.backupBusy"
-                data-testid="settings-import-btn"
+                :disabled="store.backupBusy"
+                data-testid="backup-import-pick-btn"
                 @click="handleImportSettings"
               >
-                导入并恢复配置
+                选择文件并导入…
               </QnButton>
+              <span
+                class="qn-settings__backup-path"
+                :title="store.importBackupPathDraft || undefined"
+                data-testid="backup-import-path"
+              >
+                {{ store.importBackupPathDraft || '尚未导入' }}
+              </span>
             </div>
 
             <p class="qn-settings__backup-hint">
@@ -550,9 +548,18 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
 
 .qn-settings__backup-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
   gap: var(--qn-space-3);
+}
+
+.qn-settings__backup-path {
+  font-family: var(--qn-font-mono);
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qn-settings__backup-hint {

@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import type {
+  BackupPathsUiState,
   EditorTheme,
   HotkeyStatus,
   NoteDoc,
@@ -11,7 +12,12 @@ import type {
   WindowMode,
   WindowState,
 } from '@/bindings/types';
-import { uiStateSet, windowShowMain } from '@/lib/ipc/commands';
+import {
+  pickBackupOpenPath,
+  pickBackupSavePath,
+  uiStateSet,
+  windowShowMain,
+} from '@/lib/ipc/commands';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import { applyThemeToDocument } from '@/lib/utils';
 import {
@@ -23,6 +29,7 @@ import {
   fetchUiState,
   importSettingsBackup,
   listTemplateNotes,
+  patchBackupPaths,
   saveSettingsPatch,
   subscribeSettingsStatus,
   subscribeWindowState,
@@ -53,6 +60,12 @@ export const useSettingsStore = defineStore('settings', () => {
   const backupBusy = ref<boolean>(false);
   const backupError = ref<string | null>(null);
   const backupSuccess = ref<string | null>(null);
+  const backupPaths = ref<BackupPathsUiState>({
+    lastExportPath: null,
+    lastImportPath: null,
+  });
+  const exportBackupPathDraft = ref<string>('');
+  const importBackupPathDraft = ref<string>('');
   const mainWindowState = ref<WindowState | null>(null);
 
   let unlistenStatus: UnlistenFn | null = null;
@@ -193,10 +206,23 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  function applyBackupPathsUiState(next?: BackupPathsUiState): void {
+    if (!next) {
+      return;
+    }
+    backupPaths.value = {
+      lastExportPath: next.lastExportPath ?? null,
+      lastImportPath: next.lastImportPath ?? null,
+    };
+    exportBackupPathDraft.value = backupPaths.value.lastExportPath ?? '';
+    importBackupPathDraft.value = backupPaths.value.lastImportPath ?? '';
+  }
+
   async function refreshUiState(): Promise<void> {
     try {
       const uiStateRes = await fetchUiState();
       hotkeyStatus.value = uiStateRes.hotkey;
+      applyBackupPathsUiState(uiStateRes.backupPaths);
     } catch (error) {
       console.error('[settings] failed to refresh ui-state:', extractSettingsErrorMessage(error));
     }
@@ -211,6 +237,7 @@ export const useSettingsStore = defineStore('settings', () => {
       ]);
       snapshot.value = settingsRes;
       hotkeyStatus.value = uiStateRes.hotkey;
+      applyBackupPathsUiState(uiStateRes.backupPaths);
       setTheme(settingsRes.settings.editor.theme);
 
       if (!unlistenStatus) {
@@ -273,6 +300,16 @@ export const useSettingsStore = defineStore('settings', () => {
     backupSuccess.value = null;
     try {
       await exportSettingsBackup(trimmed);
+      backupPaths.value = {
+        ...backupPaths.value,
+        lastExportPath: trimmed,
+      };
+      exportBackupPathDraft.value = trimmed;
+      try {
+        await patchBackupPaths(backupPaths.value);
+      } catch {
+        // 非 Tauri 测试环境容错
+      }
       backupSuccess.value = `配置备份已导出至 ${trimmed}`;
       return true;
     } catch (error) {
@@ -301,6 +338,16 @@ export const useSettingsStore = defineStore('settings', () => {
       saveError.value = null;
       lastSavedAt.value = Date.now();
       await refreshUiState();
+      backupPaths.value = {
+        ...backupPaths.value,
+        lastImportPath: trimmed,
+      };
+      importBackupPathDraft.value = trimmed;
+      try {
+        await patchBackupPaths(backupPaths.value);
+      } catch {
+        // 非 Tauri 测试环境容错
+      }
       backupSuccess.value = '配置已成功导入并热更新生效。';
       return true;
     } catch (error) {
@@ -309,6 +356,24 @@ export const useSettingsStore = defineStore('settings', () => {
     } finally {
       backupBusy.value = false;
     }
+  }
+
+  async function pickAndExportSettings(): Promise<boolean> {
+    const picked = await pickBackupSavePath(backupPaths.value.lastExportPath);
+    if (!picked) {
+      return false;
+    }
+    exportBackupPathDraft.value = picked;
+    return exportSettings(picked);
+  }
+
+  async function pickAndImportSettings(): Promise<boolean> {
+    const picked = await pickBackupOpenPath(backupPaths.value.lastImportPath);
+    if (!picked) {
+      return false;
+    }
+    importBackupPathDraft.value = picked;
+    return importSettings(picked);
   }
 
   async function setMainWindowMode(mode: WindowMode): Promise<boolean> {
@@ -392,6 +457,9 @@ export const useSettingsStore = defineStore('settings', () => {
     backupBusy,
     backupError,
     backupSuccess,
+    backupPaths,
+    exportBackupPathDraft,
+    importBackupPathDraft,
     mainWindowState,
     loadStatus,
     isSettingsInvalid,
@@ -405,6 +473,8 @@ export const useSettingsStore = defineStore('settings', () => {
     previewAuxiliaryWindow,
     exportSettings,
     importSettings,
+    pickAndExportSettings,
+    pickAndImportSettings,
     loadTemplates,
     addTemplate,
     updateLibraryRoot,
