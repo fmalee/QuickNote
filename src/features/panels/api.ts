@@ -1,4 +1,11 @@
-import type { NoteSummary, PanelGroupUiState, RelatedNoteItem, UiState } from '@/bindings/types';
+import type {
+  LeftSidebarUiState,
+  NoteSummary,
+  PanelGroupUiState,
+  RelatedNoteItem,
+  TerminalPanelUiState,
+  UiState,
+} from '@/bindings/types';
 import { notesGetRelated, notesList, uiStateGet, uiStateSet } from '@/lib/ipc/commands';
 
 export const RECENT_NOTES_LIMIT = 20;
@@ -27,6 +34,20 @@ export async function fetchUiState(): Promise<UiState> {
 export async function patchPanelGroupUiState(value: PanelGroupUiState): Promise<UiState> {
   return uiStateSet({
     key: 'panelGroup',
+    value,
+  });
+}
+
+export async function patchLeftSidebarUiState(value: LeftSidebarUiState): Promise<UiState> {
+  return uiStateSet({
+    key: 'leftSidebar',
+    value,
+  });
+}
+
+export async function patchTerminalPanelUiState(value: TerminalPanelUiState): Promise<UiState> {
+  return uiStateSet({
+    key: 'terminalPanel',
     value,
   });
 }

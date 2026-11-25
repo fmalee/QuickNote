@@ -7,7 +7,10 @@ use quicknote_lib::application::persistence::PersistenceManager;
 use quicknote_lib::domain::backup::{select_backups_to_prune, BackupEntry, MAX_BACKUP_COUNT};
 use quicknote_lib::domain::error::ErrorCode;
 use quicknote_lib::domain::settings::{parse_settings_yaml, SetRootArgs, Settings};
-use quicknote_lib::domain::ui_state::{BackupPathsUiState, UiState, UiStateArgs, UiStatePatchKey};
+use quicknote_lib::domain::ui_state::{
+    BackupPathsUiState, LeftSidebarUiState, LeftViewId, TerminalPanelUiState, UiState, UiStateArgs,
+    UiStatePatchKey,
+};
 use quicknote_lib::infra::fs::prune_backups;
 
 fn make_temp_dir(label: &str) -> PathBuf {
@@ -428,4 +431,46 @@ fn ui_state_backup_paths_roundtrip_and_legacy_migration() {
     let _ = fs::remove_dir_all(&app_data_dir);
     let _ = fs::remove_dir_all(&legacy_config_dir);
     let _ = fs::remove_dir_all(&legacy_cache_dir);
+}
+
+#[test]
+fn ui_state_left_sidebar_and_terminal_panel_roundtrip() {
+    let app_data_dir = make_temp_dir("layout_state");
+    let pm = PersistenceManager::open(app_data_dir.clone()).expect("open PersistenceManager");
+
+    let initial = pm.ui_state_get().expect("initial ui_state_get");
+    assert_eq!(initial.left_sidebar, LeftSidebarUiState::default());
+    assert_eq!(initial.terminal_panel, TerminalPanelUiState::default());
+
+    pm.ui_state_set(
+        UiStatePatchKey::LeftSidebar,
+        serde_json::json!({ "width": 320, "activeView": "outline", "collapsed": false }),
+    )
+    .expect("leftSidebar patch must succeed");
+
+    pm.ui_state_set(
+        UiStatePatchKey::TerminalPanel,
+        serde_json::json!({ "visible": true, "height": 300, "collapsed": false }),
+    )
+    .expect("terminalPanel patch must succeed");
+
+    let updated = pm.ui_state_get().expect("updated ui_state_get");
+    assert_eq!(
+        updated.left_sidebar,
+        LeftSidebarUiState {
+            width: 320,
+            active_view: LeftViewId::Outline,
+            collapsed: false,
+        }
+    );
+    assert_eq!(
+        updated.terminal_panel,
+        TerminalPanelUiState {
+            visible: true,
+            height: 300,
+            collapsed: false,
+        }
+    );
+
+    let _ = fs::remove_dir_all(&app_data_dir);
 }

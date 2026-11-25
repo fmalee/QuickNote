@@ -133,6 +133,54 @@ impl Default for PanelGroupUiState {
     }
 }
 
+/// Top-level view shown in the left sidebar (`C6.3`, `C7.4`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum LeftViewId {
+    #[default]
+    Workspace,
+    Related,
+    Outline,
+}
+
+/// Resizable left sidebar state (`C6.3`, `C7.4`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LeftSidebarUiState {
+    pub width: u32,
+    pub active_view: LeftViewId,
+    pub collapsed: bool,
+}
+
+impl Default for LeftSidebarUiState {
+    fn default() -> Self {
+        Self {
+            width: 300,
+            active_view: LeftViewId::Workspace,
+            collapsed: false,
+        }
+    }
+}
+
+/// Terminal dock below the editor (`C6.3`, `C7.4`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalPanelUiState {
+    pub visible: bool,
+    pub height: u32,
+    pub collapsed: bool,
+}
+
+impl Default for TerminalPanelUiState {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            height: 240,
+            collapsed: false,
+        }
+    }
+}
+
 /// Remembered paths for settings backup file dialogs (`C6.3`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
 #[serde(rename_all = "camelCase")]
@@ -180,6 +228,10 @@ pub struct UiState {
     pub windows: WindowsUiState,
     pub tabs: TabsUiState,
     pub panel_group: PanelGroupUiState,
+    #[serde(default)]
+    pub left_sidebar: LeftSidebarUiState,
+    #[serde(default)]
+    pub terminal_panel: TerminalPanelUiState,
     pub filters: FiltersUiState,
     pub selected_workspace_key: Option<String>,
     pub last_active_doc: Option<LastActiveDocState>,
@@ -196,6 +248,8 @@ pub enum UiStatePatchKey {
     Windows,
     Tabs,
     PanelGroup,
+    LeftSidebar,
+    TerminalPanel,
     Filters,
     SelectedWorkspace,
     Hotkey,
@@ -210,6 +264,8 @@ impl UiStatePatchKey {
             Self::Windows => "windows",
             Self::Tabs => "tabs",
             Self::PanelGroup => "panelGroup",
+            Self::LeftSidebar => "leftSidebar",
+            Self::TerminalPanel => "terminalPanel",
             Self::Filters => "filters",
             Self::SelectedWorkspace => "selectedWorkspace",
             Self::Hotkey => "hotkey",
@@ -247,6 +303,12 @@ impl UiState {
             }
             UiStatePatchKey::PanelGroup => {
                 self.panel_group = parse_patch_value(key_name, value)?;
+            }
+            UiStatePatchKey::LeftSidebar => {
+                self.left_sidebar = parse_patch_value(key_name, value)?;
+            }
+            UiStatePatchKey::TerminalPanel => {
+                self.terminal_panel = parse_patch_value(key_name, value)?;
             }
             UiStatePatchKey::Filters => {
                 self.filters = parse_patch_value(key_name, value)?;

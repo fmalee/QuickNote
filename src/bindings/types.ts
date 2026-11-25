@@ -348,6 +348,16 @@ export type LastActiveDocState = {
 	touchedAtMs: number,
 };
 
+/**  Resizable left sidebar state (`C6.3`, `C7.4`). */
+export type LeftSidebarUiState = {
+	width: number,
+	activeView: LeftViewId,
+	collapsed: boolean,
+};
+
+/**  Top-level view shown in the left sidebar (`C6.3`, `C7.4`). */
+export type LeftViewId = "workspace" | "related" | "outline";
+
 /**  Summary of the configured note library (`C3.4`). */
 export type LibraryInfo = {
 	root: string | null,
@@ -823,6 +833,13 @@ export type TerminalPanelSettingsPatch = {
 	maxConcurrentSessions?: number | null,
 };
 
+/**  Terminal dock below the editor (`C6.3`, `C7.4`). */
+export type TerminalPanelUiState = {
+	visible: boolean,
+	height: number,
+	collapsed: boolean,
+};
+
 /**  Arguments for resizing a terminal PTY (`C4.2`). */
 export type TerminalResizeArgs = {
 	sessionId: string,
@@ -866,6 +883,8 @@ export type UiState = {
 	windows: WindowsUiState,
 	tabs: TabsUiState,
 	panelGroup: PanelGroupUiState,
+	leftSidebar?: LeftSidebarUiState,
+	terminalPanel?: TerminalPanelUiState,
 	filters: FiltersUiState,
 	selectedWorkspaceKey: string | null,
 	lastActiveDoc: LastActiveDocState | null,
@@ -881,7 +900,7 @@ export type UiStateArgs = {
 };
 
 /**  Whitelisted patch keys accepted by `ui_state_set` (`C4.2`, `C6.3`). */
-export type UiStatePatchKey = "windows" | "tabs" | "panelGroup" | "filters" | "selectedWorkspace" | "hotkey" | "lastActiveDoc" | "workspaceModes" | "backupPaths";
+export type UiStatePatchKey = "windows" | "tabs" | "panelGroup" | "leftSidebar" | "terminalPanel" | "filters" | "selectedWorkspace" | "hotkey" | "lastActiveDoc" | "workspaceModes" | "backupPaths";
 
 /**  Result returned by `note_undo_last_append` (`C8.3`). */
 export type UndoAppendResult = {

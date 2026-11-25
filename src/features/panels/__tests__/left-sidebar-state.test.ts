@@ -1,0 +1,118 @@
+import { createPinia, setActivePinia } from 'pinia';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { UiState } from '@/bindings/types';
+
+const { mockUiStateGet, mockUiStateSet } = vi.hoisted(() => ({
+  mockUiStateGet: vi.fn(),
+  mockUiStateSet: vi.fn(),
+}));
+
+vi.mock('@/lib/ipc/commands', () => ({
+  isAppError: () => false,
+  noteRead: vi.fn(),
+  noteWrite: vi.fn(),
+  notesList: vi.fn().mockResolvedValue([]),
+  notesGetRelated: vi.fn().mockResolvedValue([]),
+  uiStateGet: mockUiStateGet,
+  uiStateSet: mockUiStateSet,
+}));
+
+vi.mock('@/lib/ipc/events', () => ({
+  onFsExternalChange: vi.fn(() => () => undefined),
+}));
+
+import { usePanelsStore } from '../store';
+
+function makeDefaultUiState(): UiState {
+  return {
+    windows: {
+      main: { x: 100, y: 100, width: 1280, height: 800, mode: 'standard', isOpen: true },
+    },
+    tabs: { items: [], activeKey: null, closedStack: [] },
+    panelGroup: { visible: true, activeId: 'outline', width: 260, collapsed: false },
+    leftSidebar: { width: 300, activeView: 'workspace', collapsed: false },
+    terminalPanel: { visible: false, height: 240, collapsed: false },
+    filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },
+    selectedWorkspaceKey: null,
+    lastActiveDoc: null,
+    workspaceModes: {},
+    hotkey: { combo: 'ctrl+alt+space', backupCombo: 'ctrl+alt+cmd+space', selfCheck: 'ok' },
+  };
+}
+
+describe('panels store leftSidebar & terminalPanel state', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    const uiState = makeDefaultUiState();
+    mockUiStateGet.mockReset();
+    mockUiStateSet.mockReset();
+    mockUiStateGet.mockResolvedValue(uiState);
+    mockUiStateSet.mockImplementation(async (args: { key: string; value: unknown }) => ({
+      ...uiState,
+      [args.key]: args.value,
+    }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('toggleLeftView toggles between target view and workspace and persists each call', () => {
+    const store = usePanelsStore();
+    expect(store.leftSidebar.activeView).toBe('workspace');
+
+    store.toggleLeftView('outline');
+    expect(store.leftSidebar.activeView).toBe('outline');
+    expect(mockUiStateSet).toHaveBeenNthCalledWith(1, {
+      key: 'leftSidebar',
+      value: { width: 300, activeView: 'outline', collapsed: false },
+    });
+
+    store.toggleLeftView('outline');
+    expect(store.leftSidebar.activeView).toBe('workspace');
+    expect(mockUiStateSet).toHaveBeenNthCalledWith(2, {
+      key: 'leftSidebar',
+      value: { width: 300, activeView: 'workspace', collapsed: false },
+    });
+
+    store.dispose();
+  });
+
+  it('toggleTerminalPanel toggles isTerminalPanelShown between true and false', () => {
+    const store = usePanelsStore();
+    expect(store.isTerminalPanelShown).toBe(false);
+
+    store.toggleTerminalPanel();
+    expect(store.isTerminalPanelShown).toBe(true);
+    expect(store.terminalPanel.visible).toBe(true);
+    expect(store.terminalPanel.collapsed).toBe(false);
+
+    store.toggleTerminalPanel();
+    expect(store.isTerminalPanelShown).toBe(false);
+    expect(store.terminalPanel.visible).toBe(false);
+
+    store.dispose();
+  });
+
+  it('clamps terminalPanel height to [120, 600]', () => {
+    const store = usePanelsStore();
+
+    store.setTerminalPanelHeight(9999);
+    expect(store.terminalPanel.height).toBe(600);
+
+    store.setTerminalPanelHeight(1);
+    expect(store.terminalPanel.height).toBe(120);
+
+    store.dispose();
+  });
+
+  it('clamps leftSidebar width minimum to 220', () => {
+    const store = usePanelsStore();
+
+    store.setLeftSidebarWidth(50);
+    expect(store.leftSidebar.width).toBe(220);
+    expect(store.leftSidebarWidth).toBe(220);
+
+    store.dispose();
+  });
+});

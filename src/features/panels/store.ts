@@ -1,13 +1,23 @@
 import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
-import type { NoteSummary, PanelGroupUiState, PanelId, RelatedNoteItem } from '@/bindings/types';
+import type {
+  LeftSidebarUiState,
+  LeftViewId,
+  NoteSummary,
+  PanelGroupUiState,
+  PanelId,
+  RelatedNoteItem,
+  TerminalPanelUiState,
+} from '@/bindings/types';
 import { useEditorTabsStore } from '@/features/editor';
 import {
   RECENT_NOTES_LIMIT,
   fetchRecentNotes,
   fetchRelatedNotes,
   fetchUiState,
+  patchLeftSidebarUiState,
   patchPanelGroupUiState,
+  patchTerminalPanelUiState,
 } from './api';
 import {
   type OutlineItem,
@@ -28,6 +38,9 @@ import {
 export const OUTLINE_DEBOUNCE_MS = 150;
 export const DEFAULT_PANEL_WIDTH = 260;
 export const PANEL_WIDTH_PERSIST_DEBOUNCE_MS = 180;
+export const MIN_SIDEBAR_WIDTH = 220;
+export const MIN_TERMINAL_DOCK_HEIGHT = 120;
+export const MAX_TERMINAL_DOCK_HEIGHT = 600;
 
 export { MIN_PANEL_WIDTH };
 
@@ -40,6 +53,17 @@ export const usePanelsStore = defineStore('panels', () => {
     visible: true,
     activeId: 'outline',
     width: DEFAULT_PANEL_WIDTH,
+    collapsed: false,
+  });
+
+  const leftSidebar = ref<LeftSidebarUiState>({
+    width: 300,
+    activeView: 'workspace',
+    collapsed: false,
+  });
+  const terminalPanel = ref<TerminalPanelUiState>({
+    visible: false,
+    height: 240,
     collapsed: false,
   });
 
@@ -64,6 +88,8 @@ export const usePanelsStore = defineStore('panels', () => {
 
   let outlineDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let widthPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  let leftSidebarWidthPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  let terminalHeightPersistTimer: ReturnType<typeof setTimeout> | null = null;
   let lastComputedKey: string | null = null;
   let relatedRequestSeq = 0;
   let recentRequestSeq = 0;
@@ -75,6 +101,21 @@ export const usePanelsStore = defineStore('panels', () => {
   const isOutlineVisible = computed<boolean>(
     () => isPanelGroupExpanded.value && panelGroup.value.activeId === 'outline',
   );
+
+  const isTerminalPanelShown = computed<boolean>(
+    () => terminalPanel.value.visible && !terminalPanel.value.collapsed,
+  );
+
+  const leftSidebarWidth = computed<number>(() => {
+    const maxAllowed = Math.max(
+      MIN_SIDEBAR_WIDTH,
+      viewportWidth.value - MIN_EDITOR_WIDTH - SIDEBAR_COLLAPSED_STRIP_WIDTH,
+    );
+    const raw = isOverlayDrawer.value
+      ? Math.max(MIN_SIDEBAR_WIDTH, viewportWidth.value - 48)
+      : leftSidebar.value.width;
+    return Math.min(maxAllowed, Math.max(MIN_SIDEBAR_WIDTH, raw));
+  });
 
   const isOverlayDrawer = computed<boolean>(
     () => viewportWidth.value < BP_OVERLAY_DRAWER || forceOverlayDrawer.value,
@@ -97,6 +138,20 @@ export const usePanelsStore = defineStore('panels', () => {
     if (widthPersistTimer !== null) {
       clearTimeout(widthPersistTimer);
       widthPersistTimer = null;
+    }
+  }
+
+  function clearLeftSidebarWidthPersistTimer(): void {
+    if (leftSidebarWidthPersistTimer !== null) {
+      clearTimeout(leftSidebarWidthPersistTimer);
+      leftSidebarWidthPersistTimer = null;
+    }
+  }
+
+  function clearTerminalHeightPersistTimer(): void {
+    if (terminalHeightPersistTimer !== null) {
+      clearTimeout(terminalHeightPersistTimer);
+      terminalHeightPersistTimer = null;
     }
   }
 
@@ -129,6 +184,32 @@ export const usePanelsStore = defineStore('panels', () => {
     widthPersistTimer = setTimeout(() => {
       widthPersistTimer = null;
       void patchPanelGroupUiState({ ...panelGroup.value }).catch(() => undefined);
+    }, PANEL_WIDTH_PERSIST_DEBOUNCE_MS);
+  }
+
+  function persistLeftSidebar(): void {
+    clearLeftSidebarWidthPersistTimer();
+    void patchLeftSidebarUiState({ ...leftSidebar.value }).catch(() => undefined);
+  }
+
+  function schedulePersistLeftSidebar(): void {
+    clearLeftSidebarWidthPersistTimer();
+    leftSidebarWidthPersistTimer = setTimeout(() => {
+      leftSidebarWidthPersistTimer = null;
+      void patchLeftSidebarUiState({ ...leftSidebar.value }).catch(() => undefined);
+    }, PANEL_WIDTH_PERSIST_DEBOUNCE_MS);
+  }
+
+  function persistTerminalPanel(): void {
+    clearTerminalHeightPersistTimer();
+    void patchTerminalPanelUiState({ ...terminalPanel.value }).catch(() => undefined);
+  }
+
+  function schedulePersistTerminalPanel(): void {
+    clearTerminalHeightPersistTimer();
+    terminalHeightPersistTimer = setTimeout(() => {
+      terminalHeightPersistTimer = null;
+      void patchTerminalPanelUiState({ ...terminalPanel.value }).catch(() => undefined);
     }, PANEL_WIDTH_PERSIST_DEBOUNCE_MS);
   }
 
@@ -197,6 +278,9 @@ export const usePanelsStore = defineStore('panels', () => {
   }
 
   function refreshActivePanelData(): void {
+    if (leftSidebar.value.activeView === 'related') {
+      void refreshRelatedNotes();
+    }
     if (!isPanelGroupExpanded.value) {
       return;
     }
@@ -241,6 +325,15 @@ export const usePanelsStore = defineStore('panels', () => {
     },
   );
 
+  watch(
+    () => leftSidebar.value.activeView,
+    (view) => {
+      if (view === 'related') {
+        void refreshRelatedNotes();
+      }
+    },
+  );
+
   function applyPanelGroupState(nextGroup: PanelGroupUiState): void {
     const def = getRightPanelDef(nextGroup.activeId || 'outline');
     panelGroup.value = {
@@ -254,11 +347,40 @@ export const usePanelsStore = defineStore('panels', () => {
     refreshActivePanelData();
   }
 
+  function clampLeftSidebarWidth(width: number): number {
+    const maxAllowed = Math.max(
+      MIN_SIDEBAR_WIDTH,
+      viewportWidth.value - MIN_EDITOR_WIDTH - SIDEBAR_COLLAPSED_STRIP_WIDTH,
+    );
+    return Math.min(maxAllowed, Math.max(MIN_SIDEBAR_WIDTH, Math.round(width)));
+  }
+
+  function clampTerminalPanelHeight(height: number): number {
+    return Math.min(
+      MAX_TERMINAL_DOCK_HEIGHT,
+      Math.max(MIN_TERMINAL_DOCK_HEIGHT, Math.round(height)),
+    );
+  }
+
   async function initialize(): Promise<void> {
     try {
       const uiState = await fetchUiState();
       if (uiState.panelGroup) {
         applyPanelGroupState(uiState.panelGroup);
+      }
+      if (uiState.leftSidebar) {
+        leftSidebar.value = {
+          width: clampLeftSidebarWidth(uiState.leftSidebar.width),
+          activeView: uiState.leftSidebar.activeView ?? 'workspace',
+          collapsed: uiState.leftSidebar.collapsed,
+        };
+      }
+      if (uiState.terminalPanel) {
+        terminalPanel.value = {
+          visible: uiState.terminalPanel.visible,
+          height: clampTerminalPanelHeight(uiState.terminalPanel.height),
+          collapsed: uiState.terminalPanel.collapsed,
+        };
       }
     } catch {
       // 容错：回退默认面板状态
@@ -411,6 +533,50 @@ export const usePanelsStore = defineStore('panels', () => {
     leftSidebarCollapsed.value = !leftSidebarCollapsed.value;
   }
 
+  function setLeftView(view: LeftViewId): void {
+    leftSidebar.value.activeView = view;
+    persistLeftSidebar();
+  }
+
+  function toggleLeftView(view: 'related' | 'outline'): void {
+    leftSidebar.value.activeView = leftSidebar.value.activeView === view ? 'workspace' : view;
+    persistLeftSidebar();
+  }
+
+  function setLeftSidebarWidth(width: number): void {
+    leftSidebar.value.width = clampLeftSidebarWidth(width);
+    schedulePersistLeftSidebar();
+  }
+
+  function commitLeftSidebarWidth(): void {
+    persistLeftSidebar();
+  }
+
+  function toggleTerminalPanel(): void {
+    if (isTerminalPanelShown.value) {
+      terminalPanel.value.visible = false;
+    } else {
+      terminalPanel.value.visible = true;
+      terminalPanel.value.collapsed = false;
+    }
+    persistTerminalPanel();
+  }
+
+  function toggleTerminalCollapse(): void {
+    terminalPanel.value.visible = true;
+    terminalPanel.value.collapsed = !terminalPanel.value.collapsed;
+    persistTerminalPanel();
+  }
+
+  function setTerminalPanelHeight(height: number): void {
+    terminalPanel.value.height = clampTerminalPanelHeight(height);
+    schedulePersistTerminalPanel();
+  }
+
+  function commitTerminalPanelHeight(): void {
+    persistTerminalPanel();
+  }
+
   function jumpToHeading(item: OutlineItem): void {
     editorTabsStore.requestScrollToLine(item.line, item.from);
   }
@@ -418,10 +584,14 @@ export const usePanelsStore = defineStore('panels', () => {
   function dispose(): void {
     clearOutlineTimer();
     clearWidthPersistTimer();
+    clearLeftSidebarWidthPersistTimer();
+    clearTerminalHeightPersistTimer();
   }
 
   return {
     panelGroup,
+    leftSidebar,
+    terminalPanel,
     viewportWidth,
     forceOverlayDrawer,
     leftSidebarCollapsed,
@@ -435,6 +605,8 @@ export const usePanelsStore = defineStore('panels', () => {
     recentLoading,
     isPanelGroupExpanded,
     isOutlineVisible,
+    isTerminalPanelShown,
+    leftSidebarWidth,
     isOverlayDrawer,
     isNarrowLeftBreakpoint,
     isNarrowRightBreakpoint,
@@ -449,6 +621,14 @@ export const usePanelsStore = defineStore('panels', () => {
     applyViewportWidth,
     setForceOverlayDrawer,
     toggleLeftSidebar,
+    setLeftView,
+    toggleLeftView,
+    setLeftSidebarWidth,
+    commitLeftSidebarWidth,
+    toggleTerminalPanel,
+    toggleTerminalCollapse,
+    setTerminalPanelHeight,
+    commitTerminalPanelHeight,
     refreshRelatedNotes,
     refreshRecentNotes,
     jumpToHeading,
