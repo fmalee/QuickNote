@@ -110,3 +110,15 @@ export {
   runLightweightDiagnostics,
   setDiagnosticsEffect,
 } from './extensions/codeDiagnostics';
+export {
+  createDocTabStub,
+  type CreateDocTabStubInput,
+  type DocTabKind,
+  type DocTabStub,
+  type DocTabViewportSnapshot,
+} from './core/docSession';
+export {
+  DEFAULT_EDITOR_STATE_POOL_CAPACITY,
+  EditorStatePool,
+  MIN_EDITOR_STATE_POOL_CAPACITY,
+} from './core/editorPool';
