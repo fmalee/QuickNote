@@ -149,3 +149,22 @@
   - `infra/macos` 对外提供 `NativeWindowBridge` trait 抽象与非 macOS / 无图形界面测试兜底实现（`NoopNativeBridge`），保证 `cargo test --all-features` 在 headless 环境下零 panic 运行。
 - 后果：原生 AppKit/Carbon 调用直接对齐 Apple 官方头文件，无宏样板与特征开关膨胀风险；`domain` 层保持纯内存状态机与热键解析，严格遵守 `C1.2` 单向分层。
 - 否决替代：使用 `objc2` / `objc2-app-kit` 纯 Rust 宏定义 `NSPanel` 子类（需维护大量 feature flag 与生命周期样板，且 Carbon 热键仍需手写 C FFI）；使用 `tauri-plugin-global-shortcut`（无法实现 `D-0004` 所需的 Carbon 热键自检与精确热重注册控制）。
+
+## D-0012 v5 架构重构裁决：磁盘真相源、纯缓存 SQLite、目录级 .quicknote.yaml、纯 Rust 外部浏览与常驻 LRU 池
+
+- 日期：2026-11-25
+- 状态：accepted（`C11.3`）
+- 关联：`C1.2`、`C5.1`、`C6`、`D-0001`、`D-0003`、`D-0006`、`D-0008`
+- 背景：v1.0.0（M0–M4）落地后，旧方案中 SQLite 存放于 Vault 根目录污染用户同步目录、无 Frontmatter `id` 笔记在只读/未补写场景下易丢失收录、Spotlight 主搜索无法覆盖 `.xxx` 隐藏目录与 `/usr/local/etc` 等系统路径、脱离 Vault 的全局工作区配置割裂，以及多窗口与多标签编辑器内存占用偏高。为在不破坏单向分层与前端 IPC 契约的前提下完成 v5 架构演进，确立以下核心架构裁决。
+- 决策：
+  1. **唯一事实依据（磁盘真相源）**：磁盘文档（`.md` 与目录级 `.quicknote.yaml`）是唯一真相源；启动执行全量增量对账 + 运行期文件监听单向收敛至 SQLite；无 Frontmatter `id` 的 `.md` 必须以基于 `rel_path` 的确定性兜底键收录，扫描过程只读不改写用户文件。
+  2. **数据库定位（纯缓存 SQLite）**：SQLite（含 WAL/SHM）强制存于应用缓存目录（按 Vault 路径哈希隔离），严禁放入笔记库根目录，且必须支持随时删库全量重建；用户配置与外部书签持久化于配置目录配置文件，不以 SQLite 为唯一存储。
+  3. **外部文件引擎（纯 Rust 探测与直扫）**：废弃 Spotlight 作为 `search_roots` 主检索引擎，改用纯 Rust 受控文件系统探测与目录直扫（支持 `.xxx` 隐藏目录及 `/usr/local/etc` 等系统路径）。
+  4. **工作区模型（目录级 `.quicknote.yaml`）**：废弃脱离笔记库的独立全局工作区，改为笔记库子目录 `.quicknote.yaml` 绑定；外部动作与终端 `cwd` 严格按 `文档 Frontmatter > 最近祖先目录 .quicknote.yaml > 全局默认` 三级级联解析；`.quicknote.yaml` 必须排除出笔记列表与 FTS，应用内写入必须走原子写 + 自写守卫。
+  5. **常驻内存模型与 LRU 池**：主窗口与 QuickBar 常驻，Settings/Toast 等低频副窗口按需创建并闲置销毁；主编辑器采用单 `EditorView` 配合可配置上限的 CM6 `EditorState` LRU 池（绝不淘汰激活态或 `isDirty` 标签）。
+  6. **45% 侧栏辅助模式**：复用主工作台 WebView，macOS 原生层配置全屏 Space 悬浮叠加行为，托盘与 QuickBar 均提供切换入口。
+- 后果：笔记库目录保持纯净零侵入，索引可随时安全重建，外部系统路径浏览与工作区绑定语义清晰统一，应用常驻内存与多文档切换响应显著优化；与 `spec/quicknote-design-v4.md` 冲突的旧条款全部失效，以 `Active Architecture Overrides (v5 Refactor)` 为准。
+- 否决/废止的旧方案：
+  - 废止脱离笔记库的独立全局工作区模型。
+  - 废止 Spotlight 作为 `search_roots` 主检索引擎的方案。
+  - 废止将 SQLite 数据库及其 WAL/SHM 文件存放于笔记库（Vault）根目录的方案。

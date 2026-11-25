@@ -1,3 +1,12 @@
+## Active Architecture Overrides (v5 Refactor)
+- 唯一事实依据：磁盘文档（.md 与目录级 .quicknote.yaml）是唯一真相源。启动全量增量对账 + 运行期监听单向收敛至 SQLite；无 Frontmatter id 的 .md 必须以基于 rel_path 的确定性兜底键收录，扫描过程只读不改写用户文件。
+- 数据库定位：SQLite（含 WAL/SHM）强制存于应用缓存目录（按 Vault 路径哈希隔离），严禁放入笔记库根目录，且必须支持随时删库全量重建。用户配置与外部书签持久化于配置目录配置文件，不以 SQLite 为唯一存储。
+- 外部文件引擎：废弃 Spotlight 作为 search_roots 主检索引擎，改用纯 Rust 受控文件系统探测与目录直扫（支持 .xxx 隐藏目录及 /usr/local/etc 等系统路径）。
+- 工作区模型：废弃脱离笔记库的独立全局工作区，改为笔记库子目录 `.quicknote.yaml` 绑定；外部动作与终端 cwd 严格按 `文档 Frontmatter > 最近祖先目录 .quicknote.yaml > 全局默认` 三级级联解析。`.quicknote.yaml` 必须排除出笔记列表与 FTS，应用内写入必须走原子写 + 自写守卫。
+- 常驻内存模型：主窗口与 QuickBar 常驻，Settings/Toast 等低频副窗口按需创建并闲置销毁；主编辑器单 EditorView 配合可配置上限的 CM6 EditorState LRU 池（绝不淘汰激活态或 isDirty 标签）。
+- 45% 侧栏辅助模式：复用主工作台 WebView，macOS 原生层配置全屏 Space 悬浮叠加行为，托盘与 QuickBar 均提供切换入口。
+- 文档冲突裁决：与 spec/quicknote-design-v4.md 冲突时，无条件以本节规则为准。
+
 # QuickNote 工程契约（`C1`–`C12`）
 
 > 本文档为 QuickNote 的机器级静态接口与工程边界契约，面向全程 AI 分模块构建。产品取舍以 [quicknote-design-v4.md](quicknote-design-v4.md) 为准，架构决策以 [DECISIONS.md](../DECISIONS.md) 为准。

@@ -1,3 +1,4 @@
+> [FROZEN / SUPERSEDED] 本文档在 v5 架构重构期间冻结，禁止修改与引用冲突旧条款；一切架构约束以 AGENTS.md 与 spec/engineering-contract.md 顶部 Active Architecture Overrides 为准。
 # QuickNote：随手记 + 本地文件快捷编辑器
 
 > 产品与实现方案（定稿）
