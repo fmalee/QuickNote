@@ -504,6 +504,7 @@ fn create_aux_windows(app: &AppHandle) -> Result<(), tauri::Error> {
 /// Boots the Tauri desktop runtime with registered IPC commands, native macOS bridge, tray, and hotkey.
 pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(wm) = app.try_state::<Arc<WindowManager>>() {
                 let aux_pct = app

@@ -42,9 +42,9 @@ use crate::domain::terminal::{
     TerminalVisibilityArgs, TerminalWriteArgs,
 };
 use crate::domain::ui_state::{
-    CaptureMode, FiltersUiState, HotkeySelfCheck, HotkeyStatus, LastActiveDocState,
-    MainWindowState, NavTab, PanelGroupUiState, TabItemState, TabsUiState, UiState, UiStateArgs,
-    UiStatePatchKey, WindowsUiState,
+    BackupPathsUiState, CaptureMode, FiltersUiState, HotkeySelfCheck, HotkeyStatus,
+    LastActiveDocState, MainWindowState, NavTab, PanelGroupUiState, TabItemState, TabsUiState,
+    UiState, UiStateArgs, UiStatePatchKey, WindowsUiState,
 };
 use crate::domain::watch::{
     ExternalChangeEvent, ExternalChangeKind, QuickBarDraft, RecoverySnapshot,
@@ -103,6 +103,7 @@ pub fn collect_types() -> Types {
         .register::<TabItemState>()
         .register::<TabsUiState>()
         .register::<PanelGroupUiState>()
+        .register::<BackupPathsUiState>()
         .register::<FiltersUiState>()
         .register::<LastActiveDocState>()
         .register::<UiState>()

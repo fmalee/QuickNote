@@ -7,7 +7,7 @@ use quicknote_lib::application::persistence::PersistenceManager;
 use quicknote_lib::domain::backup::{select_backups_to_prune, BackupEntry, MAX_BACKUP_COUNT};
 use quicknote_lib::domain::error::ErrorCode;
 use quicknote_lib::domain::settings::{parse_settings_yaml, SetRootArgs, Settings};
-use quicknote_lib::domain::ui_state::{UiState, UiStateArgs, UiStatePatchKey};
+use quicknote_lib::domain::ui_state::{BackupPathsUiState, UiState, UiStateArgs, UiStatePatchKey};
 use quicknote_lib::infra::fs::prune_backups;
 
 fn make_temp_dir(label: &str) -> PathBuf {
@@ -357,4 +357,75 @@ fn library_set_root_boundaries_and_broken_settings_protection() {
     );
 
     let _ = fs::remove_dir_all(&app_data_dir);
+}
+
+#[test]
+fn ui_state_backup_paths_roundtrip_and_legacy_migration() {
+    let app_data_dir = make_temp_dir("backup_paths");
+    let pm = PersistenceManager::open(app_data_dir.clone()).expect("open PersistenceManager");
+
+    let initial = pm.ui_state_get().expect("initial ui_state_get");
+    assert_eq!(initial.backup_paths, BackupPathsUiState::default());
+
+    pm.ui_state_set(
+        UiStatePatchKey::BackupPaths,
+        serde_json::json!({ "lastExportPath": "/tmp/a.yaml" }),
+    )
+    .expect("backupPaths patch must succeed");
+
+    let updated = pm.ui_state_get().expect("updated ui_state_get");
+    assert_eq!(
+        updated.backup_paths.last_export_path.as_deref(),
+        Some("/tmp/a.yaml")
+    );
+    assert_eq!(updated.backup_paths.last_import_path, None);
+
+    // Legacy ui-state.json without `backupPaths` loads cleanly with default values.
+    let legacy_config_dir = make_temp_dir("backup_paths_legacy_cfg");
+    let legacy_cache_dir = make_temp_dir("backup_paths_legacy_cache");
+    let legacy_json = serde_json::json!({
+        "windows": {
+            "main": { "x": 10, "y": 20, "width": 1200, "height": 800, "maximized": false },
+            "quickBar": { "x": null, "y": null }
+        },
+        "tabs": {
+            "items": [],
+            "activeKey": null,
+            "closedStack": []
+        },
+        "panelGroup": {
+            "visible": true,
+            "activeId": "outline",
+            "width": 260,
+            "collapsed": false
+        },
+        "filters": {
+            "activeTab": "inbox",
+            "selectedDir": null,
+            "selectedTags": [],
+            "listScrollTop": 0.0
+        },
+        "hotkey": {
+            "effective": "Ctrl+Alt+Space",
+            "registered": true,
+            "fallbackUsed": false,
+            "conflictReason": null,
+            "lastCheckAt": "2026-01-01T00:00:00Z"
+        }
+    });
+    fs::write(
+        legacy_config_dir.join("ui-state.json"),
+        serde_json::to_string_pretty(&legacy_json).expect("serialize legacy json"),
+    )
+    .expect("write legacy ui-state.json");
+
+    let legacy_pm =
+        PersistenceManager::open_with_dirs(legacy_config_dir.clone(), legacy_cache_dir.clone())
+            .expect("open_with_dirs on legacy ui-state.json");
+    let legacy_loaded = legacy_pm.ui_state_get().expect("legacy ui_state_get");
+    assert_eq!(legacy_loaded.backup_paths, BackupPathsUiState::default());
+
+    let _ = fs::remove_dir_all(&app_data_dir);
+    let _ = fs::remove_dir_all(&legacy_config_dir);
+    let _ = fs::remove_dir_all(&legacy_cache_dir);
 }

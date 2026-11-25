@@ -37,6 +37,12 @@ export type AppendResult = {
 	undoAvailable: boolean,
 };
 
+/**  Remembered paths for settings backup file dialogs (`C6.3`). */
+export type BackupPathsUiState = {
+	lastExportPath: string | null,
+	lastImportPath: string | null,
+};
+
 /**  Capture formatting mode (`C3.4`, `C6.3`). */
 export type CaptureMode = "list" | "todo" | "prose";
 
@@ -865,6 +871,7 @@ export type UiState = {
 	lastActiveDoc: LastActiveDocState | null,
 	workspaceModes: { [key in string]: CaptureMode },
 	hotkey: HotkeyStatus,
+	backupPaths?: BackupPathsUiState,
 };
 
 /**  Arguments for `ui_state_set` (`C4.2`). */
@@ -874,7 +881,7 @@ export type UiStateArgs = {
 };
 
 /**  Whitelisted patch keys accepted by `ui_state_set` (`C4.2`, `C6.3`). */
-export type UiStatePatchKey = "windows" | "tabs" | "panelGroup" | "filters" | "selectedWorkspace" | "hotkey" | "lastActiveDoc" | "workspaceModes";
+export type UiStatePatchKey = "windows" | "tabs" | "panelGroup" | "filters" | "selectedWorkspace" | "hotkey" | "lastActiveDoc" | "workspaceModes" | "backupPaths";
 
 /**  Result returned by `note_undo_last_append` (`C8.3`). */
 export type UndoAppendResult = {

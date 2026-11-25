@@ -133,6 +133,14 @@ impl Default for PanelGroupUiState {
     }
 }
 
+/// Remembered paths for settings backup file dialogs (`C6.3`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupPathsUiState {
+    pub last_export_path: Option<String>,
+    pub last_import_path: Option<String>,
+}
+
 /// Navigation filter state (`C6.3`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -177,6 +185,8 @@ pub struct UiState {
     pub last_active_doc: Option<LastActiveDocState>,
     pub workspace_modes: BTreeMap<String, CaptureMode>,
     pub hotkey: HotkeyStatus,
+    #[serde(default)]
+    pub backup_paths: BackupPathsUiState,
 }
 
 /// Whitelisted patch keys accepted by `ui_state_set` (`C4.2`, `C6.3`).
@@ -191,6 +201,7 @@ pub enum UiStatePatchKey {
     Hotkey,
     LastActiveDoc,
     WorkspaceModes,
+    BackupPaths,
 }
 
 impl UiStatePatchKey {
@@ -204,6 +215,7 @@ impl UiStatePatchKey {
             Self::Hotkey => "hotkey",
             Self::LastActiveDoc => "lastActiveDoc",
             Self::WorkspaceModes => "workspaceModes",
+            Self::BackupPaths => "backupPaths",
         }
     }
 }
@@ -250,6 +262,9 @@ impl UiState {
             }
             UiStatePatchKey::WorkspaceModes => {
                 self.workspace_modes = parse_patch_value(key_name, value)?;
+            }
+            UiStatePatchKey::BackupPaths => {
+                self.backup_paths = parse_patch_value(key_name, value)?;
             }
         }
         Ok(())

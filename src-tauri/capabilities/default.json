@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default minimal capabilities for QuickNote windows",
   "windows": ["main", "quickbar", "toast", "settings"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "dialog:default"]
 }
