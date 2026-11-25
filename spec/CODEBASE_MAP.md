@@ -8,7 +8,7 @@
 
 - **Rust 分层（`C1.2`）**：`commands` → `application` → `domain`，`infra` → `domain`
   - `src-tauri/src/domain/`：纯结构体与纯算法，**严禁依赖** `tauri`、`std::fs`、`rusqlite`、`portable_pty`、`libc`。
-  - `src-tauri/src/infra/`：文件系统原子写入、SQLite、macOS ObjC/Carbon/WebKit 桥接、`portable-pty`、`notify`、`mdfind`。
+  - `src-tauri/src/infra/`：文件系统原子写入、SQLite、macOS ObjC/Carbon/WebKit 桥接、`portable-pty`、`notify`、`fs_browser`（纯 Rust 受控探测/直扫）；`infra/spotlight.rs`（`mdfind`）已降级废弃，不再作为 `search_roots` 主检索引擎。
   - `src-tauri/src/application/`：业务用例、并发状态机、持久化与事件协调。
   - `src-tauri/src/commands/`：薄 Tauri IPC 命令入口；全量注册于 `src-tauri/src/lib.rs`。
 - **前端分层（`C1.2`）**：`lib` → `components` → `features` → `app`
@@ -31,12 +31,12 @@
 | **全局 5 秒非激活撤销 Toast** | `src/features/toast/` (`ToastView.vue`, `store.ts`) | `application/window.rs`, `infra/macos/bridge.m` (`QuickNoteToastPanel`) | `src/features/toast/__tests__/toast-view.test.ts` |
 | **主工作台壳、多标签、菜单同步与 45% 辅助窗** | `src/app/MainWorkbenchShell.vue`, `src/features/editor/EditorTabBar.vue` | `domain/window.rs`, `application/window.rs`, `commands/window.rs`, `infra/macos/bridge.m`, `src-tauri/src/lib.rs` | `src/app/__tests__/auxiliary-window-mode.test.ts`, `src-tauri/tests/window_policy_test.rs`, `m4_export_and_auxiliary.rs` |
 | **笔记导航树、标签树、列表、模板新建与批量重命名标签** | `src/features/notes/` (`NotesSidebar.vue`, `store.ts`, `NewNoteTemplateModal.vue`, `templateUtils.ts`) | `domain/note.rs`, `domain/template.rs`, `application/notes.rs`, `application/index.rs`, `commands/notes.rs` | `src/features/notes/__tests__/*`, `src-tauri/tests/note_crud_and_index_test.rs`, `m3_commands_related_tags.rs` |
-| **CM6 编辑器、文档头、`[属性]` Popover 与收件箱提取** | `src/features/editor/` (`MarkdownEditor.vue`, `store.ts`, `DocHeaderBar.vue`, `DocPropertiesPopover.vue`, `InboxBloatBanner.vue`, `InboxExtractModal.vue`) | `domain/frontmatter.rs`, `domain/markdown.rs`, `application/notes.rs`, `commands/notes.rs` | `src/features/editor/__tests__/doc-meta-and-inbox-extract.test.ts`, `editor-autosave-and-conflict.test.ts`, `src-tauri/tests/m2_backend_test.rs` |
+| **CM6 编辑器（单视图 LRU 池）、文档头、`[属性]` Popover 与收件箱提取** | `src/features/editor/` (`MarkdownEditor.vue`, `store.ts`, `core/docSession.ts`, `core/editorPool.ts`, `DocHeaderBar.vue`, `DocPropertiesPopover.vue`, `InboxBloatBanner.vue`, `InboxExtractModal.vue`) | `domain/frontmatter.rs`, `domain/markdown.rs`, `application/notes.rs`, `commands/notes.rs` | `src/features/editor/__tests__/doc-meta-and-inbox-extract.test.ts`, `editor-autosave-and-conflict.test.ts`, `src-tauri/tests/m2_backend_test.rs` |
 | **CM6 扩展（缩进/待办/格式/链接/图片/多语言高亮与诊断）** | `src/features/editor/extensions/` (`markdownIndent.ts`, `markdownTodo.ts`, `markdownFormat.ts`, `markdownLinks.ts`, `markdownImages.ts`, `codeLanguages.ts`, `codeDiagnostics.ts`, `scrollTarget.ts`) | `domain/markdown.rs`（中文 Slug、base64 图片解码）, `application/notes.rs`（`note_save_image`） | `src/features/editor/__tests__/cm6-markdown-editing.test.ts`, `cm6-links-and-images.test.ts`, `code-languages-and-diagnostics.test.ts` |
 | **外部修改监听、防回环、冲突横幅与 CM6 `MergeView`** | `src/features/editor/` (`EditorConflictBanner.vue`, `EditorMergeView.vue`, `store.ts`) | `domain/watch.rs`, `application/watch.rs`, `infra/vault_watch.rs` | `src/features/editor/__tests__/merge-view-conflict.test.ts`, `merge-view-real-smoke.test.ts`, `src-tauri/tests/self_write_guard_and_watch_test.rs` |
 | **内嵌 `xterm.js` 终端、折叠保活与 30 分钟空闲回收** | `src/features/terminal/` (`TerminalPanel.vue`, `store.ts`, `theme.ts`, `api.ts`) | `domain/terminal.rs`, `infra/pty.rs`, `application/terminal.rs`, `commands/terminal.rs` | `src/features/terminal/__tests__/terminal-panel.test.ts`, `src-tauri/tests/m4_terminal_lifecycle.rs` |
 | **右侧面板组（大纲 / 终端 / 关联前 20 / 最近前 20）** | `src/features/panels/` (`RightPanelGroup.vue`, `store.ts`, `registry.ts`, `OutlinePanel.vue`, `RelatedNotesPanel.vue`, `RecentNotesPanel.vue`, `outlineExtractor.ts`) | `application/notes.rs`（`notes_get_related`） | `src/features/panels/__tests__/*`, `src-tauri/tests/m3_commands_related_tags.rs` |
-| **快速打开（`⌘K`）、路径补全与可取消 Spotlight** | `src/features/quickopen/` (`QuickOpenPalette.vue`, `useQuickOpen.ts`, `queryParser.ts`) | `infra/spotlight.rs`, `application/external.rs`, `application/notes.rs`, `commands/search.rs` | `src/features/quickopen/__tests__/quick-open-engine.test.ts`, `src-tauri/tests/m3_spotlight_path_external.rs` |
+| **快速打开（`⌘K`）、路径探测/目录直扫与同级文件浏览** | `src/features/quickopen/` (`QuickOpenPalette.vue`, `useQuickOpen.ts`, `queryParser.ts`) | `infra/fs_browser.rs`, `application/external.rs`, `application/notes.rs`, `commands/external.rs`, `commands/search.rs`（`infra/spotlight.rs` 已降级废弃） | `src/features/quickopen/__tests__/quick-open-engine.test.ts`, `src-tauri/tests/m3_spotlight_path_external.rs` |
 | **命令书解析与命令库面板（`⌘⇧K`）** | `src/features/commands/` (`CommandBookPalette.vue`, `useCommandPalette.ts`) | `domain/command_book.rs`, `application/index.rs`, `commands/search.rs` | `src/features/commands/__tests__/command-book-palette.test.ts`, `src-tauri/tests/m3_commands_related_tags.rs` |
 | **外部动作（Finder / 外部终端 / VS Code / Sublime / 固定）** | `src/features/editor/useExternalActions.ts` | `domain/external.rs`, `infra/external_open.rs`, `application/external.rs`, `commands/external.rs` | `src/features/editor/__tests__/external-actions-integration.test.ts`, `src-tauri/tests/m3_spotlight_path_external.rs` |
 | **复制富文本 HTML 与离屏 `WKWebView` 导出 PDF** | `src/features/editor/export/markdownExport.ts`, `ExportPdfModal.vue` | `commands/notes.rs` (`note_export_pdf`), `infra/macos/bridge.m` (`qn_render_html_to_pdf`), `infra/macos/mod.rs` | `src/features/editor/__tests__/export-rich-text-and-pdf.test.ts`, `src-tauri/tests/m4_export_and_auxiliary.rs` |
@@ -45,17 +45,17 @@
 | **SQLite FTS5 混合分词索引与性能压测** | — | `domain/tokenizer.rs`, `infra/sqlite.rs`, `src-tauri/migrations/0001_init.sql`, `application/index.rs` | `src-tauri/tests/domain_note_and_tokenizer_test.rs`, `sqlite_migration_test.rs`, `m4_performance_budget.rs` |
 | **设计 Token 与基础通用组件** | `src/styles/tokens.css`, `src/components/Qn*.vue` | — | `scripts/__tests__/check-architecture.test.ts` |
 
-### v5 Refactor · Phase A 新增模块
+### v5 Refactor · 新增模块与架构变更
 
-| 模块路径 | 职责一句话说明 |
+| 模块路径 / 架构项 | 职责一句话说明 |
 | --- | --- |
 | `src-tauri/src/domain/bookmark.rs` | 外部文件/目录书签领域模型与纯内存规范化、去重及排序规则 |
 | `src-tauri/src/domain/workspace_context.rs` | 笔记库目录级 `.quicknote.yaml` 工作区配置模型与三级级联解析规则 |
 | `src-tauri/migrations/0002_directory_workspace_cache.sql` | 只追加 SQLite 迁移，新增 `directory_workspace_configs` 目录级工作区派生缓存表 |
 | `src-tauri/src/application/reconciler.rs` | 只读 Vault 全量/增量对账引擎，将磁盘 `.md` 与 `.quicknote.yaml` 单向收敛至 SQLite 且不改写用户文件 |
-| `src-tauri/src/infra/fs_browser.rs` | 纯 Rust 受控外部文件系统探测与目录直扫引擎（带深度/条目数熔断，支持隐藏目录与系统路径） |
-| `src/features/editor/core/docSession.ts` | 与框架解耦的编辑器标签轻量元数据桩 `DocTabStub`（仅存元数据与光标/滚动快照，不存全文与 CM6 实例） |
-| `src/features/editor/core/editorPool.ts` | 与框架解耦的泛型 `EditorStatePool<TState>` LRU 状态池，严格保护激活态与脏数据标签不被淘汰 |
+| `src-tauri/src/infra/fs_browser.rs` | 纯 Rust 受控外部文件系统探测与目录直扫引擎（带深度/条目数熔断，支持隐藏目录与系统路径；取代已降级废弃的 `infra/spotlight.rs`） |
+| `src-tauri/src/commands/external.rs` + `bindings.rs` + `lib.rs` | 外部文件/书签/目录工作区薄 IPC 契约：`probe_external_path`、`list_external_directory`、`list_current_doc_siblings`、`upsert_external_bookmark`、`remove_external_bookmark`、`list_directory_workspace_configs`、`set_directory_workspace_config`（及 `ExternalPathProbeResult`、`ExternalDirectoryListing`、`ExternalDirectoryEntry`、`ExternalPathEntryKind`、`DirectoryWorkspaceConfigEntry`、`ExternalBookmark`、`DirectoryWorkspaceConfig` 强类型导出至 `src/bindings/types.ts`）；同时注册窗口命令 `window_toggle_auxiliary_sidebar`、`window_close_settings`、`window_dismiss_toast` |
+| 主编辑器单视图 LRU 池架构（`src/features/editor/core/docSession.ts`、`editorPool.ts`） | 主工作台复用单一 CM6 `EditorView` 实例，切换标签时经由 `DocTabStub`（轻量元数据 + 光标/滚动快照）与泛型 `EditorStatePool<TState>`（上限由 `settings.maxActiveEditorRenders` 控制）挂载/切换 `EditorState`，严格保护激活态与 `isDirty` 标签不被淘汰 |
 
 ---
 
