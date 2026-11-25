@@ -170,6 +170,8 @@ body,
   padding: 0;
   width: 100%;
   height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
   font-family: var(--qn-font-sans);
   font-size: var(--qn-text-base);
   line-height: 1.5;

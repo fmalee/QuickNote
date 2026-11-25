@@ -576,6 +576,7 @@ const qnEditorTheme = EditorView.theme({
     fontFamily: 'var(--qn-font-sans)',
     lineHeight: '1.7',
     overflow: 'auto',
+    overscrollBehavior: 'contain',
   },
   '.cm-content': {
     padding: 'var(--qn-space-2) 0 var(--qn-space-6)',

@@ -943,6 +943,7 @@ onUnmounted(() => {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--qn-space-6);
   display: flex;
   justify-content: center;
@@ -1044,5 +1045,6 @@ onUnmounted(() => {
 .qn-main-shell__baseline-scroll {
   max-height: 70vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 </style>

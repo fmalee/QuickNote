@@ -647,6 +647,7 @@ onUnmounted(() => {
 
 .qn-terminal-panel__xterm-host :deep(.xterm-viewport) {
   scrollbar-width: none;
+  overscroll-behavior: contain;
 }
 
 .qn-terminal-panel__xterm-host :deep(.xterm-viewport::-webkit-scrollbar) {
