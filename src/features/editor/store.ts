@@ -1401,8 +1401,8 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
 
       const preferredKey = uiState.tabs.activeKey;
       const activeTarget =
-        (preferredKey ? restored.find((tab) => tab.key === preferredKey) : undefined) ??
-        restored[0] ??
+        (preferredKey ? tabs.value.find((tab) => tab.key === preferredKey) : undefined) ??
+        tabs.value[0] ??
         null;
       activeKey.value = activeTarget?.key ?? null;
       if (activeTarget) {

@@ -381,4 +381,60 @@ describe('editor autosave, ULID backfill and external change handling', () => {
     expect(store.activeTab?.saveStatus).toBe('saved');
     expect(store.activeTab?.baseBodyHash).toBe('hash-v2');
   });
+
+  it('启动恢复：激活标签 hydrate 后 activeDoc 响应式更新（R03）', async () => {
+    const mk = (key: string, relPath: string) => ({
+      key,
+      relPath,
+      absPath: `/vault/${relPath}`,
+      title: relPath,
+      docType: 'note' as const,
+      tags: [],
+      project: null,
+      excerpt: '',
+      pinned: false,
+      archived: false,
+      isInbox: false,
+      mtimeMs: 1000,
+      metaError: null,
+    });
+    const a = mk('KEY_A', 'notes/a.md');
+    const b = mk('KEY_B', 'notes/b.md');
+    const item = (s: typeof a) => ({
+      key: s.key,
+      relPath: s.relPath,
+      absPath: s.absPath,
+      isPinned: true,
+      isPreview: false,
+      scrollTop: 0,
+      cursorPos: 0,
+    });
+    const ui = makeUiState();
+    ui.tabs = { items: [item(a), item(b)], activeKey: a.key, closedStack: [] };
+    mockUiStateGet.mockResolvedValue(ui);
+    mockNotesList.mockResolvedValue([a, b] satisfies NoteSummary[]);
+
+    let resolveRead!: (doc: NoteDoc) => void;
+    mockNoteRead.mockReturnValue(
+      new Promise<NoteDoc>((resolve) => {
+        resolveRead = resolve;
+      }),
+    );
+
+    const store = useEditorTabsStore();
+    const restoring = store.restoreTabsFromUiState();
+    for (let i = 0; i < 20; i += 1) {
+      await Promise.resolve();
+    }
+    expect(store.activeDoc).toBeNull();
+
+    resolveRead(
+      makeDoc({ key: a.key, relPath: a.relPath, absPath: a.absPath, body: '恢复后的正文' }),
+    );
+    await restoring;
+
+    expect(store.activeDoc?.body).toBe('恢复后的正文');
+    expect(store.activeTab?.key).toBe(a.key);
+    expect(store.activeTab?.evicted).toBe(false);
+  });
 });
