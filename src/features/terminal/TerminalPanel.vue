@@ -6,7 +6,7 @@ import '@xterm/xterm/css/xterm.css';
 import { QnBanner, QnButton } from '@/components';
 import { useSettingsStore } from '@/features/settings';
 import { handleTerminalCustomKeyEvent, useTerminalStore } from './store';
-import { buildTerminalTheme, observeTerminalThemeChange } from './theme';
+import { buildTerminalTheme, observeTerminalThemeChange, resolveTerminalFontFamily } from './theme';
 
 interface MountedXtermInstance {
   sessionId: string;
@@ -93,8 +93,9 @@ function ensureInstanceMounted(sessionId: string, container: HTMLElement): void 
     term = new Terminal({
       cursorBlink: true,
       scrollback: 5000,
-      fontSize: 12,
-      fontFamily: 'var(--qn-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
+      // SF Mono 13px 字符宽约 7.83px，向上取整后仅余 ~0.17px，避免 12px(7.22px->8px) 造成字距过大
+      fontSize: 13,
+      fontFamily: resolveTerminalFontFamily(),
       theme: buildTerminalTheme(),
       allowProposedApi: false,
     });

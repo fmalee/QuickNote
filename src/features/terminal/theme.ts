@@ -1,8 +1,20 @@
 import type { ITheme } from '@xterm/xterm';
 
+const DEFAULT_TERMINAL_FONT_FAMILY = 'SF Mono, Menlo, monospace';
+
 function readCssToken(styles: CSSStyleDeclaration, name: string): string | undefined {
   const value = styles.getPropertyValue(name).trim();
   return value.length > 0 ? value : undefined;
+}
+
+export function resolveTerminalFontFamily(): string {
+  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') {
+    return DEFAULT_TERMINAL_FONT_FAMILY;
+  }
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue('--qn-font-mono')
+    .trim();
+  return value.length > 0 ? value : DEFAULT_TERMINAL_FONT_FAMILY;
 }
 
 export function buildTerminalTheme(): ITheme {
