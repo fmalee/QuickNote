@@ -663,7 +663,7 @@ interface ActionDef {
 
 ### C10.1 分支规范
 
-- `main` 为稳定主线，禁止直接在 `main` 上提交功能开发代码。
+- `master` 为稳定主线，禁止直接在 `master` 上提交功能开发代码。
 - 日常全部开发在 `dev` 分支上拉取短生命周期任务分支：`feat/<card-id>-<slug>`、`fix/<slug>`、`contract/<slug>`；完成验收并通过 `pnpm check:all` 后合并回 `dev`。
 
 ### C10.2 中文提交规范

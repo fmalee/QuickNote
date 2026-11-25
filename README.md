@@ -86,7 +86,7 @@
   - `inbox.md`：默认收件箱
   - `_templates/`：Markdown 新建模板
   - `assets/YYYY-MM/`：粘贴/拖入的图片附件
-- **应用状态与配置目录**（macOS）：`~/Library/Application Support/com.quicknote.desktop/`
+- **应用状态与配置目录**（macOS）：`~/Library/Application Support/com.joey.quicknote/`
   - `settings.yaml`：唯一配置文件（支持手改热重载；语法错误时保持原文件**只读不覆写**，顶部报错精准定位行列号/未知字段，并提供一键打开修复）
   - `ui-state.json`：窗口形态、标签页、面板宽度与筛选状态
   - `index.sqlite`：可随时删库重建的派生全文索引（顶栏「工具 > 重建索引」）

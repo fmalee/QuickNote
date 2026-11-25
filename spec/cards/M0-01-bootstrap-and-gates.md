@@ -2,7 +2,7 @@
 
 - 所属里程碑：M0
 - 关联方案与契约：[quicknote-design-v4.md](../quicknote-design-v4.md) §5.1、§5.2、§6 M0；`C1.1`–`C1.4`、`C2.1`–`C2.3`、`C3.1`–`C3.3`、`C4.1`、`C9.1`、`C10.1`、`C10.2`、`D-0009`、`D-0010`
-- 前置依赖：无（若当前工作区尚未初始化 Git 仓库，先初始化提交基线文档至 `main`，再创建 `dev` 与分支 `feat/M0-01-bootstrap-and-gates`）
+- 前置依赖：无（若当前工作区尚未初始化 Git 仓库，先初始化提交基线文档至 `master`，再创建 `dev` 与分支 `feat/M0-01-bootstrap-and-gates`）
 - 会话策略：独立新会话执行；完成后提交并结束会话
 
 ## 1. 目标范围（做什么 / 明确不做什么）
@@ -27,7 +27,7 @@
 
 ## 3. 具体实现要求
 
-1. **Git 初始化与分支（若尚未初始化）**：初始化仓库并将既有文档（`AGENTS.md`、`DECISIONS.md`、`spec/`）作为基线提交至 `main`，派生 `dev` 分支，再拉出 `feat/M0-01-bootstrap-and-gates` 进行本卡开发。
+1. **Git 初始化与分支（若尚未初始化）**：初始化仓库并将既有文档（`AGENTS.md`、`DECISIONS.md`、`spec/`）作为基线提交至 `master`，派生 `dev` 分支，再拉出 `feat/M0-01-bootstrap-and-gates` 进行本卡开发。
 2. **TypeScript 与 ESLint 严格模式**：`tsconfig.json` 必须启用 `"strict": true`、`"noUncheckedIndexedAccess": true`；ESLint 禁止 `any`（`@typescript-eslint/no-explicit-any: "error"`），配置 Prettier 一致性检查。
 3. **Rust 分层与零 Panic**：`src-tauri/src/lib.rs` 导出供 `src-tauri/tests/**` 调用的公共模块；`domain` 模块保持零 `tauri` / `std::fs` / `rusqlite` 依赖；生产代码零 `.unwrap()` / `.expect()`。
 4. **`scripts/check-architecture.mjs` 静态扫描规则（必须全覆盖）**：
