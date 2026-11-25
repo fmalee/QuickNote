@@ -9,6 +9,8 @@ import type {
   CommandEntry,
   CommandSearchArgs,
   CreateNoteArgs,
+  DirectoryWorkspaceConfig,
+  DirectoryWorkspaceConfigEntry,
   ErrorCode,
   ExportPathArgs,
   ExportPdfArgs,
@@ -284,6 +286,20 @@ export function upsertExternalBookmark(bookmark: ExternalBookmark): Promise<Exte
 
 export function removeExternalBookmark(path: string): Promise<ExternalBookmark[]> {
   return invoke<ExternalBookmark[]>('remove_external_bookmark', { path });
+}
+
+export function listDirectoryWorkspaceConfigs(): Promise<DirectoryWorkspaceConfigEntry[]> {
+  return invoke<DirectoryWorkspaceConfigEntry[]>('list_directory_workspace_configs');
+}
+
+export function setDirectoryWorkspaceConfig(args: {
+  vaultRelDir: string;
+  config: DirectoryWorkspaceConfig | null;
+}): Promise<void> {
+  return invoke<void>('set_directory_workspace_config', {
+    vaultRelDir: args.vaultRelDir,
+    config: args.config,
+  });
 }
 
 export function terminalSpawn(

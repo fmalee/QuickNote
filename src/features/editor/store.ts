@@ -229,13 +229,21 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
   );
 
   const maxActiveEditorRenders = computed<number>(() => {
-    const editorCfg = settingsStore.snapshot?.settings?.editor as
+    const settings = settingsStore.snapshot?.settings as
       | (Record<string, unknown> & {
           maxActiveEditorRenders?: number;
           max_active_editor_renders?: number;
+          editor?: Record<string, unknown> & {
+            maxActiveEditorRenders?: number;
+            max_active_editor_renders?: number;
+          };
         })
       | undefined;
-    const raw = editorCfg?.maxActiveEditorRenders ?? editorCfg?.max_active_editor_renders;
+    const raw =
+      settings?.maxActiveEditorRenders ??
+      settings?.max_active_editor_renders ??
+      settings?.editor?.maxActiveEditorRenders ??
+      settings?.editor?.max_active_editor_renders;
     return typeof raw === 'number' && Number.isFinite(raw)
       ? raw
       : DEFAULT_EDITOR_STATE_POOL_CAPACITY;

@@ -680,6 +680,7 @@ export type Settings = {
 	searchRoots: string[],
 	maxActiveEditorRenders?: number,
 	externalBookmarks?: ExternalBookmark[],
+	scanHiddenFiles?: boolean,
 	/**
 	 *  Deprecated in v5 refactor: replaced by directory-level `.quicknote.yaml`.
 	 *  Kept with `#[serde(default)]` for backward-compatible reading of legacy `settings.yaml`.
@@ -710,6 +711,7 @@ export type SettingsPatch = {
 	searchRoots?: string[] | null,
 	maxActiveEditorRenders?: number | null,
 	externalBookmarks?: ExternalBookmark[] | null,
+	scanHiddenFiles?: boolean | null,
 	/**  Deprecated in v5 refactor; kept for backward compatibility. */
 	workspaces?: { [key in string]: WorkspaceConfig } | null,
 };

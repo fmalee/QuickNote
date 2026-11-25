@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import type { ExternalAppConfig } from '@/bindings/types';
-import { QnBanner, QnButton, QnInput, QnPanelCard } from '@/components';
+import type {
+  ExternalAppConfig,
+  ExternalBookmark,
+  ExternalBookmarkKind,
+} from '@/bindings/types';
+import { QnBadge, QnBanner, QnButton, QnInput, QnPanelCard } from '@/components';
+import { removeExternalBookmark, upsertExternalBookmark } from '@/lib/ipc/commands';
+import { extractSettingsErrorMessage } from './api';
 import { SETTINGS_READONLY_ERROR, useSettingsStore } from './store';
 
 interface TerminalPreset {
@@ -42,13 +48,28 @@ const embeddedTerminalForm = reactive({
   maxConcurrentSessions: '3',
 });
 
-const newSearchRoot = ref('');
+const bookmarkForm = reactive<{
+  path: string;
+  kind: ExternalBookmarkKind;
+  alias: string;
+  pinned: boolean;
+}>({
+  path: '',
+  kind: 'directory',
+  alias: '',
+  pinned: false,
+});
+
+const scanHiddenFiles = ref(true);
+const bookmarkBusy = ref(false);
 const terminalError = ref<string | null>(null);
 const embeddedTerminalError = ref<string | null>(null);
 const editorsError = ref<string | null>(null);
-const searchRootsError = ref<string | null>(null);
+const bookmarksError = ref<string | null>(null);
 
-const searchRoots = computed<string[]>(() => store.snapshot?.settings.searchRoots ?? []);
+const externalBookmarks = computed<ExternalBookmark[]>(
+  () => store.snapshot?.settings.externalBookmarks ?? [],
+);
 
 watch(
   () => store.snapshot?.settings,
@@ -67,6 +88,7 @@ watch(
     embeddedTerminalForm.maxConcurrentSessions = String(
       settings.panels.terminal.maxConcurrentSessions,
     );
+    scanHiddenFiles.value = settings.scanHiddenFiles ?? true;
   },
   { immediate: true, deep: true },
 );
@@ -171,38 +193,102 @@ async function saveEditorsConfig(): Promise<void> {
   });
 }
 
-async function addSearchRoot(): Promise<void> {
+function syncBookmarksSnapshot(nextList: ExternalBookmark[]): void {
+  if (!store.snapshot) {
+    return;
+  }
+  store.snapshot = {
+    ...store.snapshot,
+    settings: {
+      ...store.snapshot.settings,
+      externalBookmarks: nextList,
+    },
+  };
+}
+
+async function onToggleScanHiddenFiles(event: Event): Promise<void> {
+  const target = event.target as HTMLInputElement | null;
+  if (!target) {
+    return;
+  }
   if (store.isSettingsInvalid) {
-    searchRootsError.value = SETTINGS_READONLY_ERROR;
+    bookmarksError.value = SETTINGS_READONLY_ERROR;
+    target.checked = scanHiddenFiles.value;
     return;
   }
-  const trimmed = newSearchRoot.value.trim();
-  if (!trimmed) {
-    searchRootsError.value = '搜索目录路径不能为空。';
+  bookmarksError.value = null;
+  scanHiddenFiles.value = target.checked;
+  await store.patchSettings({ scanHiddenFiles: scanHiddenFiles.value });
+}
+
+async function addBookmark(): Promise<void> {
+  if (store.isSettingsInvalid) {
+    bookmarksError.value = SETTINGS_READONLY_ERROR;
     return;
   }
-  if (searchRoots.value.includes(trimmed)) {
-    searchRootsError.value = `目录「${trimmed}」已在搜索列表中。`;
+  const trimmedPath = bookmarkForm.path.trim();
+  if (!trimmedPath) {
+    bookmarksError.value = '书签路径不能为空。';
     return;
   }
-  searchRootsError.value = null;
-  const ok = await store.patchSettings({
-    searchRoots: [...searchRoots.value, trimmed],
-  });
-  if (ok) {
-    newSearchRoot.value = '';
+  const trimmedAlias = bookmarkForm.alias.trim();
+
+  bookmarkBusy.value = true;
+  bookmarksError.value = null;
+  try {
+    const updated = await upsertExternalBookmark({
+      path: trimmedPath,
+      kind: bookmarkForm.kind,
+      alias: trimmedAlias.length > 0 ? trimmedAlias : null,
+      pinned: bookmarkForm.pinned,
+      lastOpenedAt: null,
+    });
+    syncBookmarksSnapshot(updated);
+    bookmarkForm.path = '';
+    bookmarkForm.alias = '';
+    bookmarkForm.pinned = false;
+  } catch (error) {
+    bookmarksError.value = extractSettingsErrorMessage(error);
+  } finally {
+    bookmarkBusy.value = false;
   }
 }
 
-async function removeSearchRoot(target: string): Promise<void> {
+async function toggleBookmarkPinned(item: ExternalBookmark): Promise<void> {
   if (store.isSettingsInvalid) {
-    searchRootsError.value = SETTINGS_READONLY_ERROR;
+    bookmarksError.value = SETTINGS_READONLY_ERROR;
     return;
   }
-  searchRootsError.value = null;
-  await store.patchSettings({
-    searchRoots: searchRoots.value.filter((item) => item !== target),
-  });
+  bookmarkBusy.value = true;
+  bookmarksError.value = null;
+  try {
+    const updated = await upsertExternalBookmark({
+      ...item,
+      pinned: !item.pinned,
+    });
+    syncBookmarksSnapshot(updated);
+  } catch (error) {
+    bookmarksError.value = extractSettingsErrorMessage(error);
+  } finally {
+    bookmarkBusy.value = false;
+  }
+}
+
+async function deleteBookmark(targetPath: string): Promise<void> {
+  if (store.isSettingsInvalid) {
+    bookmarksError.value = SETTINGS_READONLY_ERROR;
+    return;
+  }
+  bookmarkBusy.value = true;
+  bookmarksError.value = null;
+  try {
+    const updated = await removeExternalBookmark(targetPath);
+    syncBookmarksSnapshot(updated);
+  } catch (error) {
+    bookmarksError.value = extractSettingsErrorMessage(error);
+  } finally {
+    bookmarkBusy.value = false;
+  }
 }
 </script>
 
@@ -399,61 +485,135 @@ async function removeSearchRoot(target: string): Promise<void> {
     </QnPanelCard>
 
     <QnPanelCard
-      title="Spotlight 搜索根目录 (searchRoots)"
-      subtitle="留空将不检索库外 Spotlight 文件"
+      title="外部常用目录与文件书签"
+      subtitle="管理库外常用目录与文件书签，供 Quick Bar 与快速打开直接浏览和探测"
+      data-testid="external-bookmarks-card"
     >
       <div class="qn-external-panel__stack">
-        <div class="qn-external-panel__add-row">
-          <QnInput
-            v-model="newSearchRoot"
-            label="新增搜索根目录"
-            placeholder="/Users/name/Sites"
-            :disabled="store.isSettingsInvalid"
-            monospace
-            data-testid="search-root-input"
+        <label class="qn-external-panel__checkbox">
+          <input
+            :checked="scanHiddenFiles"
+            type="checkbox"
+            :disabled="store.isSettingsInvalid || store.saving"
+            data-testid="external-scan-hidden-checkbox"
+            @change="onToggleScanHiddenFiles"
           />
-          <QnButton
-            variant="secondary"
-            size="sm"
-            :loading="store.saving"
-            :disabled="store.isSettingsInvalid"
-            data-testid="search-root-add-btn"
-            @click="addSearchRoot"
-          >
-            添加目录
-          </QnButton>
+          <span>目录直扫时包含隐藏目录与隐藏文件（如 .config、.ssh、.env）</span>
+        </label>
+
+        <div class="qn-external-panel__bookmark-form">
+          <div class="qn-external-panel__grid">
+            <QnInput
+              v-model="bookmarkForm.path"
+              label="目录或文件绝对路径"
+              placeholder="/Users/name/Sites 或 ~/.zshrc"
+              :disabled="store.isSettingsInvalid || bookmarkBusy"
+              monospace
+              data-testid="external-bookmark-path-input"
+            />
+            <QnInput
+              v-model="bookmarkForm.alias"
+              label="显示别名（可选）"
+              placeholder="例如：本地项目 / Shell 配置"
+              :disabled="store.isSettingsInvalid || bookmarkBusy"
+              data-testid="external-bookmark-alias-input"
+            />
+          </div>
+
+          <div class="qn-external-panel__bookmark-controls">
+            <label class="qn-external-panel__field">
+              <span class="qn-external-panel__label">书签类型</span>
+              <select
+                v-model="bookmarkForm.kind"
+                class="qn-external-panel__select"
+                :disabled="store.isSettingsInvalid || bookmarkBusy"
+                data-testid="external-bookmark-kind-select"
+              >
+                <option value="directory">目录书签</option>
+                <option value="file">文件书签</option>
+              </select>
+            </label>
+
+            <label class="qn-external-panel__checkbox">
+              <input
+                v-model="bookmarkForm.pinned"
+                type="checkbox"
+                :disabled="store.isSettingsInvalid || bookmarkBusy"
+                data-testid="external-bookmark-pinned-checkbox"
+              />
+              <span>置顶显示</span>
+            </label>
+
+            <QnButton
+              variant="secondary"
+              size="sm"
+              :loading="bookmarkBusy"
+              :disabled="store.isSettingsInvalid"
+              data-testid="external-bookmark-add-btn"
+              @click="addBookmark"
+            >
+              添加书签
+            </QnButton>
+          </div>
         </div>
 
         <p
-          v-if="searchRootsError"
+          v-if="bookmarksError"
           class="qn-external-panel__error"
           role="alert"
-          data-testid="search-roots-error"
+          data-testid="external-bookmarks-error"
         >
-          {{ searchRootsError }}
+          {{ bookmarksError }}
         </p>
 
-        <div v-if="searchRoots.length === 0" class="qn-external-panel__empty">
-          暂未配置自定义 Spotlight 搜索根目录。
+        <div
+          v-if="externalBookmarks.length === 0"
+          class="qn-external-panel__empty"
+          data-testid="external-bookmarks-empty"
+        >
+          暂未添加外部目录或文件书签。
         </div>
 
-        <ul v-else class="qn-external-panel__root-list">
+        <ul v-else class="qn-external-panel__bookmark-list">
           <li
-            v-for="(root, idx) in searchRoots"
-            :key="root"
-            class="qn-external-panel__root-item"
-            :data-testid="`search-root-item-${idx}`"
+            v-for="(item, idx) in externalBookmarks"
+            :key="item.path"
+            class="qn-external-panel__bookmark-item"
+            :data-testid="`external-bookmark-item-${idx}`"
           >
-            <code class="qn-external-panel__root-path">{{ root }}</code>
-            <QnButton
-              variant="ghost"
-              size="sm"
-              :disabled="store.isSettingsInvalid || store.saving"
-              :data-testid="`search-root-remove-${idx}`"
-              @click="removeSearchRoot(root)"
-            >
-              移除
-            </QnButton>
+            <div class="qn-external-panel__bookmark-main">
+              <div class="qn-external-panel__bookmark-head">
+                <QnBadge :tone="item.kind === 'directory' ? 'accent' : 'neutral'">
+                  {{ item.kind === 'directory' ? '目录' : '文件' }}
+                </QnBadge>
+                <QnBadge v-if="item.pinned" tone="warning">置顶</QnBadge>
+                <span v-if="item.alias" class="qn-external-panel__bookmark-alias">
+                  {{ item.alias }}
+                </span>
+              </div>
+              <code class="qn-external-panel__bookmark-path">{{ item.path }}</code>
+            </div>
+
+            <div class="qn-external-panel__bookmark-actions">
+              <QnButton
+                variant="ghost"
+                size="sm"
+                :disabled="store.isSettingsInvalid || bookmarkBusy"
+                :data-testid="`external-bookmark-pin-${idx}`"
+                @click="toggleBookmarkPinned(item)"
+              >
+                {{ item.pinned ? '取消置顶' : '置顶' }}
+              </QnButton>
+              <QnButton
+                variant="ghost"
+                size="sm"
+                :disabled="store.isSettingsInvalid || bookmarkBusy"
+                :data-testid="`external-bookmark-remove-${idx}`"
+                @click="deleteBookmark(item.path)"
+              >
+                移除
+              </QnButton>
+            </div>
           </li>
         </ul>
       </div>
@@ -507,17 +667,55 @@ async function removeSearchRoot(target: string): Promise<void> {
   color: var(--qn-text-primary);
 }
 
-.qn-external-panel__add-row {
+.qn-external-panel__checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--qn-space-2);
+  font-size: var(--qn-text-sm);
+  color: var(--qn-text-primary);
+}
+
+.qn-external-panel__bookmark-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qn-space-3);
+  padding: var(--qn-space-3);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qn-radius-sm);
+  background-color: var(--qn-bg-base);
+}
+
+.qn-external-panel__bookmark-controls {
   display: flex;
   align-items: flex-end;
-  gap: var(--qn-space-2);
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--qn-space-3);
 }
 
-.qn-external-panel__add-row > :first-child {
-  flex: 1;
+.qn-external-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qn-space-1);
 }
 
-.qn-external-panel__root-list {
+.qn-external-panel__label {
+  font-size: var(--qn-text-xs);
+  font-weight: 500;
+  color: var(--qn-text-secondary);
+}
+
+.qn-external-panel__select {
+  height: 32px;
+  padding: 0 var(--qn-space-2);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qn-radius-sm);
+  background-color: var(--qn-bg-base);
+  color: var(--qn-text-primary);
+  font-size: var(--qn-text-sm);
+}
+
+.qn-external-panel__bookmark-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -526,7 +724,7 @@ async function removeSearchRoot(target: string): Promise<void> {
   gap: var(--qn-space-2);
 }
 
-.qn-external-panel__root-item {
+.qn-external-panel__bookmark-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -534,12 +732,40 @@ async function removeSearchRoot(target: string): Promise<void> {
   padding: var(--qn-space-2) var(--qn-space-3);
   border: 1px solid var(--qn-border-subtle);
   border-radius: var(--qn-radius-sm);
+  background-color: var(--qn-bg-base);
 }
 
-.qn-external-panel__root-path {
-  font-size: var(--qn-text-xs);
+.qn-external-panel__bookmark-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qn-space-1);
+  min-width: 0;
+}
+
+.qn-external-panel__bookmark-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--qn-space-2);
+}
+
+.qn-external-panel__bookmark-alias {
+  font-size: var(--qn-text-sm);
+  font-weight: 600;
   color: var(--qn-text-primary);
+}
+
+.qn-external-panel__bookmark-path {
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-secondary);
   word-break: break-all;
+}
+
+.qn-external-panel__bookmark-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--qn-space-1);
+  flex-shrink: 0;
 }
 
 .qn-external-panel__empty {

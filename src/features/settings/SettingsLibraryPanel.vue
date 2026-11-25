@@ -1,13 +1,23 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue';
 import { QnBadge, QnButton, QnInput, QnPanelCard } from '@/components';
+import { indexRebuild } from '@/lib/ipc/commands';
+import { extractSettingsErrorMessage } from './api';
 import { useSettingsStore } from './store';
+
+const MIN_ACTIVE_EDITOR_RENDERS = 2;
+const MAX_ACTIVE_EDITOR_RENDERS = 20;
+const DEFAULT_ACTIVE_EDITOR_RENDERS = 5;
 
 const store = useSettingsStore();
 
 const libraryRootInput = ref('');
 const createIfMissing = ref(true);
 const newTemplateName = ref('');
+const maxActiveEditorRendersInput = ref(DEFAULT_ACTIVE_EDITOR_RENDERS);
+const rebuildingIndex = ref(false);
+const rebuildIndexFeedback = ref<string | null>(null);
+const rebuildIndexError = ref<string | null>(null);
 
 const inboxForm = reactive({
   bloatThresholdLines: 500,
@@ -27,6 +37,8 @@ watch(
     inboxForm.autoCreateMissingSection = settings.quickBar.autoCreateMissingSection;
     inboxForm.lastActiveTtlHours = settings.quickBar.lastActiveTtlHours;
     inboxForm.destroyAfterHiddenMinutes = settings.quickBar.destroyAfterHiddenMinutes;
+    maxActiveEditorRendersInput.value =
+      settings.maxActiveEditorRenders ?? DEFAULT_ACTIVE_EDITOR_RENDERS;
   },
   { immediate: true, deep: true },
 );
@@ -37,6 +49,31 @@ onMounted(() => {
 
 async function applyLibraryRoot(): Promise<void> {
   await store.updateLibraryRoot(libraryRootInput.value, createIfMissing.value);
+}
+
+async function commitMaxActiveEditorRenders(): Promise<void> {
+  const raw = Number(maxActiveEditorRendersInput.value);
+  const clamped = Number.isFinite(raw)
+    ? Math.min(MAX_ACTIVE_EDITOR_RENDERS, Math.max(MIN_ACTIVE_EDITOR_RENDERS, Math.round(raw)))
+    : DEFAULT_ACTIVE_EDITOR_RENDERS;
+  maxActiveEditorRendersInput.value = clamped;
+  await store.patchSettings({
+    maxActiveEditorRenders: clamped,
+  });
+}
+
+async function handleRebuildIndex(): Promise<void> {
+  rebuildingIndex.value = true;
+  rebuildIndexFeedback.value = null;
+  rebuildIndexError.value = null;
+  try {
+    const status = await indexRebuild();
+    rebuildIndexFeedback.value = `缓存索引已重建完成，共索引 ${status.notesCount} 篇笔记。`;
+  } catch (error) {
+    rebuildIndexError.value = extractSettingsErrorMessage(error);
+  } finally {
+    rebuildingIndex.value = false;
+  }
 }
 
 async function commitInboxBloatThreshold(): Promise<void> {
@@ -122,6 +159,63 @@ async function handleCreateTemplate(): Promise<void> {
             应用库路径
           </QnButton>
         </div>
+      </div>
+    </QnPanelCard>
+
+    <QnPanelCard
+      title="常驻内存优化与缓存索引"
+      subtitle="控制多标签编辑器常驻渲染上限（同步至 EditorStatePool），并支持一键清空重建本地缓存索引"
+      data-testid="library-memory-and-cache-card"
+    >
+      <div class="qn-library-panel__stack">
+        <div class="qn-library-panel__grid">
+          <label class="qn-library-panel__field">
+            <span class="qn-library-panel__label">
+              常驻内存优化：最大同时保留渲染标签数（2–20，默认 5）
+            </span>
+            <input
+              v-model.number="maxActiveEditorRendersInput"
+              type="number"
+              min="2"
+              max="20"
+              step="1"
+              :disabled="store.isSettingsInvalid"
+              data-testid="max-active-editor-renders-input"
+              class="qn-library-panel__number"
+              @change="commitMaxActiveEditorRenders"
+            />
+          </label>
+
+          <div class="qn-library-panel__cache-action">
+            <span class="qn-library-panel__label">本地 SQLite 派生缓存索引</span>
+            <QnButton
+              variant="secondary"
+              size="sm"
+              :loading="rebuildingIndex"
+              :disabled="rebuildingIndex"
+              data-testid="rebuild-index-btn"
+              @click="handleRebuildIndex"
+            >
+              一键清空重建缓存索引
+            </QnButton>
+          </div>
+        </div>
+
+        <p
+          v-if="rebuildIndexFeedback"
+          class="qn-library-panel__feedback"
+          data-testid="rebuild-index-feedback"
+        >
+          {{ rebuildIndexFeedback }}
+        </p>
+        <p
+          v-if="rebuildIndexError"
+          class="qn-library-panel__error"
+          role="alert"
+          data-testid="rebuild-index-error"
+        >
+          {{ rebuildIndexError }}
+        </p>
       </div>
     </QnPanelCard>
 
@@ -252,6 +346,14 @@ async function handleCreateTemplate(): Promise<void> {
   gap: var(--qn-space-1);
 }
 
+.qn-library-panel__cache-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--qn-space-1);
+}
+
 .qn-library-panel__label {
   font-size: var(--qn-text-xs);
   font-weight: 500;
@@ -321,5 +423,17 @@ async function handleCreateTemplate(): Promise<void> {
 .qn-library-panel__muted {
   font-size: var(--qn-text-sm);
   color: var(--qn-text-muted);
+}
+
+.qn-library-panel__feedback {
+  margin: 0;
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-secondary);
+}
+
+.qn-library-panel__error {
+  margin: 0;
+  font-size: var(--qn-text-xs);
+  color: var(--qn-danger);
 }
 </style>

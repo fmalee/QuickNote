@@ -15,6 +15,10 @@ fn default_max_active_editor_renders() -> u32 {
     DEFAULT_MAX_ACTIVE_EDITOR_RENDERS
 }
 
+fn default_scan_hidden_files() -> bool {
+    true
+}
+
 /// Main window presentation mode (`C3.4`, `C6.2`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
 #[serde(rename_all = "camelCase")]
@@ -288,6 +292,8 @@ pub struct Settings {
     pub max_active_editor_renders: u32,
     #[serde(default)]
     pub external_bookmarks: Vec<ExternalBookmark>,
+    #[serde(default = "default_scan_hidden_files")]
+    pub scan_hidden_files: bool,
     /// Deprecated in v5 refactor: replaced by directory-level `.quicknote.yaml`.
     /// Kept with `#[serde(default)]` for backward-compatible reading of legacy `settings.yaml`.
     #[serde(default)]
@@ -316,6 +322,7 @@ impl Default for Settings {
             ],
             max_active_editor_renders: DEFAULT_MAX_ACTIVE_EDITOR_RENDERS,
             external_bookmarks: Vec::new(),
+            scan_hidden_files: true,
             workspaces: BTreeMap::new(),
         }
     }
@@ -483,6 +490,8 @@ pub struct SettingsPatch {
     pub max_active_editor_renders: Option<u32>,
     #[serde(default)]
     pub external_bookmarks: Option<Vec<ExternalBookmark>>,
+    #[serde(default)]
+    pub scan_hidden_files: Option<bool>,
     /// Deprecated in v5 refactor; kept for backward compatibility.
     #[serde(default)]
     pub workspaces: Option<BTreeMap<String, WorkspaceConfig>>,
@@ -623,6 +632,10 @@ pub fn apply_settings_patch(base: &Settings, patch: &SettingsPatch) -> Result<Se
 
     if let Some(ref bookmarks) = patch.external_bookmarks {
         next.external_bookmarks = normalize_and_sort_bookmarks(bookmarks.clone());
+    }
+
+    if let Some(scan_hidden) = patch.scan_hidden_files {
+        next.scan_hidden_files = scan_hidden;
     }
 
     if let Some(ref ws) = patch.workspaces {
@@ -958,6 +971,7 @@ struct SettingsYaml {
     search_roots: Vec<String>,
     max_active_editor_renders: u32,
     external_bookmarks: Vec<ExternalBookmarkYaml>,
+    scan_hidden_files: bool,
     /// Deprecated in v5 refactor; kept with `#[serde(default)]` for legacy `settings.yaml` compatibility.
     #[serde(default)]
     workspaces: BTreeMap<String, WorkspaceConfigYaml>,
@@ -982,6 +996,7 @@ impl Default for SettingsYaml {
             search_roots: d.search_roots,
             max_active_editor_renders: d.max_active_editor_renders,
             external_bookmarks: Vec::new(),
+            scan_hidden_files: d.scan_hidden_files,
             workspaces: BTreeMap::new(),
         }
     }
@@ -1086,6 +1101,7 @@ impl From<SettingsYaml> for Settings {
             search_roots: y.search_roots,
             max_active_editor_renders: y.max_active_editor_renders,
             external_bookmarks,
+            scan_hidden_files: y.scan_hidden_files,
             workspaces,
         }
     }
@@ -1183,6 +1199,7 @@ impl From<&Settings> for SettingsYaml {
             search_roots: s.search_roots.clone(),
             max_active_editor_renders: s.max_active_editor_renders,
             external_bookmarks,
+            scan_hidden_files: s.scan_hidden_files,
             workspaces,
         }
     }

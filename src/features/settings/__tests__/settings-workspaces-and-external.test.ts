@@ -2,13 +2,24 @@ import { createPinia, setActivePinia } from 'pinia';
 import { createSSRApp } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SettingsSnapshot, UiState, WorkspaceConfig } from '@/bindings/types';
+import type {
+  DirectoryWorkspaceConfigEntry,
+  ExternalBookmark,
+  SettingsSnapshot,
+  UiState,
+} from '@/bindings/types';
 
 const {
   mockSettingsGet,
   mockSettingsUpdate,
   mockUiStateGet,
   mockExternalActionRun,
+  mockUpsertExternalBookmark,
+  mockRemoveExternalBookmark,
+  mockListDirectoryWorkspaceConfigs,
+  mockSetDirectoryWorkspaceConfig,
+  mockNotesGetTreeAndTags,
+  mockIndexRebuild,
   mockOnSettingsStatus,
   mockOnWindowState,
 } = vi.hoisted(() => ({
@@ -16,6 +27,12 @@ const {
   mockSettingsUpdate: vi.fn(),
   mockUiStateGet: vi.fn(),
   mockExternalActionRun: vi.fn(),
+  mockUpsertExternalBookmark: vi.fn(),
+  mockRemoveExternalBookmark: vi.fn(),
+  mockListDirectoryWorkspaceConfigs: vi.fn(),
+  mockSetDirectoryWorkspaceConfig: vi.fn(),
+  mockNotesGetTreeAndTags: vi.fn(),
+  mockIndexRebuild: vi.fn(),
   mockOnSettingsStatus: vi.fn(),
   mockOnWindowState: vi.fn(),
 }));
@@ -25,6 +42,12 @@ vi.mock('@/lib/ipc/commands', () => ({
   settingsUpdate: mockSettingsUpdate,
   uiStateGet: mockUiStateGet,
   externalActionRun: mockExternalActionRun,
+  upsertExternalBookmark: mockUpsertExternalBookmark,
+  removeExternalBookmark: mockRemoveExternalBookmark,
+  listDirectoryWorkspaceConfigs: mockListDirectoryWorkspaceConfigs,
+  setDirectoryWorkspaceConfig: mockSetDirectoryWorkspaceConfig,
+  notesGetTreeAndTags: mockNotesGetTreeAndTags,
+  indexRebuild: mockIndexRebuild,
   hotkeyUpdate: vi.fn(),
   librarySetRoot: vi.fn(),
   notesList: vi.fn().mockResolvedValue([]),
@@ -45,6 +68,13 @@ import {
   useSettingsStore,
 } from '@/features/settings';
 import { openSettingsYamlForRepair, revealSettingsYamlInFinder } from '@/features/settings/api';
+import {
+  indexRebuild,
+  listDirectoryWorkspaceConfigs,
+  removeExternalBookmark,
+  setDirectoryWorkspaceConfig,
+  upsertExternalBookmark,
+} from '@/lib/ipc/commands';
 
 function makeSettingsSnapshot(valid = true): SettingsSnapshot {
   return {
@@ -86,19 +116,26 @@ function makeSettingsSnapshot(valid = true): SettingsSnapshot {
         vscode: { name: 'Visual Studio Code', bundleId: 'com.microsoft.VSCode' },
         sublime: { name: 'Sublime Text', bundleId: 'com.sublimetext.4' },
       },
-      searchRoots: ['/Users/demo/Sites'],
-      workspaces: {
-        quicknote: {
-          key: 'quicknote',
-          name: 'QuickNote',
-          root: '/Users/demo/Sites/QuickNote',
-          openDir: '/Users/demo/Sites/QuickNote',
-          codeWorkspace: null,
-          terminalDir: null,
-          defaultEditor: 'vscode',
-          defaultEntryDoc: 'projects/quicknote.md',
+      searchRoots: [],
+      maxActiveEditorRenders: 5,
+      scanHiddenFiles: true,
+      externalBookmarks: [
+        {
+          path: '/Users/demo/Sites',
+          kind: 'directory',
+          alias: '本地项目',
+          pinned: true,
+          lastOpenedAt: null,
         },
-      },
+        {
+          path: '/Users/demo/.zshrc',
+          kind: 'file',
+          alias: 'Zsh 配置',
+          pinned: false,
+          lastOpenedAt: null,
+        },
+      ],
+      workspaces: {},
     },
     status: valid
       ? {
@@ -143,6 +180,13 @@ describe('settings-workspaces-and-external', () => {
     mockOnSettingsStatus.mockResolvedValue(() => {});
     mockOnWindowState.mockResolvedValue(() => {});
     mockUiStateGet.mockResolvedValue(makeUiState());
+    mockListDirectoryWorkspaceConfigs.mockResolvedValue([]);
+    mockNotesGetTreeAndTags.mockResolvedValue({
+      inboxCount: 0,
+      dirs: [],
+      tags: [],
+      workspaces: [],
+    });
   });
 
   it('renders repair & reveal buttons in SettingsErrorBanner when invalid and calls externalActionRun', async () => {
@@ -175,7 +219,7 @@ describe('settings-workspaces-and-external', () => {
     });
   });
 
-  it('renders workspaces and external panels in SettingsView and patches settings payloads', async () => {
+  it('renders directory workspaces, external bookmarks, and library memory/cache controls', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
 
@@ -190,8 +234,9 @@ describe('settings-workspaces-and-external', () => {
     wsApp.use(pinia);
     const wsHtml = await renderToString(wsApp);
     expect(wsHtml).toContain('data-testid="workspaces-panel"');
-    expect(wsHtml).toContain('data-testid="workspace-row-quicknote"');
     expect(wsHtml).toContain('data-testid="workspace-new-btn"');
+    expect(wsHtml).toContain('.quicknote.yaml');
+    expect(wsHtml).not.toContain('新增工作区');
 
     store.activeSection = 'external';
     const extApp = createSSRApp(SettingsView);
@@ -200,55 +245,115 @@ describe('settings-workspaces-and-external', () => {
     expect(extHtml).toContain('data-testid="external-panel"');
     expect(extHtml).toContain('data-testid="terminal-preset-ghostty"');
     expect(extHtml).toContain('data-testid="editor-vscode-bundle-id-input"');
-    expect(extHtml).toContain('data-testid="search-root-item-0"');
+    expect(extHtml).toContain('data-testid="external-bookmarks-card"');
+    expect(extHtml).toContain('data-testid="external-scan-hidden-checkbox"');
+    expect(extHtml).toContain('data-testid="external-bookmark-item-0"');
+    expect(extHtml).toContain('data-testid="external-bookmark-item-1"');
+    expect(extHtml).not.toContain('Spotlight');
 
-    // Patch workspaces (add + update + delete)
-    const nextWs: Record<string, WorkspaceConfig> = {
-      ...snapshot.settings.workspaces,
-      demo: {
-        key: 'demo',
-        name: 'Demo Repo',
-        root: '/Users/demo/Sites/Demo',
-        openDir: '/Users/demo/Sites/Demo',
-        codeWorkspace: '/Users/demo/Sites/Demo/demo.code-workspace',
-        terminalDir: null,
-        defaultEditor: 'sublime',
-        defaultEntryDoc: null,
+    store.activeSection = 'library';
+    const libApp = createSSRApp(SettingsView);
+    libApp.use(pinia);
+    const libHtml = await renderToString(libApp);
+    expect(libHtml).toContain('data-testid="library-memory-and-cache-card"');
+    expect(libHtml).toContain('data-testid="max-active-editor-renders-input"');
+    expect(libHtml).toContain('data-testid="rebuild-index-btn"');
+
+    // Directory workspace IPC calls (.quicknote.yaml)
+    const dirEntries: DirectoryWorkspaceConfigEntry[] = [
+      {
+        vaultRelDir: 'projects/quicknote',
+        config: {
+          projectRoot: '/Users/demo/Sites/QuickNote',
+          vscodeWorkspacePath: '/Users/demo/Sites/QuickNote/app.code-workspace',
+          defaultTerminalCwd: '/Users/demo/Sites/QuickNote',
+        },
+        mtimeMs: 1700000000000,
+        parseError: null,
       },
+    ];
+    mockListDirectoryWorkspaceConfigs.mockResolvedValueOnce(dirEntries);
+    const listed = await listDirectoryWorkspaceConfigs();
+    expect(listed).toEqual(dirEntries);
+
+    mockSetDirectoryWorkspaceConfig.mockResolvedValue(undefined);
+    await setDirectoryWorkspaceConfig({
+      vaultRelDir: 'projects/quicknote',
+      config: {
+        projectRoot: '/Users/demo/Sites/QuickNote',
+        vscodeWorkspacePath: '/Users/demo/Sites/QuickNote/app.code-workspace',
+        defaultTerminalCwd: '/Users/demo/Sites/QuickNote',
+      },
+    });
+    expect(mockSetDirectoryWorkspaceConfig).toHaveBeenCalledWith({
+      vaultRelDir: 'projects/quicknote',
+      config: {
+        projectRoot: '/Users/demo/Sites/QuickNote',
+        vscodeWorkspacePath: '/Users/demo/Sites/QuickNote/app.code-workspace',
+        defaultTerminalCwd: '/Users/demo/Sites/QuickNote',
+      },
+    });
+
+    await setDirectoryWorkspaceConfig({
+      vaultRelDir: 'projects/quicknote',
+      config: null,
+    });
+    expect(mockSetDirectoryWorkspaceConfig).toHaveBeenCalledWith({
+      vaultRelDir: 'projects/quicknote',
+      config: null,
+    });
+
+    // External bookmark IPC calls
+    const newBookmark: ExternalBookmark = {
+      path: '/opt/homebrew/etc',
+      kind: 'directory',
+      alias: 'Homebrew',
+      pinned: false,
+      lastOpenedAt: null,
     };
+    const nextBookmarks: ExternalBookmark[] = [
+      ...(snapshot.settings.externalBookmarks ?? []),
+      newBookmark,
+    ];
+    mockUpsertExternalBookmark.mockResolvedValueOnce(nextBookmarks);
+    const added = await upsertExternalBookmark(newBookmark);
+    expect(added).toHaveLength(3);
+
+    mockRemoveExternalBookmark.mockResolvedValueOnce(snapshot.settings.externalBookmarks ?? []);
+    const removed = await removeExternalBookmark('/opt/homebrew/etc');
+    expect(removed).toHaveLength(2);
+
+    // Patch scanHiddenFiles & maxActiveEditorRenders & indexRebuild
     const updatedSnapshot: SettingsSnapshot = {
       ...snapshot,
       settings: {
         ...snapshot.settings,
-        workspaces: nextWs,
         terminal: { name: 'Ghostty', bundleId: 'com.mitchellh.ghostty' },
-        searchRoots: ['/Users/demo/Sites', '/Users/demo/Projects'],
+        scanHiddenFiles: false,
+        maxActiveEditorRenders: 10,
       },
     };
     mockSettingsUpdate.mockResolvedValue(updatedSnapshot);
 
-    const wsOk = await store.patchSettings({ workspaces: nextWs });
-    expect(wsOk).toBe(true);
-    expect(mockSettingsUpdate).toHaveBeenCalledWith({ workspaces: nextWs });
+    const hiddenOk = await store.patchSettings({ scanHiddenFiles: false });
+    expect(hiddenOk).toBe(true);
+    expect(mockSettingsUpdate).toHaveBeenCalledWith({ scanHiddenFiles: false });
 
-    const termOk = await store.patchSettings({
-      terminal: { name: 'Ghostty', bundleId: 'com.mitchellh.ghostty' },
-    });
-    expect(termOk).toBe(true);
-    expect(mockSettingsUpdate).toHaveBeenCalledWith({
-      terminal: { name: 'Ghostty', bundleId: 'com.mitchellh.ghostty' },
-    });
+    const quotaOk = await store.patchSettings({ maxActiveEditorRenders: 10 });
+    expect(quotaOk).toBe(true);
+    expect(mockSettingsUpdate).toHaveBeenCalledWith({ maxActiveEditorRenders: 10 });
 
-    const rootsOk = await store.patchSettings({
-      searchRoots: ['/Users/demo/Sites', '/Users/demo/Projects'],
+    mockIndexRebuild.mockResolvedValueOnce({
+      phase: 'ready',
+      notesCount: 42,
+      ftsDegraded: false,
+      lastCompletedAt: 1700000000000,
     });
-    expect(rootsOk).toBe(true);
-    expect(mockSettingsUpdate).toHaveBeenCalledWith({
-      searchRoots: ['/Users/demo/Sites', '/Users/demo/Projects'],
-    });
+    const rebuilt = await indexRebuild();
+    expect(rebuilt.notesCount).toBe(42);
   });
 
-  it('blocks saving workspaces and external settings when settings.yaml is invalid', async () => {
+  it('blocks saving external settings when settings.yaml is invalid', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
 
