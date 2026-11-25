@@ -9,28 +9,45 @@
 卡片文件：spec/cards/M5-01a-contract-baseline.md
 
 ## 开工前
-1. 项目根目录：/Users/Joey/Sites/Projects/QuickNote
-2. 先读 AGENTS.md（硬规则），再读上面这张卡。只读这两份，不要通读其他文档或整个代码库。
-3. 卡内「Read set」列出的文件按指定范围读，不要超范围。
+1. 项目根目录：`/Users/Joey/Sites/Projects/QuickNote`
+2. 先读 `AGENTS.md`（硬规则），再读上面这张卡。只读这两份，不要通读其他文档或整个代码库。
+3. 卡内 `Read set `列出的文件按指定范围读，不要超范围。
 4. 卡内行号基于旧基线，可能已偏移，以函数名 / 符号名定位。
-5. 前置卡片已合入 dev。开工前确认当前在 dev 最新提交上。
+5. 前置卡片已合入 `dev`。开工前确认当前在 `dev` 最新提交上。
 
 ## 执行要求
-1. 严格按卡内「执行步骤」做，只改「Write set」里的文件，不碰「禁止触碰」里的文件。
-2. 卡内的「内联契约依据」就是本次的契约口径，不需要再去翻 DECISIONS.md、engineering-contract.md、v5 设计文档。
+1. 严格按卡内 `执行步骤 `做，只改 `Write set` 里的文件，不碰 `禁止触碰 `里的文件。
+2. 卡内的 `内联契约依据` 就是本次的契约口径，不需要再去翻 `DECISIONS.md`、`engineering-contract.md`、`quicknote-design-v5.md`。
 3. 遇到以下情况立即停下并说明，不要自行猜测或绕过：
-   - 需要改 Write set 之外的文件
+   - 需要改 `Write set` 之外的文件
    - 卡内描述与实际代码对不上
    - 某一步做不到或验收过不了
 4. 按卡内要求先写测试再改代码的，照做，不要省略。
-5. src/bindings/types.ts 是生成物，只能由 pnpm gen:bindings 产生，禁止手改。
-6. 分支从 dev 拉，命名按卡内给的；提交必须带 --no-gpg-sign，禁止 --no-verify；提交信息按卡内格式。
-7. 收工前 pnpm check:all 必须全绿，不通过不算完成。
+5. `src/bindings/types.ts` 是生成物，只能由 `pnpm gen:bindings` 产生，禁止手改。
+6. 分支与提交（`C10.1`、`C10.2`）：
+   - 开工第一件事：从 `dev` 最新提交拉分支，命名 `<type>/<卡片 ID 小写>-<与卡片文件名相同的后缀>`。
+     `type` 按卡选：修缺陷用 `fix`（`M5-02a` 至 `M5-02f`）；改契约或纯文档用 `contract`（`M5-01a`、`M5-06d`）；其余一律 `feat`。
+     例：卡片 `M5-02b-r01-self-write-echo.md` → `fix/m5-02b-r01-self-write-echo`。
+   - 提交必须带 `--no-gpg-sign`，禁止 `--no-verify`，不推送、不合并回 `dev`。
+   - 提交信息用下面的格式，首行 `type` 与分支 `type` 一致，`scope` 填模块名，
+     `Contract:` 只列卡内 `关联方案与契约` 里的 `C` 条款编号，`Card:` 填卡片 ID：
+
+     ```
+     fix(editor): 消除自写回声导致的「检测到外部修改冲突」假弹窗
+     
+     中文写清改了什么以及为什么，一两句即可。
+     
+     Contract: C8.5, C2.4
+     Card: M5-02b
+     ```
+
+     多行提交用 `git commit --no-gpg-sign -m "<首行>" -m "<正文>" -m "Contract: ..." -m "Card: ..."`，不要打开交互式编辑器。
+7. 收工前 `pnpm check:all` 必须全绿，不通过不算完成。
 
 ## 完成后汇报
 1. 改了哪些文件，各改了什么。
-2. pnpm check:all 的结果（贴最后几行）。
-3. 卡内「人工点验」的条目原样列出，等我实机验证。
+2. `pnpm check:all` 的结果（贴最后几行）。
+3. 卡内 `人工点验` 的条目原样列出，等我实机验证。
 4. 遇到的偏差、没做完的部分、需要我决定的事项。
 ```
 
