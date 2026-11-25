@@ -168,3 +168,16 @@
   - 废止脱离笔记库的独立全局工作区模型。
   - 废止 Spotlight 作为 `search_roots` 主检索引擎的方案。
   - 废止将 SQLite 数据库及其 WAL/SHM 文件存放于笔记库（Vault）根目录的方案。
+
+## D-0013 Quick Bar 默认失焦关闭，「固定」态例外（取代 D-0002 的「点击面板外部不关闭」）
+
+- 日期：2026-11-26
+- 状态：proposed（C11.3）
+- 关联：`C2.4`、`C3.4`、`C4.2`、`C4.3`、`C6.2`、`C9.3`、`D-0001`、`D-0002`
+- 背景：`D-0002` 以「对照其他窗口看内容时极易误收起面板」为由否决了「失焦即关闭」。实际使用中 Quick Bar 是闪念捕捉面板，呼出后用户点击别处即代表本次捕捉结束，常驻不关反而需要再按一次 Esc 或热键，与「呼出—输入—离开」的使用节奏不符。用户已明确要求默认失焦关闭，并以「固定」开关覆盖原决策担心的对照场景。
+- 决策：
+  1. Quick Bar 面板失去键窗口焦点（`NSWindowDidResignKeyNotification`）时立即隐藏，并上报 `HideReason = "focus_lost"`；草稿照常保留。
+  2. 新增「固定 Quick Bar」开关：状态持久化于 `settings.yaml` 的 `quick_bar.pinned`（默认 `false`）；为 `true` 时失焦不隐藏。开关在 Quick Bar 标题栏（「取消」左侧图标）与主窗口「窗口」菜单（`固定 Quick Bar`，勾选项）两处提供，状态保持一致。
+  3. `D-0002` 中「点击面板外部不关闭；`esc`、`hotkey`、`space_changed` 是仅有的三种关闭入口」自此被本决策取代；`D-0002` 其余内容（`collectionBehavior = 256`、不跨 Space、切 Space 自动复位）继续有效。
+- 后果：`collectionBehavior` 与非激活面板机制不变；`hidesOnDeactivate` 仍为 `NO`，由应用自己决定失焦后是否隐藏。`C9.3` 第 1 条点验口径同步修订。
+- 否决替代：维持点外不关（与用户明确诉求冲突）；用 `hidesOnDeactivate = YES` 实现（无法被「固定」开关豁免）。

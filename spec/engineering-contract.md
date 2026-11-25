@@ -112,11 +112,11 @@ QuickNote/
 
 为方便开发阶段诊断全屏 Space、焦点切换与动态激活行为，macOS 原生桥接层须输出固定键值的结构化诊断日志（仅记录元数据，不含内容）：
 
-- `event`: `"panel_show" | "panel_hide" | "space_changed" | "policy_switch" | "hotkey_fired" | "toast_show"`
+- `event`: `"panel_show" | "panel_hide" | "space_changed" | "policy_switch" | "hotkey_fired" | "toast_show" | "focus_lost" | "vault_change_echo_ignored"`
 - `activationPolicy`: `"accessory" | "regular"`
 - `collectionBehavior`: integer（Quick Bar 与 Toast 恒为 `256`）
 - `isKeyWindow`: boolean
-- `hideReason`: `"esc" | "hotkey" | "space_changed" | null`
+- `hideReason`: `"esc" | "hotkey" | "space_changed" | "focus_lost" | null`
 
 ---
 
@@ -181,7 +181,7 @@ pub enum ErrorCode {
    - `NoteMetaPatch { title: Option<String>, docType: Option<NoteType>, tags: Option<Vec<String>>, project: Option<Option<String>>, openDir: Option<Option<String>>, codeWorkspace: Option<Option<String>>, terminalDir: Option<Option<String>>, pinned: Option<bool>, archived: Option<bool> }`
    - `NoteUpdateMetaArgs { absPath: String, patch: NoteMetaPatch }`
    - `NotesFilterArgs { tab: String, dirRelPath: Option<String>, tags: Vec<String>, workspaceKey: Option<String>, filterText: Option<String> }`
-   - `NavTreeSnapshot { inboxCount: u32, dirs: Vec<DirNode>, tags: Vec<TagNode>, workspaces: Vec<WorkspaceSummary> }`（`DirNode { relPath, name, count, children }`、`TagNode { tag, count, children }`、`WorkspaceSummary { key, name, root, openDir }`）
+   - `NavTreeSnapshot { dirs: Vec<DirNode>, tags: Vec<TagNode>, workspaces: Vec<WorkspaceSummary> }`（`DirNode { relPath, name, count, children }`、`TagNode { tag, count, children }`、`WorkspaceSummary { key, name, root, openDir }`）
 
 3. **捕捉、目标解析、追加与撤销（`C8.1`–`C8.3`）**：
    - `CaptureMode = "list" | "todo" | "prose"`
@@ -205,7 +205,7 @@ pub enum ErrorCode {
 
 5. **窗口、状态、目录级工作区配置、`settings.yaml` 容错与外部动作**：
    - `WindowMode = "standard" | "fullscreen" | "auxiliary"`
-   - `HideReason = "esc" | "hotkey" | "space_changed"`
+   - `HideReason = "esc" | "hotkey" | "space_changed" | "focus_lost"`
    - `WindowState { windowId: String, visible: bool, fullscreen: bool, mode: Option<WindowMode>, reason: Option<HideReason> }`
    - `HotkeyStatus { combo: String, backupCombo: String, selfCheck: HotkeySelfCheck }`（`HotkeySelfCheck = "pending" | "ok" | "conflict"`）
    - `DirectoryWorkspaceConfig { vscodeWorkspacePath?: Option<String>, projectRoot?: Option<String>, defaultTerminalCwd?: Option<String>, externalAppOverrides?: Option<HashMap<String, String>> }` 与 `DirectoryWorkspaceConfigEntry { vaultRelDir: String, config: Option<DirectoryWorkspaceConfig>, mtimeMs: i64, parseError: Option<String> }`（笔记库子目录 `.quicknote.yaml` 绑定模型，替代已废弃的独立全局工作区）
@@ -246,6 +246,7 @@ pub enum ErrorCode {
 | 窗口与热键 | `window_close_settings` | — | `()` | v5 |
 | 窗口与热键 | `window_dismiss_toast` | — | `()` | v5 |
 | 窗口与热键 | `hotkey_update` | `HotkeyUpdateArgs { combo: String }` | `HotkeyStatus` | M0 |
+| 窗口与热键 | `window_set_quick_bar_pinned` | `SetQuickBarPinnedArgs { pinned: bool }` | `bool` | M5 |
 | 配置与状态 | `settings_get` | — | `SettingsSnapshot { settings: Settings, status: SettingsLoadStatus }` | M0 |
 | 配置与状态 | `settings_update` | `SettingsPatch` | `SettingsSnapshot` | M2 |
 | 配置与状态 | `settings_export` | `ExportPathArgs { destPath: String }` | `()` | M4 |
@@ -259,7 +260,7 @@ pub enum ErrorCode {
 | 笔记与列表 | `note_write` | `WriteNoteArgs` | `WriteResult` | M1 |
 | 笔记与列表 | `note_update_meta` | `NoteUpdateMetaArgs` | `NoteDoc` | M1 |
 | 笔记与列表 | `note_rename` | `RenameNoteArgs { relPath: String, newRelPath: String }` | `NoteDoc` | M1 |
-| 笔记与列表 | `note_delete` | `RelPathArgs { relPath: String }` | `()` | M1 |
+| 笔记与列表 | `note_delete` | `RelPathArgs { relPath: String }` | `()`（将文件移动到系统废纸篓（M5）） | M1 |
 | 笔记与列表 | `note_save_image` | `SaveImageArgs { sourcePath: Option<String>, bytesBase64: Option<String>, ext: String, contextRelPath: Option<String> }` | `SavedImageResult { relPath: String }` | M2 |
 | 捕捉与收件箱 | `capture_resolve_target` | `TargetResolveInput` | `ResolvedTarget` | M1 |
 | 捕捉与收件箱 | `note_append` | `AppendNoteArgs` | `AppendResult` | M1 |
@@ -269,6 +270,7 @@ pub enum ErrorCode {
 | 搜索与命令库 | `path_complete` | `PathCompleteArgs { prefix: String, requestId: u64 }` | `Vec<PathEntry>` | M3 |
 | 搜索与命令库 | `commands_search` | `CommandSearchArgs { query: String }` | `Vec<CommandEntry>` | M3 |
 | 搜索与命令库 | `tags_batch_rename` | `TagRenameArgs { oldTag: String, newTag: String }` | `TagRenameResult { updatedFiles: u32 }` | M3 |
+| 搜索与命令库 | `search_spotlight` | `SpotlightArgs` | `Vec<SearchResultItem>` | deprecated（Spotlight 已废止，M5-06e 删除） |
 | 外部直扫、书签与目录工作区 | `probe_external_path` | `{ rawPath: String }` | `ExternalPathProbeResult` | v5 |
 | 外部直扫、书签与目录工作区 | `list_external_directory` | `{ dirPath: String, query: Option<String>, includeHidden: bool }` | `ExternalDirectoryListing` | v5 |
 | 外部直扫、书签与目录工作区 | `list_current_doc_siblings` | `{ docPath: String }` | `ExternalDirectoryListing` | v5 |
@@ -287,7 +289,7 @@ pub enum ErrorCode {
 | 内嵌终端 | `terminal_kill` | `TerminalKillArgs { sessionId: String }` | `()` | M4 |
 | 内嵌终端 | `terminal_list_sessions` | — | `Vec<TerminalSessionInfo>` | M4 |
 
-> 说明：`ui_state_set` 的键白名单涵盖：`windows`、`tabs`、`panelGroup`、`filters`、`selectedWorkspace`、`hotkey`、`lastActiveDoc`、`workspaceModes`。
+> 说明：`ui_state_set` 的键白名单涵盖：`windows`、`tabs`、`leftSidebar`、`terminalPanel`、`filters`、`backupPaths`、`selectedWorkspace`、`hotkey`、`lastActiveDoc`、`workspaceModes`。
 
 ### C4.3 事件与流式通道契约
 
@@ -429,6 +431,7 @@ quick_bar:
   last_active_ttl_hours: 24
   destroy_after_hidden_minutes: 10
   auto_create_missing_section: false
+  pinned: false                           # 固定后失焦不关闭
 main_window:
   mode: standard                          # standard | fullscreen | auxiliary
   auxiliary_width_percent: 45
@@ -442,12 +445,14 @@ editor:
   auto_save_debounce_ms: 600
   auto_save_max_wait_ms: 2000
   single_click_link: false
+  show_tab_close_button: false
 panels:
   default: outline
   width: 260
   terminal:
     visible_by_default: false
     width: 360
+    height: 240                           # 底部终端面板高度 px
     shell: /bin/zsh
     idle_recycle_minutes: 30              # 0 表示禁用空闲自动回收
     max_concurrent_sessions: 3
@@ -476,12 +481,12 @@ external_bookmarks: []                    # 常用外部文件/目录书签（�
 
 ### C6.3 `ui-state.json` 完整 Schema
 
+`leftSidebar`、`terminalPanel`、`backupPaths` 在旧版 `ui-state.json` 缺失时取默认值；旧键 `panelGroup` 读取时忽略。
+
 ```typescript
 // 本表对应 Rust UiState 结构体导出形态（camelCase）
 interface UiState {
-  windows: {
-    main: { x: number; y: number; width: number; height: number; mode: "standard" | "fullscreen" | "auxiliary"; isOpen: boolean };
-  };
+  windows: { main: { x: number; y: number; width: number; height: number; mode: "standard" | "fullscreen" | "auxiliary"; isOpen: boolean } };
   tabs: {
     items: Array<{
       key: string;
@@ -495,26 +500,23 @@ interface UiState {
     activeKey: string | null;
     closedStack: string[]; // 最近关闭 absPath，供 ⌘⇧T 恢复
   };
-  panelGroup: {
-    visible: boolean;
-    activeId: "outline" | "terminal" | "related" | "recent";
-    width: number;
+  leftSidebar: {
+    width: number;                                   // px，默认 300
+    activeView: "workspace" | "related" | "outline";  // 左侧栏顶层视图
     collapsed: boolean;
   };
+  terminalPanel: { visible: boolean; height: number; collapsed: boolean }; // 编辑器底部终端
   filters: {
-    activeTab: "inbox" | "projects" | "tags" | "recent" | "workspaces";
+    activeTab: "projects" | "tags" | "recent";       // 旧值 "inbox" 读取时映射为 "projects"
     selectedDir: string | null;
     selectedTags: string[];
     listScrollTop: number;
   };
-  selectedWorkspaceKey: string | null;
+  backupPaths: { lastExportPath: string | null; lastImportPath: string | null };
+  selectedWorkspaceKey: string | null; // 已废弃，M5-06f 移除
   lastActiveDoc: { relPath: string; workspaceKey: string | null; touchedAtMs: number } | null;
   workspaceModes: Record<string, "list" | "todo" | "prose">;
-  hotkey: {
-    combo: string;
-    backupCombo: string;
-    selfCheck: "pending" | "ok" | "conflict";
-  };
+  hotkey: { combo: string; backupCombo: string; selfCheck: "pending" | "ok" | "conflict" };
 }
 ```
 
@@ -557,12 +559,12 @@ interface ActionDef {
 核心命名空间：
 
 - `global.*`：`global.toggleQuickBar`（`⌃⌥Space`）、`global.toggleMainWindow`
-- `quickbar.*`：`quickbar.mode.capture`、`quickbar.mode.open`（`⌘K`）、`quickbar.mode.command`（`⌘⇧K`）、`quickbar.captureMode.list`（`⌘1`）、`quickbar.captureMode.todo`（`⌘2`）、`quickbar.captureMode.prose`（`⌘3`）、`quickbar.selectTarget`（`⌘T`）、`quickbar.submitAppend`（`⌘↵`）、`quickbar.submitOpenMain`（`⇧⌘↵`）、`quickbar.saveAsNote`（`⌥⌘↵`）、`quickbar.openCommandSource`（`⌘O`）
-- `editor.*`：`editor.bold`（`⌘B`）、`editor.italic`（`⌘I`）、`editor.codeBlock`（`⌥⌘C`）、`editor.table`（`⌥⌘G`）、`editor.toggleTodo`（`⌥⌘X`）、`editor.link`（`⌥⌘K`）、`editor.image`（`⌥⌘I`）、`editor.bulletList`（`⌥⌘L`）、`editor.blockquote`（`⌥⌘Q`）、`editor.heading1`..`6`（`⌥⌘1..6`）、`editor.indent`（`Tab`）、`editor.outdent`（`⇧Tab`）、`editor.moveSelectionToNewNote`（`when: editor.hasSelection`）
-- `panel.*`：`panel.toggle.outline`（`⌃⌘O`）、`panel.toggle.terminal`（`⌃⌘T`）、`panel.toggle.related`（`⌃⌘R`）、`panel.toggle.recent`（`⌃⌘E`）、`panel.collapseGroup`（`⌃⌘0`）
+- `quickbar.*`：`quickbar.mode.capture`（`⌘N`）、`quickbar.mode.open`（`⌘K`）、`quickbar.mode.command`（`⌘⇧K`）、`quickbar.captureMode.list`（`⌘1`）、`quickbar.captureMode.todo`（`⌘2`）、`quickbar.captureMode.prose`（`⌘3`）、`quickbar.selectTarget`（`⌘T`）、`quickbar.submitAppend`（`⌘↵`）、`quickbar.submitOpenMain`（`⇧⌘↵`）、`quickbar.saveAsNote`（`⌥⌘↵`）、`quickbar.openCommandSource`（`⌘O`）、`quickbar.togglePin`
+- `editor.*`：`editor.bold`（`⌘B`）、`editor.italic`（`⌘I`）、`editor.codeBlock`（`⌥⌘C`）、`editor.table`（`⌥⌘G`）、`editor.toggleTodo`（`⌥⌘X`）、`editor.link`（`⌥⌘K`）、`editor.image`（`⌥⌘I`）、`editor.bulletList`（`⌥⌘L`）、`editor.blockquote`（`⌥⌘Q`）、`editor.heading1`..`6`（`⌥⌘1..6`）、`editor.indent`（`Tab`）、`editor.outdent`（`⇧Tab`）、`editor.moveSelectionToNewNote`（`when: editor.hasSelection`）、`editor.find`（`⌘F`）、`editor.replace`（`⌥⌘F`）
+- `panel.*`：`panel.toggle.outline`（`⌃⌘O`，左侧栏「大纲」视图）、`panel.toggle.related`（`⌃⌘R`，左侧栏「相关文档」视图）、`panel.toggle.terminal`（`⌃⌘T`，编辑器底部终端）
 - `external.*`：同 `C3.4` `ExternalActionId`
 - `folder.*`：`folder.bindWorkspaceConfig`（绑定/编辑目录 `.quicknote.yaml`）、`folder.openWorkspaceInVscode`（以该目录绑定的工作区在 VS Code 中打开）
-- `window.*`：含 `window.toggleAuxiliary`（切换 45% 侧栏辅助模式）等主窗口命令
+- `window.*`：`window.nextTab`（`⌃⇥`）、`window.prevTab`（`⇧⌃⇥`）、`window.pinQuickBar`、`window.toggleAuxiliary`
 
 ### C7.3 作用域优先级、放行与显式吞键
 
@@ -571,14 +573,12 @@ interface ActionDef {
 3. **高优先级显式吞键**：
    - 当焦点位于 `terminal` 时，`⌥⌘C` 显式设为 `swallowWhenDisabled: true` 或在 `terminal` 作用域拦截吞掉，防止穿透至 `editor` 插入代码块；`⌘C` 仅在终端有选区时复制文本且不写入 PTY，无选区或 `⌃C`/`⌃D`/`⌃Z` 放行直传 PTY。
 
-### C7.4 右侧面板注册表与响应式断点
+### C7.4 左侧栏视图注册表与底部终端面板
 
-- 面板顺序与默认宽度：`outline`（`260px`，默认显示）、`terminal`（`360px`，默认隐藏）、`related`（`260px`，默认隐藏）、`recent`（`240px`，默认隐藏）。
-- 宽度约束：面板最小 `220px`，编辑区最小 `480px`。
-- 响应式断点：
-  - `< 1200px`：面板组收起为窄图标条；
-  - `< 1000px`：左侧导航+列表可收起为图标条；
-  - `< 900px`（含 45% 侧栏辅助窄窗口）：面板组以覆盖式抽屉浮于编辑区右侧，禁止继续挤压编辑区至 `< 480px`。
+- 左侧栏顶层视图顺序：`workspace`（笔记导航：目录 / 标签 / 最近）、`related`（相关文档）、`outline`（大纲）。
+- 左侧栏宽度：默认 `300px`，最小 `220px`，可拖动并持久化于 `ui-state.json` 的 `leftSidebar.width`；收起为 `36px` 图标条。
+- 底部终端面板：默认隐藏，高度默认 `240px`，范围 `120–600px`，可拖动并持久化于 `terminalPanel.height`；折叠时终端会话保活。
+- 响应式断点：`< 1000px` 左侧栏收为图标条；`< 900px`（含 45% 侧栏辅助窄窗口）左侧栏以覆盖式抽屉浮于编辑区之上，编辑区最小宽度 `480px`。
 
 ### C7.5 常驻内存模型、单视图 LRU 池与 45% 侧栏辅助模式
 
@@ -629,10 +629,9 @@ interface ActionDef {
 
 ### C8.5 防回环与外部变更状态机
 
-- 应用每次写入成功（`note_write` / `note_append` / `note_update_meta` / `set_directory_workspace_config`）后，记录 `(canonical_abs_path, body_hash, expires_at = now + 1500ms)` 到内存写入缓存表；其中 `.quicknote.yaml` 应用内写入/清除同样必须走原子写 + 自写守卫。
-- `notify` 收到磁盘修改事件后先对文件重读正文计算 `disk_body_hash`：
-  - 若 `disk_body_hash` 与写入缓存中的近期哈希相同（或处于抑制窗口且内容未变），仅更新索引 `mtime` 并**静默丢弃事件**。
-  - 若哈希确实不同，发送 `fs:external-change(modified)`；前端若当前标签 **干净态（`!isDirty`）**，立即静默用新 `body`/`meta` 重置编辑器状态并尽量维持原滚动位置；若 **脏态（`isDirty`）**，暂停该标签自动保存并激活冲突横幅（重载 / 备份后覆盖 / CM6 `MergeView` 并排合并 / 暂缓）。
+- 应用每次写入前（`note_write` / `note_append` / `note_update_meta` / `note_rename` / `tags_batch_rename` / 撤销追加 / `set_directory_workspace_config` 的写入与删除）先以「预计落盘 body_hash」在内存写入缓存表登记 `(canonical_abs_path, body_hash, expires_at = now + 1500ms)`；写入失败必须立即清除该登记。`.quicknote.yaml` 的应用内写入 / 清除同样走原子写 + 自写守卫。
+- `notify` 收到磁盘修改事件后先重读正文计算 `disk_body_hash`：若与写入缓存中的近期哈希相同（或处于抑制窗口且内容未变），仅更新索引 `mtime` 并静默丢弃事件；若哈希确实不同，发送 `fs:external-change(modified)`。
+- 前端收到 `modified` 事件时，若 `newBodyHash` 等于该标签的 `baseBodyHash` 且 `newMeta` 与标签当前 `meta` 一致，视为应用自身写入的回声：记诊断事件 `vault_change_echo_ignored` 并忽略，不重置编辑器状态、不弹冲突横幅。其余情况按原规则：干净态静默重载，脏态激活冲突横幅。
 - `notify` 收到删除或移出路径事件：发 `fs:external-change(deleted)`，前端绝不关闭标签、保留编辑器完整正文并标红警告。
 
 ### C8.6 `related` 面板加权打分
@@ -689,7 +688,7 @@ interface ActionDef {
 
 每当任务卡涉及原生窗口、热键或输入法交互时，由用户在真实 macOS 桌面完成 5 项点验：
 
-1. 全屏 App（如 Safari / 终端全屏）下 `⌃⌥Space` 呼出 Quick Bar 覆盖当前空间、不切 Space、点击外侧不关、切 Space 自动复位且留存草稿。
+1. 全屏 App（如 Safari / 终端全屏）下 `⌃⌥Space` 呼出 Quick Bar 覆盖当前空间、不切 Space；未固定时点击面板外立即关闭且草稿保留，固定后点击外侧不关；切 Space 自动复位且留存草稿。
 2. `⌘↵` 提交后 5 秒非激活 Toast 正常出现于当前空间且点击撤销不抢原 App 焦点。
 3. 打开主窗口/关闭主窗口时 `.accessory ↔ .regular` 切换正常、系统顶栏菜单完备、全屏工作台 Mission Control 拖拽排序持久化。
 4. 45% 侧栏辅助窗口覆盖全屏右侧不挤压/改变其他 App 尺寸。
@@ -735,6 +734,8 @@ Card: M1-02
 - 发现两处契约描述与 [quicknote-design-v5.md](quicknote-design-v5.md) 存在冲突；
 - 需要在契约之外新增未定义依赖、数据表字段或产品交互规则。
 
+M5 登记的新依赖：Rust `trash`（删除到废纸篓）、`tauri-plugin-dialog` 与 npm `@tauri-apps/plugin-dialog`（系统文件选择窗口）、npm `@codemirror/search`（查找替换）。
+
 ### C11.2 冲突仲裁优先级
 
 当多份文件发生细节不一致时，按以下从高到低优先级仲裁，并立即修正下位文档消除不一致：
@@ -759,8 +760,8 @@ Card: M1-02
 ```markdown
 # <Card-ID>：<简明中文标题>
 
-- 所属里程碑：M0 / M1 / M2 / M3 / M4
-- 关联方案与契约：`v4` §x.y、`Cx.y`、`D-xxxx`
+- 所属里程碑：M0 / M1 / M2 / M3 / M4 / M5
+- 关联方案与契约：`v5` §x.y、`Cx.y`、`D-xxxx`
 - 前置依赖：<已完成卡片 ID 或无>
 - 会话策略：独立新会话执行；完成后提交并结束会话
 
