@@ -1,5 +1,7 @@
 import type {
   CreateNoteArgs,
+  DirectoryWorkspaceConfig,
+  DirectoryWorkspaceConfigEntry,
   IndexStatus,
   NavTreeSnapshot,
   NoteDoc,
@@ -15,12 +17,14 @@ import type {
 import {
   externalActionRun,
   isAppError,
+  listDirectoryWorkspaceConfigs,
   noteCreate,
   noteDelete,
   noteRename,
   notesGetTreeAndTags,
   notesList,
   searchNotesAndFiles,
+  setDirectoryWorkspaceConfig,
   tagsBatchRename,
   uiStateGet,
   uiStateSet,
@@ -95,6 +99,50 @@ export function revealExternalFileByPath(absPath: string): Promise<void> {
     id: 'external.reveal',
     absPath,
     dirPath: null,
+  });
+}
+
+export async function fetchDirectoryWorkspaceConfigMap(): Promise<
+  Record<string, DirectoryWorkspaceConfigEntry>
+> {
+  if (typeof listDirectoryWorkspaceConfigs !== 'function') {
+    return {};
+  }
+  const entries = await listDirectoryWorkspaceConfigs();
+  const map: Record<string, DirectoryWorkspaceConfigEntry> = {};
+  for (const entry of entries) {
+    map[entry.vaultRelDir] = entry;
+  }
+  return map;
+}
+
+export function saveDirectoryWorkspaceConfig(
+  vaultRelDir: string,
+  config: DirectoryWorkspaceConfig | null,
+): Promise<void> {
+  return setDirectoryWorkspaceConfig({ vaultRelDir, config });
+}
+
+export function openDirectoryWorkspaceInVscode(config: DirectoryWorkspaceConfig): Promise<void> {
+  const vscodeWorkspacePath = (
+    config.vscodeWorkspacePath ??
+    config.vscode_workspace_path ??
+    ''
+  ).trim();
+  if (vscodeWorkspacePath) {
+    return externalActionRun({
+      id: 'external.workspace',
+      absPath: vscodeWorkspacePath,
+      dirPath: null,
+    });
+  }
+  const projectRoot = (config.projectRoot ?? config.project_root ?? '').trim();
+  const terminalCwd = (config.defaultTerminalCwd ?? config.default_terminal_cwd ?? '').trim();
+  const targetDir = projectRoot || terminalCwd;
+  return externalActionRun({
+    id: 'external.vscode',
+    absPath: null,
+    dirPath: targetDir || null,
   });
 }
 

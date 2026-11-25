@@ -1355,6 +1355,8 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           seenPreview = true;
         }
 
+        const isMissing = Boolean(item.relPath !== null && matched === null);
+
         restored.push({
           key: resolvedKey,
           relPath: resolvedRelPath,
@@ -1365,7 +1367,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           cursorPos: item.cursorPos,
           doc: null,
           isDirty: false,
-          isMissing: false,
+          isMissing,
           evicted: true,
           lastAccessedAt: Date.now(),
           draftBody: '',

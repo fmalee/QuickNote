@@ -513,6 +513,26 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     menuGroup: 'tools',
     run: noopAction,
   },
+
+  // folder.* 目录工作区上下文动作
+  {
+    id: 'folder.bindWorkspaceConfig',
+    title: '绑定工作区配置…',
+    category: 'external',
+    defaultKeys: null,
+    scope: 'list',
+    when: (ctx) => typeof ctx.payload?.vaultRelDir === 'string',
+    run: noopAction,
+  },
+  {
+    id: 'folder.openWorkspaceInVscode',
+    title: '在 VS Code 中打开工作区',
+    category: 'external',
+    defaultKeys: null,
+    scope: 'list',
+    when: (ctx) => Boolean(ctx.payload?.hasWorkspaceTarget),
+    run: noopAction,
+  },
 ];
 
 export function registerDefaultActionCatalog(registry: ActionRegistry): () => void {
