@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 
 use crate::domain::command_book::CommandEntry;
 use crate::domain::error::{AppError, ErrorCode};
@@ -10,6 +10,15 @@ use crate::infra::fs::map_io_error;
 
 /// Initial SQLite schema migration (`C5.2`).
 pub const MIGRATION_0001: &str = include_str!("../../migrations/0001_init.sql");
+
+/// Directory workspace `.quicknote.yaml` cache migration (`C5.2`).
+pub const MIGRATION_0002: &str =
+    include_str!("../../migrations/0002_directory_workspace_cache.sql");
+
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("0001_init", MIGRATION_0001),
+    ("0002_directory_workspace_cache", MIGRATION_0002),
+];
 
 const EXPECTED_TABLES: &[&str] = &[
     "schema_migrations",
@@ -19,6 +28,7 @@ const EXPECTED_TABLES: &[&str] = &[
     "note_links",
     "commands",
     "notes_fts",
+    "directory_workspace_configs",
 ];
 
 const EXPECTED_NOTES_COLUMNS: &[&str] = &[
@@ -51,6 +61,13 @@ const EXPECTED_COMMANDS_COLUMNS: &[&str] = &[
     "keywords",
     "is_danger",
     "line",
+];
+
+const EXPECTED_DIRECTORY_WORKSPACE_CONFIGS_COLUMNS: &[&str] = &[
+    "vault_rel_dir",
+    "config_json",
+    "mtime_ms",
+    "parse_error",
 ];
 
 fn map_sqlite_error(err: rusqlite::Error, context: &str) -> AppError {
@@ -155,8 +172,11 @@ fn validate_sqlite_schema(conn: &Connection) -> Result<(), AppError> {
         .collect::<Result<HashSet<String>, _>>()
         .map_err(|e| map_sqlite_error(e, "Failed to collect schema_migrations"))?;
 
-    if !applied_ids.contains("0001_init")
-        || applied_ids.iter().any(|id| id.as_str() != "0001_init")
+    let expected_ids: HashSet<&str> = MIGRATIONS.iter().map(|(id, _)| *id).collect();
+    if applied_ids.len() != expected_ids.len()
+        || applied_ids
+            .iter()
+            .any(|id| !expected_ids.contains(id.as_str()))
     {
         return Err(AppError::new(
             ErrorCode::InternalError,
@@ -166,6 +186,11 @@ fn validate_sqlite_schema(conn: &Connection) -> Result<(), AppError> {
 
     verify_table_columns(conn, "notes", EXPECTED_NOTES_COLUMNS)?;
     verify_table_columns(conn, "commands", EXPECTED_COMMANDS_COLUMNS)?;
+    verify_table_columns(
+        conn,
+        "directory_workspace_configs",
+        EXPECTED_DIRECTORY_WORKSPACE_CONFIGS_COLUMNS,
+    )?;
 
     Ok(())
 }
@@ -193,52 +218,75 @@ fn try_init_sqlite(db_path: &Path) -> Result<Connection, AppError> {
     }
 
     let has_migrations_table = table_exists(&conn, "schema_migrations")?;
-    if has_migrations_table {
-        let applied: Option<String> = conn
-            .query_row(
-                "SELECT id FROM schema_migrations WHERE id = ?1",
-                params!["0001_init"],
-                |row| row.get(0),
-            )
-            .optional()
+    let applied_ids: HashSet<String> = if has_migrations_table {
+        let mut mig_stmt = conn
+            .prepare("SELECT id FROM schema_migrations")
             .map_err(|e| map_sqlite_error(e, "Failed to query schema_migrations"))?;
+        let ids = mig_stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| map_sqlite_error(e, "Failed to read schema_migrations"))?
+            .collect::<Result<HashSet<String>, _>>()
+            .map_err(|e| map_sqlite_error(e, "Failed to collect schema_migrations"))?;
+        ids
+    } else {
+        HashSet::new()
+    };
 
-        if applied.is_some() {
-            validate_sqlite_schema(&conn)?;
-            return Ok(conn);
-        }
+    let known_ids: HashSet<&str> = MIGRATIONS.iter().map(|(id, _)| *id).collect();
+    if applied_ids
+        .iter()
+        .any(|id| !known_ids.contains(id.as_str()))
+    {
+        return Err(AppError::new(
+            ErrorCode::InternalError,
+            "Incompatible SQLite migration state",
+        ));
     }
 
-    // If any domain table already exists without `0001_init`, treat as incompatible cache.
-    for table in EXPECTED_TABLES {
-        if *table != "schema_migrations" && table_exists(&conn, table)? {
-            return Err(AppError::new(
-                ErrorCode::InternalError,
-                "Incompatible SQLite schema without 0001_init migration",
-            ));
+    if applied_ids.is_empty() {
+        // If any domain table already exists without recorded migrations, treat as incompatible cache.
+        for table in EXPECTED_TABLES {
+            if *table != "schema_migrations" && table_exists(&conn, table)? {
+                return Err(AppError::new(
+                    ErrorCode::InternalError,
+                    "Incompatible SQLite schema without 0001_init migration",
+                ));
+            }
         }
+    } else if !applied_ids.contains("0001_init") {
+        return Err(AppError::new(
+            ErrorCode::InternalError,
+            "Incompatible SQLite migration state missing 0001_init",
+        ));
     }
 
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS schema_migrations (
-           id TEXT PRIMARY KEY,
-           applied_at INTEGER NOT NULL
-         );",
-    )
-    .map_err(|e| map_sqlite_error(e, "Failed to ensure schema_migrations table"))?;
+    if !has_migrations_table {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+               id TEXT PRIMARY KEY,
+               applied_at INTEGER NOT NULL
+             );",
+        )
+        .map_err(|e| map_sqlite_error(e, "Failed to ensure schema_migrations table"))?;
+    }
 
-    let tx = conn
-        .transaction()
-        .map_err(|e| map_sqlite_error(e, "Failed to begin migration transaction"))?;
-    tx.execute_batch(MIGRATION_0001)
-        .map_err(|e| map_sqlite_error(e, "Failed to execute 0001_init.sql"))?;
-    tx.execute(
-        "INSERT INTO schema_migrations (id, applied_at) VALUES (?1, ?2)",
-        params!["0001_init", Utc::now().timestamp_millis()],
-    )
-    .map_err(|e| map_sqlite_error(e, "Failed to record 0001_init migration"))?;
-    tx.commit()
-        .map_err(|e| map_sqlite_error(e, "Failed to commit 0001_init migration"))?;
+    for (id, sql) in MIGRATIONS {
+        if applied_ids.contains(*id) {
+            continue;
+        }
+        let tx = conn
+            .transaction()
+            .map_err(|e| map_sqlite_error(e, "Failed to begin migration transaction"))?;
+        tx.execute_batch(sql)
+            .map_err(|e| map_sqlite_error(e, &format!("Failed to execute {id} migration")))?;
+        tx.execute(
+            "INSERT INTO schema_migrations (id, applied_at) VALUES (?1, ?2)",
+            params![id, Utc::now().timestamp_millis()],
+        )
+        .map_err(|e| map_sqlite_error(e, &format!("Failed to record {id} migration")))?;
+        tx.commit()
+            .map_err(|e| map_sqlite_error(e, &format!("Failed to commit {id} migration")))?;
+    }
 
     validate_sqlite_schema(&conn)?;
     Ok(conn)
@@ -697,4 +745,147 @@ pub fn list_backlink_sources(
         .map_err(|e| map_sqlite_error(e, "Failed to read backlink source rows"))?;
 
     Ok(sources)
+}
+
+/// Cached row from `directory_workspace_configs` representing a `.quicknote.yaml` file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectoryWorkspaceConfigRecord {
+    pub vault_rel_dir: String,
+    pub config_json: String,
+    pub mtime_ms: i64,
+    pub parse_error: Option<String>,
+}
+
+fn normalize_vault_rel_dir(raw: &str) -> String {
+    raw.replace('\\', "/")
+        .split('/')
+        .filter(|segment| !segment.is_empty() && *segment != ".")
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn collect_ancestor_dirs(vault_rel_dir: &str) -> Vec<String> {
+    let normalized = normalize_vault_rel_dir(vault_rel_dir);
+    let mut ancestors = Vec::new();
+    ancestors.push(String::new());
+    if !normalized.is_empty() {
+        let mut current = String::new();
+        for segment in normalized.split('/') {
+            if !current.is_empty() {
+                current.push('/');
+            }
+            current.push_str(segment);
+            ancestors.push(current.clone());
+        }
+    }
+    ancestors
+}
+
+/// Upserts a cached directory workspace config (`.quicknote.yaml`) by `vault_rel_dir`.
+pub fn upsert_directory_workspace_config(
+    conn: &Connection,
+    rec: &DirectoryWorkspaceConfigRecord,
+) -> Result<(), AppError> {
+    let normalized_dir = normalize_vault_rel_dir(&rec.vault_rel_dir);
+    conn.execute(
+        "INSERT INTO directory_workspace_configs (
+            vault_rel_dir, config_json, mtime_ms, parse_error
+         ) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(vault_rel_dir) DO UPDATE SET
+            config_json = excluded.config_json,
+            mtime_ms = excluded.mtime_ms,
+            parse_error = excluded.parse_error",
+        params![
+            normalized_dir,
+            rec.config_json,
+            rec.mtime_ms,
+            rec.parse_error
+        ],
+    )
+    .map_err(|e| map_sqlite_error(e, "Failed to upsert directory_workspace_configs"))?;
+    Ok(())
+}
+
+/// Deletes a cached directory workspace config by `vault_rel_dir`.
+pub fn delete_directory_workspace_config(
+    conn: &Connection,
+    vault_rel_dir: &str,
+) -> Result<(), AppError> {
+    let normalized_dir = normalize_vault_rel_dir(vault_rel_dir);
+    conn.execute(
+        "DELETE FROM directory_workspace_configs WHERE vault_rel_dir = ?1",
+        params![normalized_dir],
+    )
+    .map_err(|e| map_sqlite_error(e, "Failed to delete directory_workspace_configs"))?;
+    Ok(())
+}
+
+/// Lists all cached directory workspace configs ordered by `vault_rel_dir ASC`.
+pub fn list_directory_workspace_configs(
+    conn: &Connection,
+) -> Result<Vec<DirectoryWorkspaceConfigRecord>, AppError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT vault_rel_dir, config_json, mtime_ms, parse_error
+             FROM directory_workspace_configs
+             ORDER BY vault_rel_dir ASC",
+        )
+        .map_err(|e| map_sqlite_error(e, "Failed to prepare list_directory_workspace_configs"))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(DirectoryWorkspaceConfigRecord {
+                vault_rel_dir: row.get(0)?,
+                config_json: row.get(1)?,
+                mtime_ms: row.get(2)?,
+                parse_error: row.get(3)?,
+            })
+        })
+        .map_err(|e| map_sqlite_error(e, "Failed to query directory_workspace_configs"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| map_sqlite_error(e, "Failed to read directory_workspace_configs rows"))?;
+
+    Ok(rows)
+}
+
+/// Batch-queries cached directory workspace configs for `vault_rel_dir` and all of its ancestors
+/// (including vault root `""`), ordered from nearest ancestor to vault root.
+pub fn list_ancestor_directory_workspace_configs(
+    conn: &Connection,
+    vault_rel_dir: &str,
+) -> Result<Vec<DirectoryWorkspaceConfigRecord>, AppError> {
+    let ancestors = collect_ancestor_dirs(vault_rel_dir);
+    let placeholders = (1..=ancestors.len())
+        .map(|idx| format!("?{idx}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT vault_rel_dir, config_json, mtime_ms, parse_error
+         FROM directory_workspace_configs
+         WHERE vault_rel_dir IN ({placeholders})
+         ORDER BY LENGTH(vault_rel_dir) DESC, vault_rel_dir ASC"
+    );
+
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| {
+            map_sqlite_error(e, "Failed to prepare list_ancestor_directory_workspace_configs")
+        })?;
+
+    let rows = stmt
+        .query_map(params_from_iter(ancestors.iter()), |row| {
+            Ok(DirectoryWorkspaceConfigRecord {
+                vault_rel_dir: row.get(0)?,
+                config_json: row.get(1)?,
+                mtime_ms: row.get(2)?,
+                parse_error: row.get(3)?,
+            })
+        })
+        .map_err(|e| map_sqlite_error(e, "Failed to query ancestor directory_workspace_configs"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| {
+            map_sqlite_error(e, "Failed to read ancestor directory_workspace_configs rows")
+        })?;
+
+    Ok(rows)
 }
