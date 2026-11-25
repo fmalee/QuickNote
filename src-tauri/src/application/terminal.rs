@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::fs;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
@@ -10,6 +12,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::application::persistence::PersistenceManager;
 use crate::domain::error::{AppError, ErrorCode};
+use crate::domain::note::parse_note;
 use crate::domain::terminal::{
     decode_base64, encode_base64, should_idle_recycle, TerminalData, TerminalExitPayload,
     TerminalExitReason, TerminalKillArgs, TerminalLifecycleState, TerminalResizeArgs,
@@ -17,10 +20,14 @@ use crate::domain::terminal::{
     TerminalWriteArgs, TERMINAL_BACKPRESSURE_LIMIT_BYTES, TERMINAL_FLUSH_BATCH_BYTES,
     TERMINAL_FLUSH_INTERVAL_MS, TERMINAL_IDLE_SWEEP_INTERVAL_SECS,
 };
-use crate::infra::pty::{
-    resolve_terminal_cwd, resolve_terminal_shell, PortablePtyBackend, PtyBackend, PtySessionHandle,
-    PtySpawnConfig,
+use crate::domain::workspace_context::{
+    resolve_effective_workspace, DirectoryWorkspaceConfig, DIRECTORY_CONFIG_FILENAME,
 };
+use crate::infra::pty::{
+    resolve_terminal_cwd as resolve_pty_cwd, resolve_terminal_shell, PortablePtyBackend,
+    PtyBackend, PtySessionHandle, PtySpawnConfig,
+};
+use crate::infra::sqlite::list_ancestor_directory_workspace_configs;
 
 /// Quiet gap threshold in milliseconds after which continuous output counter resets (2 seconds).
 const BACKPRESSURE_QUIET_RESET_MS: i64 = 2_000;
@@ -258,6 +265,79 @@ impl TerminalManager {
         format!("term-{}-{seq}", now_ms())
     }
 
+    /// Resolves the effective terminal working directory for an optional active document path.
+    ///
+    /// Resolution rules:
+    /// - Existing directory path: validated and returned directly.
+    /// - External file (outside `library_root`): returns the file's parent directory.
+    /// - Library document (inside `library_root`): resolves 3-tier workspace cascade
+    ///   (`Frontmatter > nearest ancestor .quicknote.yaml > document directory`),
+    ///   preferring `default_terminal_cwd`, then `project_root`, falling back to the
+    ///   document's parent directory.
+    /// - Empty / `None`: falls back to `library_root` when configured.
+    pub fn resolve_terminal_cwd(&self, active_doc_path: Option<&str>) -> Result<PathBuf, AppError> {
+        let library_root = self
+            .pm
+            .settings_get()
+            .ok()
+            .and_then(|snapshot| snapshot.settings.library_root)
+            .map(|root| root.trim().to_string())
+            .filter(|root| !root.is_empty())
+            .map(|root| expand_tilde_path(&root));
+
+        let Some(raw_input) = active_doc_path.map(str::trim).filter(|s| !s.is_empty()) else {
+            if let Some(root) = library_root {
+                return resolve_pty_cwd(&root.to_string_lossy());
+            }
+            return Err(AppError::new(
+                ErrorCode::WorkspaceDirMissing,
+                "Terminal working directory cannot be empty",
+            ));
+        };
+
+        let candidate = expand_tilde_path(raw_input);
+        if candidate.is_dir() {
+            return resolve_pty_cwd(&candidate.to_string_lossy());
+        }
+        if !candidate.is_file() {
+            return resolve_pty_cwd(raw_input);
+        }
+
+        let parent_dir = candidate.parent().ok_or_else(|| {
+            AppError::new(
+                ErrorCode::WorkspaceDirMissing,
+                "Active document has no parent directory",
+            )
+        })?;
+
+        if let Some(ref root) = library_root {
+            if let Some(vault_rel_dir) = vault_rel_dir_for_abs_path(&candidate, root) {
+                let doc_layer = read_doc_workspace_layer(&candidate);
+                let ancestor_layers =
+                    load_ancestor_workspace_layers(&self.pm, &candidate, root, &vault_rel_dir);
+                let effective =
+                    resolve_effective_workspace(doc_layer.as_ref(), &ancestor_layers, None);
+
+                for preferred in [
+                    effective.default_terminal_cwd.as_deref(),
+                    effective.project_root.as_deref(),
+                ] {
+                    if let Some(raw_dir) = preferred.map(str::trim).filter(|s| !s.is_empty()) {
+                        let resolved_dir = resolve_configured_dir(raw_dir, root);
+                        if let Ok(valid) = resolve_pty_cwd(&resolved_dir.to_string_lossy()) {
+                            return Ok(valid);
+                        }
+                    }
+                }
+
+                return resolve_pty_cwd(&parent_dir.to_string_lossy());
+            }
+        }
+
+        // External file: always default terminal cwd to the file's parent directory.
+        resolve_pty_cwd(&parent_dir.to_string_lossy())
+    }
+
     /// Spawns a new workspace-scoped PTY session (`C4.2`, `C8.7`).
     pub fn spawn_session(
         self: &Arc<Self>,
@@ -300,7 +380,7 @@ impl TerminalManager {
             }
         }
 
-        let cwd_path = resolve_terminal_cwd(&args.cwd)?;
+        let cwd_path = self.resolve_terminal_cwd(Some(&args.cwd))?;
         let shell = resolve_terminal_shell(args.shell.as_deref(), &term_settings.shell);
         let pty = self.backend.spawn(&PtySpawnConfig {
             cwd: cwd_path.clone(),
@@ -818,6 +898,125 @@ impl TerminalManager {
             .map(Arc::clone)
             .ok_or_else(|| AppError::new(ErrorCode::NotFound, "Terminal session not found"))
     }
+}
+
+fn expand_tilde_path(raw: &str) -> PathBuf {
+    let trimmed = raw.trim();
+    if trimmed == "~" {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home);
+        }
+    } else if let Some(rest) = trimmed.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home).join(rest);
+        }
+    }
+    PathBuf::from(trimmed)
+}
+
+fn resolve_configured_dir(raw: &str, library_root: &Path) -> PathBuf {
+    let expanded = expand_tilde_path(raw);
+    if expanded.is_absolute() {
+        expanded
+    } else {
+        library_root.join(expanded)
+    }
+}
+
+fn normalize_vault_rel_dir(raw: &str) -> String {
+    raw.replace('\\', "/")
+        .split('/')
+        .filter(|seg| !seg.is_empty() && *seg != ".")
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn vault_rel_dir_for_abs_path(abs_path: &Path, library_root: &Path) -> Option<String> {
+    let rel = if let Ok(r) = abs_path.strip_prefix(library_root) {
+        r.to_path_buf()
+    } else {
+        let canonical_abs = fs::canonicalize(abs_path).ok()?;
+        let canonical_root = fs::canonicalize(library_root).ok()?;
+        canonical_abs.strip_prefix(&canonical_root).ok()?.to_path_buf()
+    };
+
+    let rel_dir = if abs_path.is_dir() {
+        rel.as_path()
+    } else {
+        rel.parent().unwrap_or_else(|| Path::new(""))
+    };
+    Some(normalize_vault_rel_dir(&rel_dir.to_string_lossy()))
+}
+
+fn read_doc_workspace_layer(path: &Path) -> Option<DirectoryWorkspaceConfig> {
+    if !path.is_file() {
+        return None;
+    }
+    let raw = fs::read_to_string(path).ok()?;
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("note");
+    let parsed = parse_note(&raw, stem);
+    Some(DirectoryWorkspaceConfig::from_note_meta(&parsed.meta))
+}
+
+fn load_ancestor_workspace_layers(
+    pm: &PersistenceManager,
+    abs_path: &Path,
+    library_root: &Path,
+    vault_rel_dir: &str,
+) -> Vec<DirectoryWorkspaceConfig> {
+    if let Ok(records) =
+        pm.with_db(|conn| list_ancestor_directory_workspace_configs(conn, vault_rel_dir))
+    {
+        if !records.is_empty() {
+            let mut layers = Vec::with_capacity(records.len());
+            for rec in records {
+                if rec.parse_error.is_some() {
+                    continue;
+                }
+                if let Ok(cfg) = serde_json::from_str::<DirectoryWorkspaceConfig>(&rec.config_json)
+                {
+                    layers.push(cfg);
+                }
+            }
+            if !layers.is_empty() {
+                return layers;
+            }
+        }
+    }
+
+    // Read-only filesystem fallback when SQLite cache is not populated yet.
+    let canonical_root = fs::canonicalize(library_root).unwrap_or_else(|_| library_root.to_path_buf());
+    let start_dir = if abs_path.is_dir() {
+        abs_path.to_path_buf()
+    } else {
+        abs_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| library_root.to_path_buf())
+    };
+    let mut cursor = fs::canonicalize(&start_dir).unwrap_or(start_dir);
+    let mut layers = Vec::new();
+    loop {
+        let cfg_path = cursor.join(DIRECTORY_CONFIG_FILENAME);
+        if cfg_path.is_file() {
+            if let Ok(raw) = fs::read_to_string(&cfg_path) {
+                if let Ok(cfg) = serde_yaml::from_str::<DirectoryWorkspaceConfig>(&raw) {
+                    layers.push(cfg);
+                }
+            }
+        }
+        if cursor == canonical_root || !cursor.starts_with(&canonical_root) {
+            break;
+        }
+        let Some(parent) = cursor.parent() else {
+            break;
+        };
+        if parent == cursor {
+            break;
+        }
+        cursor = parent.to_path_buf();
+    }
+    layers
 }
 
 fn now_ms() -> i64 {

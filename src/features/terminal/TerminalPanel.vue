@@ -30,6 +30,7 @@ const xtermInstances = new Map<string, MountedXtermInstance>();
 let stopThemeObserver: (() => void) | null = null;
 
 const launchContext = computed(() => terminalStore.getCurrentLaunchContext());
+const currentDocDir = computed(() => terminalStore.getCurrentDocDir());
 const activeSession = computed(() => terminalStore.activeSession);
 const maxConcurrentSessions = computed<number>(
   () => settingsStore.snapshot?.settings.panels.terminal.maxConcurrentSessions ?? 3,
@@ -216,8 +217,12 @@ async function handleResumePausedOutput(): Promise<void> {
   await terminalStore.resumePausedOutput(terminalStore.activeSessionId);
 }
 
+async function handleSwitchToCurrentDocDir(): Promise<void> {
+  await terminalStore.switchToCurrentDocDir();
+}
+
 async function openExternalTerminal(): Promise<void> {
-  await terminalStore.openExternalTerminalForActiveSession();
+  await terminalStore.openCurrentCwdInExternalTerminal();
 }
 
 watch(
@@ -315,11 +320,21 @@ onUnmounted(() => {
         <button
           type="button"
           class="qn-terminal-panel__icon-btn"
-          title="在外部终端打开 (⌥⌘T)"
+          :title="currentDocDir ? `切换至当前文档目录 (${currentDocDir})` : '切换至当前文档目录'"
+          :disabled="!currentDocDir"
+          data-testid="terminal-cd-current-doc-btn"
+          @click="handleSwitchToCurrentDocDir"
+        >
+          切换至当前文档目录
+        </button>
+        <button
+          type="button"
+          class="qn-terminal-panel__icon-btn"
+          title="在外部终端中打开 (⌥⌘T)"
           data-testid="terminal-open-external-btn"
           @click="openExternalTerminal"
         >
-          外部终端
+          在外部终端中打开
         </button>
         <button
           v-if="activeSession"

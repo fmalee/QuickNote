@@ -44,6 +44,7 @@ export interface TerminalLaunchContext {
   workspaceLabel: string;
   cwd: string | null;
   source: TerminalLaunchSource;
+  activeDocPath?: string | null;
 }
 
 export interface TerminalSessionBridge {
@@ -67,6 +68,10 @@ function extractParentDir(absPath: string): string | null {
     return lastSep === 0 ? '/' : null;
   }
   return normalized.slice(0, lastSep);
+}
+
+function quoteShellPath(dirPath: string): string {
+  return `'${dirPath.replace(/'/g, `'\\''`)}'`;
 }
 
 function findMatchedWorkspace(
@@ -114,6 +119,7 @@ export function resolveTerminalLaunchContext(
   selectedWorkspaceKey: string | null,
   libraryRoot: string | null,
 ): TerminalLaunchContext {
+  const activeDocPath = normalizeNonEmpty(activeDoc?.absPath);
   const matchedWs = findMatchedWorkspace(
     workspaces,
     activeDoc?.meta.project ?? null,
@@ -126,6 +132,20 @@ export function resolveTerminalLaunchContext(
     'default';
   const fallbackLabel = matchedWs?.name ?? (fallbackKey === 'default' ? '默认工作区' : fallbackKey);
 
+  // 外部文件终端默认 cwd 必须取该文件所在父目录
+  if (activeDoc && !activeDoc.isLibrary && activeDocPath) {
+    const parent = extractParentDir(activeDocPath);
+    if (parent) {
+      return {
+        workspaceKey: fallbackKey,
+        workspaceLabel: fallbackLabel,
+        cwd: parent,
+        source: 'doc-parent-dir',
+        activeDocPath,
+      };
+    }
+  }
+
   const docTerminalDir = normalizeNonEmpty(activeDoc?.meta.terminalDir);
   if (docTerminalDir) {
     return {
@@ -133,6 +153,7 @@ export function resolveTerminalLaunchContext(
       workspaceLabel: fallbackLabel,
       cwd: docTerminalDir,
       source: 'doc-terminal-dir',
+      activeDocPath,
     };
   }
 
@@ -143,6 +164,7 @@ export function resolveTerminalLaunchContext(
       workspaceLabel: fallbackLabel,
       cwd: docOpenDir,
       source: 'doc-open-dir',
+      activeDocPath,
     };
   }
 
@@ -154,6 +176,7 @@ export function resolveTerminalLaunchContext(
         workspaceLabel: matchedWs.name,
         cwd: wsTerminalDir,
         source: 'workspace-terminal-dir',
+        activeDocPath,
       };
     }
 
@@ -164,6 +187,7 @@ export function resolveTerminalLaunchContext(
         workspaceLabel: matchedWs.name,
         cwd: wsOpenDir,
         source: 'workspace-open-dir',
+        activeDocPath,
       };
     }
 
@@ -174,18 +198,20 @@ export function resolveTerminalLaunchContext(
         workspaceLabel: matchedWs.name,
         cwd: wsRoot,
         source: 'workspace-root',
+        activeDocPath,
       };
     }
   }
 
-  if (activeDoc && !activeDoc.isLibrary && normalizeNonEmpty(activeDoc.absPath)) {
-    const parent = extractParentDir(activeDoc.absPath);
+  if (activeDocPath) {
+    const parent = extractParentDir(activeDocPath);
     if (parent) {
       return {
         workspaceKey: fallbackKey,
         workspaceLabel: fallbackLabel,
         cwd: parent,
         source: 'doc-parent-dir',
+        activeDocPath,
       };
     }
   }
@@ -197,6 +223,7 @@ export function resolveTerminalLaunchContext(
       workspaceLabel: fallbackLabel,
       cwd: rootDir,
       source: 'library-root',
+      activeDocPath,
     };
   }
 
@@ -205,6 +232,7 @@ export function resolveTerminalLaunchContext(
     workspaceLabel: fallbackLabel,
     cwd: null,
     source: 'none',
+    activeDocPath,
   };
 }
 
@@ -396,7 +424,8 @@ export const useTerminalStore = defineStore('terminal', () => {
       return existing;
     }
 
-    if (!context.cwd) {
+    const spawnTarget = normalizeNonEmpty(context.activeDocPath) ?? normalizeNonEmpty(context.cwd);
+    if (!spawnTarget) {
       errorMessage.value = '当前未找到可用的工作区目录，请先在设置中配置工作区或打开笔记目录';
       return null;
     }
@@ -415,7 +444,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       const info = await spawnTerminalSession(
         {
           workspaceKey: context.workspaceKey,
-          cwd: context.cwd,
+          cwd: spawnTarget,
           cols: Math.max(10, Math.floor(options?.cols ?? 80)),
           rows: Math.max(4, Math.floor(options?.rows ?? 24)),
           shell: configuredShell,
@@ -591,7 +620,52 @@ export const useTerminalStore = defineStore('terminal', () => {
     return true;
   }
 
-  async function openExternalTerminalForActiveSession(): Promise<boolean> {
+  function getCurrentDocDir(): string | null {
+    const editorTabsStore = useEditorTabsStore();
+    const docPath = normalizeNonEmpty(editorTabsStore.activeDoc?.absPath);
+    if (docPath) {
+      const parent = extractParentDir(docPath);
+      if (parent) {
+        return parent;
+      }
+    }
+    return normalizeNonEmpty(getCurrentLaunchContext().cwd);
+  }
+
+  async function switchToCurrentDocDir(): Promise<boolean> {
+    const targetDir = getCurrentDocDir();
+    if (!targetDir) {
+      errorMessage.value = '当前未找到可切换的文档目录，请先打开本地文档或配置工作区';
+      return false;
+    }
+    errorMessage.value = null;
+
+    const sid = activeSessionId.value;
+    if (!sid || !sessions.value[sid]) {
+      const spawned = await spawnForCurrentContext();
+      return Boolean(spawned);
+    }
+
+    try {
+      await sendInput(sid, `cd ${quoteShellPath(targetDir)}\n`);
+      const current = sessions.value[sid];
+      if (current) {
+        sessions.value = {
+          ...sessions.value,
+          [sid]: {
+            ...current,
+            cwd: targetDir,
+          },
+        };
+      }
+      return true;
+    } catch (error) {
+      errorMessage.value = extractTerminalErrorMessage(error);
+      return false;
+    }
+  }
+
+  async function openCurrentCwdInExternalTerminal(): Promise<boolean> {
     const targetDir =
       normalizeNonEmpty(activeSession.value?.cwd) ??
       normalizeNonEmpty(getCurrentLaunchContext().cwd);
@@ -607,6 +681,10 @@ export const useTerminalStore = defineStore('terminal', () => {
       errorMessage.value = extractTerminalErrorMessage(error);
       return false;
     }
+  }
+
+  async function openExternalTerminalForActiveSession(): Promise<boolean> {
+    return openCurrentCwdInExternalTerminal();
   }
 
   function clearNotice(): void {
@@ -628,6 +706,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     isPanelVisible,
     hasAutoStartedOnce,
     getCurrentLaunchContext,
+    getCurrentDocDir,
     registerSessionBridge,
     handleIncomingData,
     handleSessionStateEvent,
@@ -637,6 +716,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     refreshSessions,
     spawnOrFocusContext,
     spawnForCurrentContext,
+    switchToCurrentDocDir,
     selectSession,
     syncPanelVisibility,
     resumePausedOutput,
@@ -646,6 +726,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     setHasSelection,
     copyActiveSelection,
     pasteFromClipboardToSession,
+    openCurrentCwdInExternalTerminal,
     openExternalTerminalForActiveSession,
     clearNotice,
   };
