@@ -8,8 +8,8 @@ use quicknote_lib::domain::backup::{select_backups_to_prune, BackupEntry, MAX_BA
 use quicknote_lib::domain::error::ErrorCode;
 use quicknote_lib::domain::settings::{parse_settings_yaml, SetRootArgs, Settings};
 use quicknote_lib::domain::ui_state::{
-    BackupPathsUiState, LeftSidebarUiState, LeftViewId, TerminalPanelUiState, UiState, UiStateArgs,
-    UiStatePatchKey,
+    BackupPathsUiState, LeftSidebarUiState, LeftViewId, NavTab, TerminalPanelUiState, UiState,
+    UiStateArgs, UiStatePatchKey,
 };
 use quicknote_lib::infra::fs::prune_backups;
 
@@ -471,6 +471,25 @@ fn ui_state_left_sidebar_and_terminal_panel_roundtrip() {
             collapsed: false,
         }
     );
+
+    let _ = fs::remove_dir_all(&app_data_dir);
+}
+
+#[test]
+fn legacy_ui_state_inbox_active_tab_loads_as_projects() {
+    let app_data_dir = make_temp_dir("legacy_inbox_tab");
+    let mut legacy_json = serde_json::to_value(UiState::default()).expect("serialize default");
+    legacy_json["filters"]["activeTab"] = serde_json::json!("inbox");
+
+    fs::write(
+        app_data_dir.join("ui-state.json"),
+        serde_json::to_string_pretty(&legacy_json).expect("serialize legacy json"),
+    )
+    .expect("write legacy ui-state.json");
+
+    let pm = PersistenceManager::open(app_data_dir.clone()).expect("open PersistenceManager");
+    let loaded = pm.ui_state_get().expect("ui_state_get");
+    assert_eq!(loaded.filters.active_tab, NavTab::Projects);
 
     let _ = fs::remove_dir_all(&app_data_dir);
 }

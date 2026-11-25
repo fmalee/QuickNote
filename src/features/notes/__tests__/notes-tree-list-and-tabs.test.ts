@@ -78,8 +78,9 @@ vi.mock('@/lib/ipc/events', () => ({
 }));
 
 import { InboxBloatBanner, useEditorTabsStore } from '@/features/editor';
-import { useNotesStore } from '@/features/notes';
+import { NotesSidebar, useNotesStore } from '@/features/notes';
 import { useSettingsStore } from '@/features/settings';
+import { normalizeNavTab } from '../store';
 
 function makeSummary(overrides: Partial<NoteSummary> = {}): NoteSummary {
   const relPath = overrides.relPath === undefined ? 'projects/alpha.md' : overrides.relPath;
@@ -148,7 +149,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
       collapsed: false,
     },
     filters: overrides.filters ?? {
-      activeTab: 'inbox',
+      activeTab: 'projects',
       selectedDir: null,
       selectedTags: [],
       listScrollTop: 0,
@@ -233,7 +234,6 @@ describe('M1-04a 导航树、笔记列表与多标签状态机', () => {
     vi.clearAllMocks();
 
     const defaultTree: NavTreeSnapshot = {
-      inboxCount: 3,
       dirs: [{ relPath: 'projects', name: 'projects', count: 2, children: [] }],
       tags: [
         {
@@ -629,7 +629,6 @@ describe('M1-04a 导航树、笔记列表与多标签状态机', () => {
     mockNoteUpdateMeta.mockResolvedValueOnce(updated);
     mockNotesList.mockResolvedValue([makeSummary({ tags: ['x'] })]);
     mockNotesGetTreeAndTags.mockResolvedValue({
-      inboxCount: 0,
       dirs: [],
       tags: [{ tag: 'x', count: 1, children: [] }],
       workspaces: [],
@@ -642,5 +641,79 @@ describe('M1-04a 导航树、笔记列表与多标签状态机', () => {
     });
 
     editorTabsStore.dispose();
+  });
+
+  it('M5-04c：默认 activeTab 为 projects，且旧持久化值 inbox / workspaces 归一化为 projects', () => {
+    const notesStore = useNotesStore();
+    expect(notesStore.activeTab).toBe('projects');
+    expect(normalizeNavTab('inbox')).toBe('projects');
+    expect(normalizeNavTab('workspaces')).toBe('projects');
+    expect(normalizeNavTab('unknown')).toBe('projects');
+    expect(normalizeNavTab('tags')).toBe('tags');
+    expect(normalizeNavTab('recent')).toBe('recent');
+  });
+
+  it('M5-04c：左侧导航渲染目录/标签/最近/相关文档/大纲，不含收件箱与工作区且无「项目」文案', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const notesStore = useNotesStore();
+    notesStore.navTree = {
+      dirs: [{ relPath: 'alpha', name: 'alpha', count: 1, children: [] }],
+      tags: [{ tag: 'dev', count: 2, children: [] }],
+      workspaces: [],
+    };
+    notesStore.notes = [makeSummary({ relPath: 'inbox.md', isInbox: true, title: 'Inbox' })];
+
+    const app = createSSRApp(NotesSidebar);
+    app.use(pinia);
+    const html = await renderToString(app);
+
+    expect(html).toContain('data-testid="nav-tab-projects"');
+    expect(html).toContain('data-testid="nav-tab-tags"');
+    expect(html).toContain('data-testid="nav-tab-recent"');
+    expect(html).toContain('data-testid="nav-tab-related"');
+    expect(html).toContain('data-testid="nav-tab-outline"');
+    expect(html).not.toContain('data-testid="nav-tab-inbox"');
+    expect(html).not.toContain('data-testid="nav-tab-workspaces"');
+    expect(html).not.toContain('inbox-count-badge');
+    expect(html).not.toContain('项目');
+    expect(html).not.toContain('note-rename-btn-');
+    expect(html).not.toContain('note-delete-btn-');
+    expect(html).toContain('data-testid="left-sidebar-resizer"');
+  });
+
+  it('M5-04c：标签云渲染 tag-cloud，点击标签后 notesList 参数 tags 含该标签', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const notesStore = useNotesStore();
+    notesStore.navTree = {
+      dirs: [],
+      tags: [
+        {
+          tag: 'dev',
+          count: 4,
+          children: [{ tag: 'dev/rust', count: 1, children: [] }],
+        },
+      ],
+      workspaces: [],
+    };
+    await notesStore.setActiveTab('tags');
+
+    const app = createSSRApp(NotesSidebar);
+    app.use(pinia);
+    const html = await renderToString(app);
+
+    expect(html).toContain('data-testid="tag-cloud"');
+    expect(html).toContain('data-testid="tag-cloud-item-dev"');
+    expect(html).toContain('data-testid="tag-cloud-item-dev/rust"');
+
+    await notesStore.toggleTag('dev');
+    expect(mockNotesList).toHaveBeenLastCalledWith({
+      tab: 'tags',
+      dirRelPath: null,
+      tags: ['dev'],
+      workspaceKey: null,
+      filterText: null,
+    });
   });
 });

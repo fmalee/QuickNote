@@ -257,7 +257,6 @@ pub struct WorkspaceSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct NavTreeSnapshot {
-    pub inbox_count: u32,
     pub dirs: Vec<DirNode>,
     pub tags: Vec<TagNode>,
     pub workspaces: Vec<WorkspaceSummary>,

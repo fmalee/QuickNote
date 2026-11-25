@@ -20,12 +20,12 @@ pub enum CaptureMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum NavTab {
-    #[default]
-    Inbox,
-    Projects,
     Tags,
     Recent,
     Workspaces,
+    #[default]
+    #[serde(other)]
+    Projects,
 }
 
 /// Global hotkey self-check state (`C3.4`, `C6.3`, `D-0004`).
@@ -203,7 +203,7 @@ pub struct FiltersUiState {
 impl Default for FiltersUiState {
     fn default() -> Self {
         Self {
-            active_tab: NavTab::Inbox,
+            active_tab: NavTab::Projects,
             selected_dir: None,
             selected_tags: Vec::new(),
             list_scroll_top: 0.0,

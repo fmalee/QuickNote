@@ -393,11 +393,10 @@ export type MainWindowState = {
 };
 
 /**  Left navigation active tab (`C6.3`). */
-export type NavTab = "inbox" | "projects" | "tags" | "recent" | "workspaces";
+export type NavTab = "tags" | "recent" | "workspaces" | string;
 
 /**  Navigation snapshot returned by `notes_get_tree_and_tags` (`C3.4`). */
 export type NavTreeSnapshot = {
-	inboxCount: number,
 	dirs: DirNode[],
 	tags: TagNode[],
 	workspaces: WorkspaceSummary[],

@@ -124,7 +124,6 @@ describe('editor autosave, ULID backfill and external change handling', () => {
       dirs: [],
       tags: [],
       workspaces: [],
-      inboxCount: 0,
     } satisfies NavTreeSnapshot);
     mockOnIndexStatus.mockResolvedValue(() => {});
     mockOnFsExternalChange.mockImplementation(async (cb: (event: ExternalChangeEvent) => void) => {

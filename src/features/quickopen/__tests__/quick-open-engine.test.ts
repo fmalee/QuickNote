@@ -107,7 +107,6 @@ describe('quick-open-engine (M3-03 / v5 Refactor)', () => {
     mockListExternalDirectory.mockResolvedValue(makeDirectoryListing('/', []));
     mockSettingsGet.mockResolvedValue(makeSettingsSnapshot([]));
     mockNotesGetTreeAndTags.mockResolvedValue({
-      inboxCount: 0,
       dirs: [],
       tags: [{ tag: 'work', count: 2, children: [] }],
       workspaces: [],
@@ -569,7 +568,6 @@ describe('quick-open-engine (M3-03 / v5 Refactor)', () => {
   it('places real notes first and keeps sub-tags after notes on exact @tag match (M3-qa)', async () => {
     const onOpenItem = vi.fn();
     mockNotesGetTreeAndTags.mockResolvedValueOnce({
-      inboxCount: 0,
       dirs: [],
       tags: [
         {

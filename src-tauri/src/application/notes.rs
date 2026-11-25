@@ -17,13 +17,13 @@ use crate::domain::frontmatter::{
 };
 use crate::domain::markdown::{decode_base64_image, normalize_image_ext};
 use crate::domain::note::{
-    compose_note, compute_body_hash, count_list_items, format_ulid, meta_patch_ops,
-    normalize_tag_name, parse_note, rewrite_tags_for_rename, score_related_notes, tag_matches,
-    ConflictInfo, CreateNoteArgs, DirNode, NavTreeSnapshot, NoteDoc, NoteMeta, NoteMetaPatch,
-    NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs, RelPathArgs,
-    RelatedNoteCandidate, RelatedNoteItem, RenameNoteArgs, SaveImageArgs, SavedImageResult,
-    SearchItemKind, SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode,
-    TagRenameArgs, TagRenameResult, WorkspaceSummary, WriteNoteArgs, WriteResult, INBOX_REL_PATH,
+    compose_note, compute_body_hash, format_ulid, meta_patch_ops, normalize_tag_name, parse_note,
+    rewrite_tags_for_rename, score_related_notes, tag_matches, ConflictInfo, CreateNoteArgs,
+    DirNode, NavTreeSnapshot, NoteDoc, NoteMeta, NoteMetaPatch, NoteSummary, NoteType,
+    NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs, RelPathArgs, RelatedNoteCandidate,
+    RelatedNoteItem, RenameNoteArgs, SaveImageArgs, SavedImageResult, SearchItemKind,
+    SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode, TagRenameArgs,
+    TagRenameResult, WorkspaceSummary, WriteNoteArgs, WriteResult, INBOX_REL_PATH,
 };
 use crate::domain::template::{builtin_template, render_template, TemplateVars};
 use crate::domain::tokenizer::build_fts_query;
@@ -179,7 +179,7 @@ pub fn notes_list(
                 } else if let Some(ref prefix) = dir_prefix {
                     row.rel_path.starts_with(prefix)
                 } else {
-                    true
+                    !row.rel_path.contains('/')
                 }
             }
             "tags" => {
@@ -240,25 +240,28 @@ pub fn notes_list(
 
     if args.tab == "recent" {
         out.sort_by_key(|a| std::cmp::Reverse(a.mtime_ms));
+    } else if args.tab == "projects" && dir_prefix.is_none() {
+        let mut inbox: Vec<NoteSummary> = Vec::new();
+        let mut rest: Vec<NoteSummary> = Vec::new();
+        for item in out {
+            if item.is_inbox {
+                inbox.push(item);
+            } else {
+                rest.push(item);
+            }
+        }
+        rest.sort_by_key(|a| std::cmp::Reverse(a.mtime_ms));
+        inbox.extend(rest);
+        out = inbox;
     }
 
     Ok(out)
 }
 
-/// Builds the navigation snapshot: inbox count, directory tree, hierarchical tags, and workspaces (`C4.2`).
+/// Builds the navigation snapshot: directory tree, hierarchical tags, and workspaces (`C4.2`).
 pub fn notes_get_tree_and_tags(pm: &PersistenceManager) -> Result<NavTreeSnapshot, AppError> {
-    let root = require_library_root(pm)?;
+    let _ = require_library_root(pm)?;
     let rows = pm.with_db(list_all_indexed_notes)?;
-
-    let inbox_path = root.join(INBOX_REL_PATH);
-    let inbox_count = if inbox_path.is_file() {
-        let raw = fs::read_to_string(&inbox_path)
-            .map_err(|e| map_io_error(e, "Failed to read inbox.md"))?;
-        let parsed = parse_note(&raw, "inbox");
-        count_list_items(&parsed.body)
-    } else {
-        0
-    };
 
     // Build directory tree from non-template, non-inbox notes.
     let mut dir_counts: BTreeMap<String, u32> = BTreeMap::new();
@@ -308,7 +311,6 @@ pub fn notes_get_tree_and_tags(pm: &PersistenceManager) -> Result<NavTreeSnapsho
         .collect();
 
     Ok(NavTreeSnapshot {
-        inbox_count,
         dirs,
         tags,
         workspaces,

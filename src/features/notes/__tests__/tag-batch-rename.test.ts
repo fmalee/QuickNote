@@ -76,7 +76,6 @@ function makeUiState(): UiState {
 
 function makeNavTree(): NavTreeSnapshot {
   return {
-    inboxCount: 1,
     dirs: [],
     tags: [
       {
@@ -191,15 +190,16 @@ describe('tag batch rename and merge', () => {
     expect(editorTabsStore.activeTab?.doc?.meta.tags).toEqual(['focus']);
   });
 
-  it('renders tag tree nodes with rename/merge trigger in NotesSidebar', async () => {
+  it('renders tag cloud items in NotesSidebar', async () => {
     const notesStore = useNotesStore();
     await notesStore.initialize();
 
     const app = createSSRApp(NotesSidebar);
     const html = await renderToString(app);
 
-    expect(html).toContain('data-testid="tag-node-work"');
-    expect(html).toContain('data-testid="tag-rename-trigger-work"');
-    expect(html).toContain('data-testid="tag-node-focus"');
+    expect(html).toContain('data-testid="tag-cloud"');
+    expect(html).toContain('data-testid="tag-cloud-item-work"');
+    expect(html).toContain('data-testid="tag-cloud-item-work/todo"');
+    expect(html).toContain('data-testid="tag-cloud-item-focus"');
   });
 });

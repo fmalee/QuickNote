@@ -204,7 +204,6 @@ describe('template utils & Quick Bar save-as-note (M2-04)', () => {
       truncated: false,
     } satisfies SearchResponse);
     mockNotesGetTreeAndTags.mockResolvedValue({
-      inboxCount: 0,
       dirs: [
         { relPath: 'projects', name: 'projects', count: 1, children: [] },
         { relPath: 'commands', name: 'commands', count: 1, children: [] },

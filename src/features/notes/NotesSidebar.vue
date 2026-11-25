@@ -35,11 +35,9 @@ interface FlatDirItem {
   expanded: boolean;
 }
 
-interface FlatTagItem {
-  node: TagNode;
-  depth: number;
-  hasChildren: boolean;
-  expanded: boolean;
+interface TagCloudItem {
+  tag: string;
+  count: number;
 }
 
 const props = withDefaults(
@@ -63,7 +61,6 @@ const panelsStore = usePanelsStore();
 
 const filterInputRef = ref<HTMLInputElement | null>(null);
 const expandedDirs = ref<Record<string, boolean>>({});
-const expandedTags = ref<Record<string, boolean>>({});
 
 const renamingRelPath = ref<string | null>(null);
 const renameDraft = ref<string>('');
@@ -345,6 +342,14 @@ onUnmounted(() => {
     unbind();
   }
   unbindFolderActions = [];
+  if (sidebarResizing) {
+    sidebarResizing = false;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('pointermove', onSidebarResizeMove);
+      window.removeEventListener('pointerup', stopSidebarResize);
+      window.removeEventListener('pointercancel', stopSidebarResize);
+    }
+  }
 });
 
 watch(
@@ -437,15 +442,117 @@ async function handleExternalContextSelect(id: string): Promise<void> {
 }
 const renameInputRef = ref<HTMLInputElement | null>(null);
 
+const noteCtxOpen = ref<boolean>(false);
+const noteCtxPos = ref<{ x: number; y: number }>({ x: 0, y: 0 });
+const noteCtxTarget = ref<NoteSummary | null>(null);
+
+const noteCtxMenuItems = computed<ContextMenuEntry[]>(() => {
+  const note = noteCtxTarget.value;
+  const entries: ContextMenuEntry[] = [
+    { type: 'item', id: 'note.open', title: '打开' },
+    { type: 'item', id: 'note.openPinned', title: '在新标签打开' },
+    { type: 'item', id: 'note.reveal', title: '在访达中显示' },
+  ];
+  if (note && canMutateNote(note)) {
+    entries.push(
+      { type: 'separator', id: 'note-sep' },
+      { type: 'item', id: 'note.rename', title: '重命名…' },
+      { type: 'item', id: 'note.delete', title: '删除（移到废纸篓）', danger: true },
+    );
+  }
+  return entries;
+});
+
+function openNoteContextMenu(event: MouseEvent, note: NoteSummary): void {
+  noteCtxTarget.value = note;
+  noteCtxPos.value = { x: event.clientX, y: event.clientY };
+  noteCtxOpen.value = true;
+}
+
+async function handleNoteContextSelect(id: string): Promise<void> {
+  const note = noteCtxTarget.value;
+  noteCtxOpen.value = false;
+  if (!note) {
+    return;
+  }
+  if (id === 'note.open') {
+    openNoteFromList(note, true);
+  } else if (id === 'note.openPinned') {
+    openNoteFromList(note, false);
+  } else if (id === 'note.reveal') {
+    await notesStore.revealExternalFile(note.absPath);
+  } else if (id === 'note.rename') {
+    await startRename(note);
+  } else if (id === 'note.delete') {
+    handleDeleteNote(note.relPath);
+  }
+}
+
+let sidebarResizing = false;
+let sidebarResizeStartX = 0;
+let sidebarResizeStartWidth = 300;
+
+function onSidebarResizeMove(event: PointerEvent): void {
+  if (!sidebarResizing) {
+    return;
+  }
+  const nextWidth = sidebarResizeStartWidth + (event.clientX - sidebarResizeStartX);
+  panelsStore.setLeftSidebarWidth(nextWidth);
+}
+
+function stopSidebarResize(): void {
+  if (!sidebarResizing) {
+    return;
+  }
+  sidebarResizing = false;
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('pointermove', onSidebarResizeMove);
+    window.removeEventListener('pointerup', stopSidebarResize);
+    window.removeEventListener('pointercancel', stopSidebarResize);
+  }
+  panelsStore.commitLeftSidebarWidth();
+}
+
+function startSidebarResize(event: PointerEvent): void {
+  if (event.button !== 0 || props.overlayDrawer) {
+    return;
+  }
+  event.preventDefault();
+  sidebarResizing = true;
+  sidebarResizeStartX = event.clientX;
+  sidebarResizeStartWidth = panelsStore.leftSidebar.width;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pointermove', onSidebarResizeMove);
+    window.addEventListener('pointerup', stopSidebarResize);
+    window.addEventListener('pointercancel', stopSidebarResize);
+  }
+}
+
 const navItems: { id: string; label: string }[] = [
-  { id: 'inbox', label: '收件箱' },
-  { id: 'projects', label: '项目' },
+  { id: 'projects', label: '目录' },
   { id: 'tags', label: '标签' },
   { id: 'recent', label: '最近' },
-  { id: 'workspaces', label: '工作区' },
   { id: 'related', label: '相关文档' },
   { id: 'outline', label: '大纲' },
 ];
+
+const showSidebarToolbar = computed<boolean>(
+  () =>
+    panelsStore.leftSidebar.activeView === 'workspace' &&
+    (notesStore.activeTab === 'projects' ||
+      notesStore.activeTab === 'tags' ||
+      notesStore.activeTab === 'recent'),
+);
+
+const filterPlaceholder = computed<string>(() => {
+  if (notesStore.activeTab === 'tags') {
+    return '过滤标签文档…';
+  }
+  if (notesStore.activeTab === 'recent') {
+    return '过滤最近文档…';
+  }
+  return '过滤目录文档…';
+});
 
 const flatDirs = computed<FlatDirItem[]>(() => {
   const result: FlatDirItem[] = [];
@@ -463,33 +570,50 @@ const flatDirs = computed<FlatDirItem[]>(() => {
   return result;
 });
 
-const flatTags = computed<FlatTagItem[]>(() => {
-  const result: FlatTagItem[] = [];
-  function walk(nodes: TagNode[], depth: number): void {
-    for (const node of nodes) {
-      const hasChildren = node.children.length > 0;
-      const expanded = expandedTags.value[node.tag] ?? depth === 0;
-      result.push({ node, depth, hasChildren, expanded });
-      if (hasChildren && expanded) {
-        walk(node.children, depth + 1);
+function flattenTagNodes(nodes: TagNode[]): TagCloudItem[] {
+  const result: TagCloudItem[] = [];
+  function walk(items: TagNode[]): void {
+    for (const node of items) {
+      result.push({ tag: node.tag, count: node.count });
+      if (node.children.length > 0) {
+        walk(node.children);
       }
     }
   }
-  walk(notesStore.navTree.tags, 0);
+  walk(nodes);
   return result;
-});
+}
+
+const tagCloudItems = computed<TagCloudItem[]>(() =>
+  flattenTagNodes(notesStore.navTree.tags)
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+    .slice(0, 80),
+);
+
+function tagCloudTier(count: number): 'sm' | 'md' | 'lg' {
+  const items = tagCloudItems.value;
+  if (items.length === 0) {
+    return 'sm';
+  }
+  const maxCount = items[0]?.count ?? 0;
+  const minCount = items[items.length - 1]?.count ?? 0;
+  if (maxCount <= minCount) {
+    return 'md';
+  }
+  const ratio = (count - minCount) / (maxCount - minCount);
+  if (ratio >= 2 / 3) {
+    return 'lg';
+  }
+  if (ratio >= 1 / 3) {
+    return 'md';
+  }
+  return 'sm';
+}
 
 function toggleDirExpand(relPath: string): void {
   expandedDirs.value = {
     ...expandedDirs.value,
     [relPath]: !(expandedDirs.value[relPath] ?? true),
-  };
-}
-
-function toggleTagExpand(tag: string): void {
-  expandedTags.value = {
-    ...expandedTags.value,
-    [tag]: !(expandedTags.value[tag] ?? true),
   };
 }
 
@@ -580,9 +704,6 @@ function handleDeleteNote(relPath: string | null): void {
 async function handleSelectTab(tab: NavTab): Promise<void> {
   panelsStore.setLeftView('workspace');
   await notesStore.setActiveTab(tab);
-  if (tab === 'inbox') {
-    await editorTabsStore.openNote('inbox.md', { preview: true });
-  }
 }
 
 function isNavItemActive(id: string): boolean {
@@ -647,6 +768,7 @@ function handleCollapsedStripClick(id: string): void {
   <aside
     v-else
     :class="['qn-notes-sidebar', { 'qn-notes-sidebar--drawer': props.overlayDrawer }]"
+    :style="{ width: `${panelsStore.leftSidebarWidth}px` }"
     data-testid="notes-sidebar"
     tabindex="-1"
     @keydown="onSidebarKeydown"
@@ -666,9 +788,6 @@ function handleCollapsedStripClick(id: string): void {
         @click="handleNavItemClick(item.id)"
       >
         <span>{{ item.label }}</span>
-        <QnBadge v-if="item.id === 'inbox'" tone="neutral" data-testid="inbox-count-badge">
-          {{ notesStore.navTree.inboxCount }}
-        </QnBadge>
       </button>
       <button
         type="button"
@@ -681,6 +800,27 @@ function handleCollapsedStripClick(id: string): void {
       </button>
     </div>
 
+    <div v-if="showSidebarToolbar" class="qn-notes-sidebar__toolbar">
+      <input
+        ref="filterInputRef"
+        type="search"
+        :value="notesStore.filterText"
+        :placeholder="filterPlaceholder"
+        class="qn-notes-sidebar__filter-input"
+        data-testid="notes-filter-input"
+        @input="onFilterInput"
+      />
+      <QnButton
+        variant="primary"
+        size="sm"
+        :loading="notesStore.mutating"
+        data-testid="notes-create-btn"
+        @click="notesStore.openNewNoteModal()"
+      >
+        + 新建
+      </QnButton>
+    </div>
+
     <div
       v-show="panelsStore.leftSidebar.activeView === 'workspace'"
       class="qn-notes-sidebar__workspace"
@@ -691,14 +831,14 @@ function handleCollapsedStripClick(id: string): void {
         data-testid="nav-projects-tree"
       >
         <div class="qn-notes-sidebar__subpanel-header">
-          <span>项目目录</span>
+          <span>目录</span>
           <button
             v-if="notesStore.selectedDir"
             type="button"
             class="qn-notes-sidebar__link-btn"
             @click="notesStore.selectDir(null)"
           >
-            全部项目
+            ← 根目录
           </button>
         </div>
         <div v-if="flatDirs.length === 0" class="qn-notes-sidebar__empty">暂无子目录</div>
@@ -760,7 +900,7 @@ function handleCollapsedStripClick(id: string): void {
         data-testid="nav-tags-tree"
       >
         <div class="qn-notes-sidebar__subpanel-header">
-          <span>标签树（多选 AND）</span>
+          <span>标签（多选 AND）</span>
           <button
             v-if="notesStore.selectedTags.length > 0"
             type="button"
@@ -791,46 +931,28 @@ function handleCollapsedStripClick(id: string): void {
             </template>
           </QnBanner>
         </div>
-        <div v-if="flatTags.length === 0" class="qn-notes-sidebar__empty">暂无标签</div>
-        <div v-else class="qn-notes-sidebar__tree">
-          <div
-            v-for="entry in flatTags"
-            :key="entry.node.tag"
-            :style="{ paddingLeft: `calc(var(--qn-space-2) + ${entry.depth} * var(--qn-space-3))` }"
+        <div v-if="tagCloudItems.length === 0" class="qn-notes-sidebar__empty">暂无标签</div>
+        <div v-else class="qn-notes-sidebar__tag-cloud" data-testid="tag-cloud">
+          <button
+            v-for="item in tagCloudItems"
+            :key="item.tag"
+            type="button"
             :class="[
-              'qn-notes-sidebar__tree-item',
+              'qn-notes-sidebar__tag-cloud-item',
+              `qn-notes-sidebar__tag-cloud-item--${tagCloudTier(item.count)}`,
               {
-                'qn-notes-sidebar__tree-item--active': notesStore.selectedTags.includes(
-                  entry.node.tag,
+                'qn-notes-sidebar__tag-cloud-item--active': notesStore.selectedTags.includes(
+                  item.tag,
                 ),
               },
             ]"
-            :data-testid="`tag-node-${entry.node.tag}`"
-            @click="notesStore.toggleTag(entry.node.tag)"
-            @contextmenu.prevent="openTagContextMenu($event, entry.node.tag)"
+            :title="`${item.tag} · ${item.count}`"
+            :data-testid="`tag-cloud-item-${item.tag}`"
+            @click="notesStore.toggleTag(item.tag)"
+            @contextmenu.prevent="openTagContextMenu($event, item.tag)"
           >
-            <button
-              v-if="entry.hasChildren"
-              type="button"
-              class="qn-notes-sidebar__expand-btn"
-              :aria-label="entry.expanded ? '折叠标签' : '展开标签'"
-              @click.stop="toggleTagExpand(entry.node.tag)"
-            >
-              {{ entry.expanded ? '▾' : '▸' }}
-            </button>
-            <span v-else class="qn-notes-sidebar__expand-spacer" />
-            <span class="qn-notes-sidebar__tree-label">#{{ entry.node.tag }}</span>
-            <button
-              type="button"
-              class="qn-notes-sidebar__tag-action"
-              title="重命名 / 合并…"
-              :data-testid="`tag-rename-trigger-${entry.node.tag}`"
-              @click.stop="openTagRenameModal(entry.node.tag)"
-            >
-              重命名
-            </button>
-            <span class="qn-notes-sidebar__tree-count">{{ entry.node.count }}</span>
-          </div>
+            #{{ item.tag }}
+          </button>
         </div>
         <QnContextMenu
           :open="tagCtxOpen"
@@ -840,63 +962,6 @@ function handleCollapsedStripClick(id: string): void {
           @select="handleTagContextSelect"
           @close="tagCtxOpen = false"
         />
-      </div>
-
-      <div
-        v-else-if="notesStore.activeTab === 'workspaces'"
-        class="qn-notes-sidebar__subpanel"
-        data-testid="nav-workspaces-list"
-      >
-        <div class="qn-notes-sidebar__subpanel-header">
-          <span>工作区</span>
-          <button
-            v-if="notesStore.selectedWorkspace"
-            type="button"
-            class="qn-notes-sidebar__link-btn"
-            @click="notesStore.selectWorkspace(null)"
-          >
-            清除锁定
-          </button>
-        </div>
-        <div v-if="notesStore.navTree.workspaces.length === 0" class="qn-notes-sidebar__empty">
-          暂无工作区
-        </div>
-        <div v-else class="qn-notes-sidebar__tree">
-          <div
-            v-for="ws in notesStore.navTree.workspaces"
-            :key="ws.key"
-            :class="[
-              'qn-notes-sidebar__tree-item',
-              { 'qn-notes-sidebar__tree-item--active': notesStore.selectedWorkspace === ws.key },
-            ]"
-            :data-testid="`workspace-node-${ws.key}`"
-            @click="notesStore.selectWorkspace(ws.key)"
-          >
-            <span class="qn-notes-sidebar__tree-label">{{ ws.name }}</span>
-            <span class="qn-notes-sidebar__tree-count">{{ ws.key }}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="qn-notes-sidebar__toolbar">
-        <input
-          ref="filterInputRef"
-          type="search"
-          :value="notesStore.filterText"
-          placeholder="过滤标题或标签… (⌘F)"
-          class="qn-notes-sidebar__filter-input"
-          data-testid="notes-filter-input"
-          @input="onFilterInput"
-        />
-        <QnButton
-          variant="primary"
-          size="sm"
-          :loading="notesStore.mutating"
-          data-testid="notes-create-btn"
-          @click="notesStore.openNewNoteModal()"
-        >
-          + 新建
-        </QnButton>
       </div>
 
       <QnBanner v-if="notesStore.errorMessage" tone="danger" data-testid="notes-error-banner">
@@ -975,6 +1040,7 @@ function handleCollapsedStripClick(id: string): void {
           :data-testid="`note-card-${note.relPath ?? note.absPath}`"
           @click="openNoteFromList(note, true)"
           @dblclick="openNoteFromList(note, false)"
+          @contextmenu.prevent="openNoteContextMenu($event, note)"
         >
           <div class="qn-notes-sidebar__card-header">
             <input
@@ -999,7 +1065,7 @@ function handleCollapsedStripClick(id: string): void {
             </QnBadge>
           </div>
 
-          <p v-if="note.excerpt" class="qn-notes-sidebar__card-excerpt">
+          <p v-if="note.excerpt" class="qn-notes-sidebar__card-excerpt" :title="note.excerpt">
             {{ note.excerpt }}
           </p>
 
@@ -1011,28 +1077,19 @@ function handleCollapsedStripClick(id: string): void {
             </div>
             <div class="qn-notes-sidebar__card-meta">
               <span class="qn-notes-sidebar__card-time">{{ formatMtime(note.mtimeMs) }}</span>
-              <template v-if="canMutateNote(note)">
-                <button
-                  type="button"
-                  class="qn-notes-sidebar__card-action"
-                  :data-testid="`note-rename-btn-${note.relPath}`"
-                  @click.stop="startRename(note)"
-                >
-                  重命名
-                </button>
-                <button
-                  type="button"
-                  class="qn-notes-sidebar__card-action qn-notes-sidebar__card-action--danger"
-                  :data-testid="`note-delete-btn-${note.relPath}`"
-                  @click.stop="handleDeleteNote(note.relPath)"
-                >
-                  删除
-                </button>
-              </template>
             </div>
           </div>
         </div>
       </div>
+
+      <QnContextMenu
+        :open="noteCtxOpen"
+        :x="noteCtxPos.x"
+        :y="noteCtxPos.y"
+        :items="noteCtxMenuItems"
+        @select="handleNoteContextSelect"
+        @close="noteCtxOpen = false"
+      />
     </div>
 
     <RelatedNotesPanel
@@ -1042,6 +1099,16 @@ function handleCollapsedStripClick(id: string): void {
     <OutlinePanel
       v-else-if="panelsStore.leftSidebar.activeView === 'outline'"
       data-testid="left-view-outline"
+    />
+
+    <div
+      v-if="!props.overlayDrawer"
+      class="qn-notes-sidebar__resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="调整左侧栏宽度"
+      data-testid="left-sidebar-resizer"
+      @pointerdown="startSidebarResize"
     />
   </aside>
 
@@ -1226,8 +1293,9 @@ function handleCollapsedStripClick(id: string): void {
 }
 
 .qn-notes-sidebar {
-  width: 300px;
-  flex-shrink: 0;
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 0;
   border-right: 1px solid var(--qn-border-subtle);
   background-color: var(--qn-bg-sidebar);
   display: flex;
@@ -1236,6 +1304,19 @@ function handleCollapsedStripClick(id: string): void {
   gap: var(--qn-space-2);
   min-height: 0;
   outline: none;
+}
+
+.qn-notes-sidebar__resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.qn-notes-sidebar__resizer:hover {
+  background-color: var(--qn-accent-soft);
 }
 
 .qn-notes-sidebar--drawer {
@@ -1498,10 +1579,9 @@ function handleCollapsedStripClick(id: string): void {
   margin: 0;
   font-size: var(--qn-text-xs);
   color: var(--qn-text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .qn-notes-sidebar__card-footer {
@@ -1533,25 +1613,6 @@ function handleCollapsedStripClick(id: string): void {
 .qn-notes-sidebar__card-time {
   font-size: var(--qn-text-xs);
   color: var(--qn-text-muted);
-}
-
-.qn-notes-sidebar__card-action {
-  padding: 0 var(--qn-space-1);
-  border: none;
-  border-radius: var(--qn-radius-sm);
-  background: transparent;
-  color: var(--qn-text-secondary);
-  font-size: var(--qn-text-xs);
-  cursor: pointer;
-}
-
-.qn-notes-sidebar__card-action:hover {
-  background-color: var(--qn-bg-active);
-  color: var(--qn-text-primary);
-}
-
-.qn-notes-sidebar__card-action--danger:hover {
-  color: var(--qn-danger);
 }
 
 .qn-notes-sidebar__pinned-external {
@@ -1625,25 +1686,45 @@ function handleCollapsedStripClick(id: string): void {
   margin-bottom: var(--qn-space-1);
 }
 
-.qn-notes-sidebar__tag-action {
-  display: none;
+.qn-notes-sidebar__tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--qn-space-1) var(--qn-space-2);
+}
+
+.qn-notes-sidebar__tag-cloud-item {
   border: none;
-  background: transparent;
-  color: var(--qn-text-muted);
-  font-size: var(--qn-text-xs);
-  cursor: pointer;
-  padding: 0 var(--qn-space-1);
   border-radius: var(--qn-radius-sm);
+  background: transparent;
+  color: var(--qn-text-secondary);
+  padding: 2px var(--qn-space-1);
+  line-height: 1.3;
+  cursor: pointer;
 }
 
-.qn-notes-sidebar__tree-item:hover .qn-notes-sidebar__tag-action,
-.qn-notes-sidebar__tree-item:focus-within .qn-notes-sidebar__tag-action {
-  display: inline-flex;
+.qn-notes-sidebar__tag-cloud-item:hover {
+  background-color: var(--qn-bg-hover);
+  color: var(--qn-text-primary);
 }
 
-.qn-notes-sidebar__tag-action:hover {
-  background-color: var(--qn-bg-active);
+.qn-notes-sidebar__tag-cloud-item--active {
+  background-color: var(--qn-accent-soft);
   color: var(--qn-accent);
+}
+
+.qn-notes-sidebar__tag-cloud-item--sm {
+  font-size: var(--qn-text-sm);
+}
+
+.qn-notes-sidebar__tag-cloud-item--md {
+  font-size: var(--qn-text-base);
+  font-weight: 500;
+}
+
+.qn-notes-sidebar__tag-cloud-item--lg {
+  font-size: var(--qn-text-lg);
+  font-weight: 600;
 }
 
 .qn-tag-rename-modal__body {

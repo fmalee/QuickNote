@@ -251,7 +251,6 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
       visitedCount: 0,
     } satisfies ExternalDirectoryListing);
     mockNotesGetTreeAndTags.mockResolvedValue({
-      inboxCount: 1,
       dirs: [],
       tags: [],
       workspaces: [],

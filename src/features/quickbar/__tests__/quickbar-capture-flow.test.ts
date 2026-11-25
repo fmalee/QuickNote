@@ -447,7 +447,6 @@ describe('quickbar-capture-flow (M1-05)', () => {
       ],
       dirs: [],
       tags: [{ tag: '架构', count: 2, children: [] }],
-      inboxCount: 1,
     };
     const notes: NoteSummary[] = [
       {

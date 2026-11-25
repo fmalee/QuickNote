@@ -124,7 +124,6 @@ fn test_index_tree_tags_and_notes_list() {
     assert_eq!(rebuilt.notes_count, status.notes_count);
 
     let nav = notes_get_tree_and_tags(&pm).expect("notes_get_tree_and_tags");
-    assert!(nav.inbox_count > 0, "inbox.md should have list items");
     assert!(!nav.dirs.is_empty(), "directory tree should not be empty");
     assert!(!nav.tags.is_empty(), "tag tree should not be empty");
 
@@ -631,4 +630,62 @@ fn test_directory_workspace_config_delete_uses_file_remover() {
         .with_db(list_directory_workspace_configs)
         .expect("list_directory_workspace_configs");
     assert!(rows.is_empty());
+}
+
+#[test]
+fn test_projects_tab_root_only_with_inbox_first_and_subdir_filter() {
+    let (_tmp, _vault, pm) = setup_test_env();
+
+    let root_notes = notes_list(
+        &pm,
+        NotesFilterArgs {
+            tab: "projects".to_string(),
+            dir_rel_path: None,
+            ..Default::default()
+        },
+    )
+    .expect("notes_list projects root");
+
+    assert!(!root_notes.is_empty(), "root directory should have notes");
+    assert!(
+        root_notes[0].is_inbox,
+        "inbox.md must be pinned first in root projects list"
+    );
+    assert!(
+        root_notes
+            .iter()
+            .all(|item| item.rel_path.as_deref().is_some_and(|p| !p.contains('/'))),
+        "unselected dir must only return root-level notes"
+    );
+
+    let nav = notes_get_tree_and_tags(&pm).expect("notes_get_tree_and_tags");
+    let first_dir = nav
+        .dirs
+        .first()
+        .expect("fixture vault should have at least one subdirectory")
+        .rel_path
+        .clone();
+
+    let subdir_notes = notes_list(
+        &pm,
+        NotesFilterArgs {
+            tab: "projects".to_string(),
+            dir_rel_path: Some(first_dir.clone()),
+            ..Default::default()
+        },
+    )
+    .expect("notes_list projects subdir");
+
+    assert!(
+        !subdir_notes.is_empty(),
+        "selected subdir should return its notes"
+    );
+    let prefix = format!("{first_dir}/");
+    assert!(
+        subdir_notes.iter().all(|item| item
+            .rel_path
+            .as_deref()
+            .is_some_and(|p| p.starts_with(&prefix))),
+        "selected subdir must only return notes under that subdir"
+    );
 }

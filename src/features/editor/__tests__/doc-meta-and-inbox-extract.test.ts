@@ -137,7 +137,6 @@ describe('doc meta editing, external frontmatter guard & inbox extract (M2-04)',
     mockUiStateSet.mockResolvedValue(makeUiState());
     mockNotesList.mockResolvedValue([]);
     mockNotesGetTreeAndTags.mockResolvedValue({
-      inboxCount: 0,
       dirs: [],
       tags: [],
       workspaces: [],

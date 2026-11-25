@@ -27,22 +27,16 @@ import {
   togglePinExternalFileByPath,
 } from './api';
 
-export type NavTab = 'inbox' | 'projects' | 'tags' | 'recent' | 'workspaces';
+export type NavTab = 'projects' | 'tags' | 'recent' | 'workspaces';
 
 export const FILTER_DEBOUNCE_MS = 80;
 const FILTERS_PERSIST_DEBOUNCE_MS = 250;
 
-function normalizeNavTab(tab: string | undefined): NavTab {
-  if (
-    tab === 'inbox' ||
-    tab === 'projects' ||
-    tab === 'tags' ||
-    tab === 'recent' ||
-    tab === 'workspaces'
-  ) {
+export function normalizeNavTab(tab: string | undefined): NavTab {
+  if (tab === 'projects' || tab === 'tags' || tab === 'recent') {
     return tab;
   }
-  return 'inbox';
+  return 'projects';
 }
 
 function buildRenamedRelPath(oldRelPath: string, newNameInput: string): string {
@@ -59,7 +53,7 @@ function buildRenamedRelPath(oldRelPath: string, newNameInput: string): string {
 export const useNotesStore = defineStore('notes', () => {
   const editorTabsStore = useEditorTabsStore();
 
-  const activeTab = ref<NavTab>('inbox');
+  const activeTab = ref<NavTab>('projects');
   const selectedDir = ref<string | null>(null);
   const selectedTags = ref<string[]>([]);
   const selectedWorkspace = ref<string | null>(null);
@@ -67,7 +61,6 @@ export const useNotesStore = defineStore('notes', () => {
   const listScrollTop = ref<number>(0);
 
   const navTree = ref<NavTreeSnapshot>({
-    inboxCount: 0,
     dirs: [],
     tags: [],
     workspaces: [],

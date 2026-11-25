@@ -284,7 +284,6 @@ describe('CM6 MergeView conflict resolution', () => {
       dirs: [],
       tags: [],
       workspaces: [],
-      inboxCount: 0,
     } satisfies NavTreeSnapshot);
     mockOnFsExternalChange.mockImplementation((cb: (event: ExternalChangeEvent) => void) => {
       externalChangeHandler = cb;
