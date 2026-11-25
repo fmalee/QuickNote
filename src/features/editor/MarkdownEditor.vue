@@ -80,8 +80,6 @@ const editorTabsStore = useEditorTabsStore();
 const settingsStore = useSettingsStore();
 
 const containerRef = ref<HTMLDivElement | null>(null);
-const stateMap = new Map<string, EditorState>();
-const syncedSeqMap = new Map<string, number>();
 
 const contextMenuOpen = ref(false);
 const contextMenuX = ref(0);
@@ -745,7 +743,11 @@ function saveCurrentViewSnapshot(): void {
   if (!view || !currentTabKey) {
     return;
   }
-  stateMap.set(currentTabKey, view.state);
+  const currentTab = editorTabsStore.tabs.find((item) => item.key === currentTabKey);
+  if (!currentTab || currentTab.evicted) {
+    return;
+  }
+  editorTabsStore.setPooledEditorState(currentTabKey, view.state, currentTab.syncSeq);
   const head = view.state.selection.main.head;
   const lineObj = view.state.doc.lineAt(head);
   editorTabsStore.updateTabCursorAndScroll(currentTabKey, {
@@ -764,17 +766,18 @@ function switchToTab(tab: EditorTab | null): void {
   if (currentTabKey && currentTabKey !== tab?.key) {
     saveCurrentViewSnapshot();
   }
-  if (!tab) {
+  if (!tab || tab.evicted) {
     currentTabKey = null;
     return;
   }
 
-  let nextState = stateMap.get(tab.key);
-  const lastSyncSeq = syncedSeqMap.get(tab.key);
-  if (!nextState || lastSyncSeq !== tab.syncSeq) {
+  const pooled = editorTabsStore.getPooledEditorState(tab.key);
+  let nextState: EditorState;
+  if (!pooled || pooled.syncedSeq !== tab.syncSeq) {
     nextState = createEditorState(tab);
-    stateMap.set(tab.key, nextState);
-    syncedSeqMap.set(tab.key, tab.syncSeq);
+    editorTabsStore.setPooledEditorState(tab.key, nextState, tab.syncSeq);
+  } else {
+    nextState = pooled.state;
   }
 
   currentTabKey = tab.key;
@@ -893,9 +896,9 @@ function handleContextMenuSelect(id: string): void {
 }
 
 watch(
-  () => editorTabsStore.activeTab,
-  (nextTab) => {
-    switchToTab(nextTab);
+  () => [editorTabsStore.activeKey, editorTabsStore.activeTab?.evicted] as const,
+  () => {
+    switchToTab(editorTabsStore.activeTab);
   },
 );
 
@@ -916,17 +919,17 @@ watch(
   () => editorTabsStore.activeTab?.syncSeq,
   () => {
     const tab = editorTabsStore.activeTab;
-    if (!tab || !view) {
+    if (!tab || tab.evicted || !view) {
       return;
     }
-    const lastSyncSeq = syncedSeqMap.get(tab.key);
-    if (lastSyncSeq === tab.syncSeq) {
+    const pooled = editorTabsStore.getPooledEditorState(tab.key);
+    if (pooled && pooled.syncedSeq === tab.syncSeq) {
       return;
     }
-    const savedScrollTop = view.scrollDOM.scrollTop;
+    const savedScrollTop = currentTabKey === tab.key ? view.scrollDOM.scrollTop : tab.scrollTop;
     const nextState = createEditorState(tab);
-    stateMap.set(tab.key, nextState);
-    syncedSeqMap.set(tab.key, tab.syncSeq);
+    editorTabsStore.setPooledEditorState(tab.key, nextState, tab.syncSeq);
+    currentTabKey = tab.key;
     suppressUpdate = true;
     try {
       view.setState(nextState);
@@ -934,19 +937,6 @@ watch(
       view.scrollDOM.scrollTop = savedScrollTop;
     } finally {
       suppressUpdate = false;
-    }
-  },
-);
-
-watch(
-  () => editorTabsStore.tabs.map((tab) => tab.key),
-  (activeKeys) => {
-    const valid = new Set(activeKeys);
-    for (const key of stateMap.keys()) {
-      if (!valid.has(key)) {
-        stateMap.delete(key);
-        syncedSeqMap.delete(key);
-      }
     }
   },
 );
@@ -979,19 +969,19 @@ onMounted(() => {
   isUnmounted = false;
   if (containerRef.value) {
     const initialTab = editorTabsStore.activeTab;
-    const initialState = initialTab
+    const canMountInitial = initialTab !== null && !initialTab.evicted;
+    const initialState = canMountInitial
       ? createEditorState(initialTab)
       : EditorState.create({ doc: '' });
-    if (initialTab) {
+    if (canMountInitial) {
       currentTabKey = initialTab.key;
-      stateMap.set(initialTab.key, initialState);
-      syncedSeqMap.set(initialTab.key, initialTab.syncSeq);
+      editorTabsStore.setPooledEditorState(initialTab.key, initialState, initialTab.syncSeq);
     }
     view = new EditorView({
       state: initialState,
       parent: containerRef.value,
     });
-    if (initialTab) {
+    if (canMountInitial) {
       view.scrollDOM.scrollTop = initialTab.scrollTop;
       updateStatusAndDiagnostics(initialTab, initialState.doc.toString());
       applyScrollTarget(editorTabsStore.scrollTarget);
@@ -1055,8 +1045,7 @@ onUnmounted(() => {
     view.destroy();
     view = null;
   }
-  stateMap.clear();
-  syncedSeqMap.clear();
+  currentTabKey = null;
 });
 </script>
 

@@ -1,5 +1,6 @@
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
+import type { EditorState } from '@codemirror/state';
 import type {
   AppendResult,
   ExternalChangeEvent,
@@ -27,6 +28,8 @@ import {
   updateNoteMeta,
   writeNote,
 } from './api';
+import { createDocTabStub, type DocTabKind, type DocTabStub } from './core/docSession';
+import { DEFAULT_EDITOR_STATE_POOL_CAPACITY, EditorStatePool } from './core/editorPool';
 
 export const DEFAULT_INBOX_BLOAT_THRESHOLD_LINES = 500;
 export const MAX_CLOSED_STACK_SIZE = 20;
@@ -52,10 +55,20 @@ export type EditorConflictState =
       kind: 'deleted';
     };
 
+export interface EditorPoolEntry {
+  state: EditorState | null;
+  syncedSeq: number;
+  doc: NoteDoc | null;
+  draftBody: string;
+  baseBodyHash: string;
+}
+
 export interface EditorTab extends TabItemState {
   doc: NoteDoc | null;
   isDirty: boolean;
   isMissing: boolean;
+  evicted?: boolean;
+  lastAccessedAt?: number;
   draftBody: string;
   baseBodyHash: string;
   conflictState: EditorConflictState | null;
@@ -109,6 +122,41 @@ function toTabItemState(tab: EditorTab): TabItemState {
   };
 }
 
+function deriveTabTitle(tab: Pick<EditorTab, 'doc' | 'relPath' | 'absPath'>): string {
+  const metaTitle = tab.doc?.meta.title?.trim();
+  if (metaTitle) {
+    return metaTitle;
+  }
+  const source = tab.relPath || tab.absPath;
+  if (!source) {
+    return '未命名笔记';
+  }
+  const segments = source.split('/');
+  const base = segments[segments.length - 1] || source;
+  return base.replace(/\.md$/i, '') || base;
+}
+
+function deriveTabKind(tab: Pick<EditorTab, 'doc' | 'relPath'>): DocTabKind {
+  if (tab.doc) {
+    return tab.doc.isLibrary ? 'vault' : 'external';
+  }
+  return tab.relPath ? 'vault' : 'external';
+}
+
+function toDocTabStub(tab: EditorTab): DocTabStub {
+  return createDocTabStub({
+    tabKey: tab.key,
+    kind: deriveTabKind(tab),
+    path: tab.absPath || tab.relPath || '',
+    title: deriveTabTitle(tab),
+    isDirty: tab.isDirty,
+    cursorOffset: tab.cursorPos,
+    scrollTop: tab.scrollTop,
+    lastAccessedAt: tab.lastAccessedAt ?? 0,
+    evicted: Boolean(tab.evicted),
+  });
+}
+
 function buildTabFromDoc(doc: NoteDoc, isPreview: boolean): EditorTab {
   return {
     key: doc.key,
@@ -121,6 +169,8 @@ function buildTabFromDoc(doc: NoteDoc, isPreview: boolean): EditorTab {
     doc,
     isDirty: false,
     isMissing: false,
+    evicted: false,
+    lastAccessedAt: Date.now(),
     draftBody: doc.body,
     baseBodyHash: doc.bodyHash,
     conflictState: null,
@@ -177,6 +227,145 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     () =>
       settingsStore.snapshot?.settings?.editor.autoSaveMaxWaitMs ?? DEFAULT_AUTO_SAVE_MAX_WAIT_MS,
   );
+
+  const maxActiveEditorRenders = computed<number>(() => {
+    const editorCfg = settingsStore.snapshot?.settings?.editor as
+      | (Record<string, unknown> & {
+          maxActiveEditorRenders?: number;
+          max_active_editor_renders?: number;
+        })
+      | undefined;
+    const raw = editorCfg?.maxActiveEditorRenders ?? editorCfg?.max_active_editor_renders;
+    return typeof raw === 'number' && Number.isFinite(raw)
+      ? raw
+      : DEFAULT_EDITOR_STATE_POOL_CAPACITY;
+  });
+
+  const editorStatePool = new EditorStatePool<EditorPoolEntry>(maxActiveEditorRenders.value);
+
+  const tabStubs = computed<DocTabStub[]>(() => tabs.value.map(toDocTabStub));
+
+  function isTabProtectedFromEviction(key: string): boolean {
+    const tab = tabs.value.find((item) => item.key === key);
+    if (!tab) {
+      return false;
+    }
+    return tab.isDirty || tab.conflictState !== null || tab.saveStatus === 'saving';
+  }
+
+  function evictOverflowTabs(): string[] {
+    return editorStatePool.evictOverflow(
+      activeKey.value,
+      isTabProtectedFromEviction,
+      (evictedKey, entry) => {
+        const tab = tabs.value.find((item) => item.key === evictedKey);
+        if (!tab) {
+          return;
+        }
+        if (entry.state) {
+          tab.cursorPos = entry.state.selection.main.head;
+        }
+        tab.doc = null;
+        tab.draftBody = '';
+        tab.evicted = true;
+      },
+    );
+  }
+
+  function syncTabToPool(
+    tab: EditorTab,
+    options: { resetState?: boolean; touch?: boolean } = {},
+  ): void {
+    const existing = editorStatePool.has(tab.key) ? editorStatePool.get(tab.key) : undefined;
+    const nextState = options.resetState ? null : (existing?.state ?? null);
+    const nextEntry: EditorPoolEntry = {
+      state: nextState,
+      syncedSeq: options.resetState ? -1 : (existing?.syncedSeq ?? tab.syncSeq),
+      doc: tab.doc,
+      draftBody: tab.draftBody,
+      baseBodyHash: tab.baseBodyHash,
+    };
+    editorStatePool.set(tab.key, nextEntry);
+    tab.evicted = false;
+    if (options.touch !== false) {
+      tab.lastAccessedAt = Date.now();
+      editorStatePool.touch(tab.key);
+    }
+  }
+
+  function touchTabInPool(key: string): void {
+    const tab = tabs.value.find((item) => item.key === key);
+    if (tab) {
+      tab.lastAccessedAt = Date.now();
+    }
+    editorStatePool.touch(key);
+    evictOverflowTabs();
+  }
+
+  function migratePoolKey(oldKey: string, newKey: string): void {
+    if (oldKey === newKey || !editorStatePool.has(oldKey)) {
+      return;
+    }
+    const existing = editorStatePool.get(oldKey);
+    editorStatePool.delete(oldKey);
+    if (existing) {
+      editorStatePool.set(newKey, existing);
+    }
+  }
+
+  function getPooledEditorState(key: string): { state: EditorState; syncedSeq: number } | null {
+    if (!editorStatePool.has(key)) {
+      return null;
+    }
+    const entry = editorStatePool.get(key);
+    if (!entry || !entry.state) {
+      return null;
+    }
+    return {
+      state: entry.state,
+      syncedSeq: entry.syncedSeq,
+    };
+  }
+
+  function setPooledEditorState(key: string, state: EditorState, syncedSeq: number): void {
+    const tab = tabs.value.find((item) => item.key === key);
+    if (!tab || tab.evicted) {
+      return;
+    }
+    editorStatePool.set(key, {
+      state,
+      syncedSeq,
+      doc: tab.doc,
+      draftBody: tab.draftBody,
+      baseBodyHash: tab.baseBodyHash,
+    });
+    tab.lastAccessedAt = Date.now();
+    editorStatePool.touch(key);
+    evictOverflowTabs();
+  }
+
+  function setPoolCapacity(limit: number): number {
+    const applied = editorStatePool.setCapacity(limit);
+    evictOverflowTabs();
+    return applied;
+  }
+
+  function getPoolCapacity(): number {
+    return editorStatePool.getCapacity();
+  }
+
+  function getPoolSize(): number {
+    return editorStatePool.size();
+  }
+
+  function isTabInPool(key: string): boolean {
+    return editorStatePool.has(key);
+  }
+
+  watch(maxActiveEditorRenders, (nextLimit) => {
+    editorStatePool.setCapacity(nextLimit);
+    evictOverflowTabs();
+  });
 
   const isInboxBloated = computed<boolean>(() => {
     const tab = activeTab.value;
@@ -295,12 +484,37 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     tab.absPath = doc.absPath;
     tab.doc = doc;
     tab.isMissing = false;
+    tab.evicted = false;
     tab.draftBody = doc.body;
     tab.baseBodyHash = doc.bodyHash;
     tab.isDirty = false;
     tab.conflictState = null;
     tab.saveStatus = 'saved';
     tab.syncSeq += 1;
+    syncTabToPool(tab, { resetState: true, touch: true });
+  }
+
+  async function hydrateTabFromDisk(tab: EditorTab): Promise<boolean> {
+    if (tab.isMissing) {
+      return false;
+    }
+    const savedCursorOffset = tab.cursorPos;
+    const savedScrollTop = tab.scrollTop;
+    try {
+      const doc = await readNote({ absPath: tab.absPath });
+      applyDocToTab(tab, doc);
+      tab.cursorPos = Math.max(0, Math.min(savedCursorOffset, doc.body.length));
+      tab.scrollTop = savedScrollTop;
+      evictOverflowTabs();
+      return true;
+    } catch (error) {
+      if (isNoteNotFoundError(error)) {
+        tab.isMissing = true;
+      } else {
+        errorMessage.value = extractEditorErrorMessage(error);
+      }
+      return false;
+    }
   }
 
   function upsertOpenedDoc(doc: NoteDoc, preview: boolean): EditorTab {
@@ -310,7 +524,9 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       existingByKey.absPath = doc.absPath;
       existingByKey.doc = doc;
       existingByKey.isMissing = false;
-      if (!existingByKey.isDirty) {
+      existingByKey.evicted = false;
+      const shouldResetState = !existingByKey.isDirty;
+      if (shouldResetState) {
         existingByKey.draftBody = doc.body;
         existingByKey.baseBodyHash = doc.bodyHash;
         existingByKey.saveStatus = 'saved';
@@ -321,6 +537,8 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
         existingByKey.isPinned = true;
       }
       activeKey.value = existingByKey.key;
+      syncTabToPool(existingByKey, { resetState: shouldResetState, touch: true });
+      evictOverflowTabs();
       return existingByKey;
     }
 
@@ -331,6 +549,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
         const replaced = tabs.value[previewIndex];
         if (replaced) {
           clearAutoSaveTimers(replaced.key);
+          editorStatePool.delete(replaced.key);
         }
         tabs.value.splice(previewIndex, 1, nextTab);
       } else {
@@ -341,6 +560,8 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
 
     activeKey.value = nextTab.key;
+    syncTabToPool(nextTab, { resetState: true, touch: true });
+    evictOverflowTabs();
     return nextTab;
   }
 
@@ -386,17 +607,10 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
         existing.isPreview = false;
         existing.isPinned = true;
       }
-      if (!existing.doc && !existing.isMissing) {
-        try {
-          const doc = await readNote({ absPath: existing.absPath });
-          applyDocToTab(existing, doc);
-        } catch (error) {
-          if (isNoteNotFoundError(error)) {
-            existing.isMissing = true;
-          } else {
-            errorMessage.value = extractEditorErrorMessage(error);
-          }
-        }
+      if ((existing.evicted || !existing.doc) && !existing.isMissing) {
+        await hydrateTabFromDisk(existing);
+      } else {
+        touchTabInPool(existing.key);
       }
       if (existing.doc) {
         recordLastActiveDoc(existing.doc);
@@ -447,17 +661,10 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
 
     activeKey.value = target.key;
 
-    if (!target.doc && !target.isMissing) {
-      try {
-        const doc = await readNote({ absPath: target.absPath });
-        applyDocToTab(target, doc);
-      } catch (error) {
-        if (isNoteNotFoundError(error)) {
-          target.isMissing = true;
-        } else {
-          errorMessage.value = extractEditorErrorMessage(error);
-        }
-      }
+    if ((target.evicted || !target.doc) && !target.isMissing) {
+      await hydrateTabFromDisk(target);
+    } else {
+      touchTabInPool(target.key);
     }
 
     if (target.doc) {
@@ -515,6 +722,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
 
     tab.isDirty = true;
+    syncTabToPool(tab, { touch: true });
 
     if (tab.conflictState === null && !tab.isMissing) {
       tab.saveStatus = 'dirty';
@@ -631,10 +839,14 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
               activeKey.value = newKey;
             }
             migrateTimerKeys(oldKey, newKey);
+            migratePoolKey(oldKey, newKey);
             persistTabsDebounced();
           }
           notifyNotesRefresh();
         }
+
+        syncTabToPool(tab, { touch: false });
+        evictOverflowTabs();
 
         return true;
       } catch (error) {
@@ -701,6 +913,10 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       }
 
       if (event.kind === 'modified') {
+        if (tab.evicted && !tab.isDirty) {
+          notifyNotesRefresh();
+          continue;
+        }
         if (!tab.isDirty) {
           const nextBody = event.newBody ?? '';
           const nextHash = event.newBodyHash ?? tab.baseBodyHash;
@@ -717,6 +933,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           tab.saveStatus = 'external-synced';
           tab.cursorPos = Math.min(tab.cursorPos, nextBody.length);
           tab.syncSeq += 1;
+          syncTabToPool(tab, { resetState: true, touch: false });
           notifyNotesRefresh();
         } else {
           clearAutoSaveTimers(tab.key);
@@ -765,6 +982,8 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     tab.saveStatus = 'saved';
     tab.cursorPos = Math.min(tab.cursorPos, diskBody.length);
     tab.syncSeq += 1;
+    syncTabToPool(tab, { resetState: true, touch: false });
+    evictOverflowTabs();
   }
 
   async function resolveConflictOverwrite(key: string): Promise<boolean> {
@@ -871,6 +1090,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
             activeKey.value = newKey;
           }
           migrateTimerKeys(oldKey, newKey);
+          migratePoolKey(oldKey, newKey);
           persistTabsDebounced();
         }
         notifyNotesRefresh();
@@ -883,6 +1103,8 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       tab.isDirty = false;
       tab.saveStatus = 'saved';
       tab.syncSeq += 1;
+      syncTabToPool(tab, { resetState: true, touch: true });
+      evictOverflowTabs();
       return true;
     } catch (error) {
       if (isConflictError(error)) {
@@ -951,14 +1173,26 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       }).catch(() => undefined);
     }
     clearAutoSaveTimers(target.key);
+    editorStatePool.delete(target.key);
     pushClosedStack(target.absPath);
     tabs.value.splice(index, 1);
 
     if (activeKey.value === key) {
       const next = tabs.value[index] ?? tabs.value[index - 1] ?? null;
       activeKey.value = next?.key ?? null;
-      if (next?.doc) {
-        recordLastActiveDoc(next.doc);
+      if (next) {
+        if ((next.evicted || !next.doc) && !next.isMissing) {
+          void hydrateTabFromDisk(next).then(() => {
+            if (activeKey.value === next.key && next.doc) {
+              recordLastActiveDoc(next.doc);
+            }
+          });
+        } else {
+          touchTabInPool(next.key);
+          if (next.doc) {
+            recordLastActiveDoc(next.doc);
+          }
+        }
       }
     }
     persistTabsDebounced();
@@ -979,13 +1213,23 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           }).catch(() => undefined);
         }
         clearAutoSaveTimers(tab.key);
+        editorStatePool.delete(tab.key);
         pushClosedStack(tab.absPath);
       }
     }
     tabs.value = [keep];
     activeKey.value = keep.key;
-    if (keep.doc) {
-      recordLastActiveDoc(keep.doc);
+    if ((keep.evicted || !keep.doc) && !keep.isMissing) {
+      void hydrateTabFromDisk(keep).then(() => {
+        if (activeKey.value === keep.key && keep.doc) {
+          recordLastActiveDoc(keep.doc);
+        }
+      });
+    } else {
+      touchTabInPool(keep.key);
+      if (keep.doc) {
+        recordLastActiveDoc(keep.doc);
+      }
     }
     persistTabsDebounced();
   }
@@ -1021,12 +1265,17 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
     target.relPath = updatedDoc.relPath;
     target.absPath = updatedDoc.absPath;
-    target.doc = updatedDoc;
     target.isMissing = false;
-    if (!target.isDirty) {
-      target.draftBody = updatedDoc.body;
-      target.baseBodyHash = updatedDoc.bodyHash;
-      target.syncSeq += 1;
+    if (!target.evicted) {
+      target.doc = updatedDoc;
+      if (!target.isDirty) {
+        target.draftBody = updatedDoc.body;
+        target.baseBodyHash = updatedDoc.bodyHash;
+        target.syncSeq += 1;
+        syncTabToPool(target, { resetState: true, touch: false });
+      } else {
+        syncTabToPool(target, { touch: false });
+      }
     }
     if (activeKey.value === target.key) {
       recordLastActiveDoc(updatedDoc);
@@ -1042,13 +1291,25 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     const target = tabs.value[index];
     if (target) {
       clearAutoSaveTimers(target.key);
+      editorStatePool.delete(target.key);
     }
     tabs.value.splice(index, 1);
     if (target && activeKey.value === target.key) {
       const next = tabs.value[index] ?? tabs.value[index - 1] ?? null;
       activeKey.value = next?.key ?? null;
-      if (next?.doc) {
-        recordLastActiveDoc(next.doc);
+      if (next) {
+        if ((next.evicted || !next.doc) && !next.isMissing) {
+          void hydrateTabFromDisk(next).then(() => {
+            if (activeKey.value === next.key && next.doc) {
+              recordLastActiveDoc(next.doc);
+            }
+          });
+        } else {
+          touchTabInPool(next.key);
+          if (next.doc) {
+            recordLastActiveDoc(next.doc);
+          }
+        }
       }
     }
     persistTabsDebounced();
@@ -1069,6 +1330,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       const byKey = new Map<string, NoteSummary>(allNotes.map((summary) => [summary.key, summary]));
 
       closedStack.value = [...(uiState.tabs.closedStack ?? [])].slice(-MAX_CLOSED_STACK_SIZE);
+      editorStatePool.clear();
 
       const restored: EditorTab[] = [];
       let seenPreview = false;
@@ -1085,40 +1347,21 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           seenPreview = true;
         }
 
-        let doc: NoteDoc | null = null;
-        let isMissing = false;
-
-        if (matched) {
-          try {
-            doc = await readNote({ absPath: resolvedAbsPath });
-          } catch (error) {
-            if (isNoteNotFoundError(error)) {
-              isMissing = true;
-            } else {
-              errorMessage.value = extractEditorErrorMessage(error);
-            }
-          }
-        } else {
-          try {
-            doc = await readNote({ absPath: item.absPath });
-          } catch {
-            isMissing = true;
-          }
-        }
-
         restored.push({
-          key: doc?.key ?? resolvedKey,
-          relPath: doc?.relPath ?? resolvedRelPath,
-          absPath: doc?.absPath ?? resolvedAbsPath,
+          key: resolvedKey,
+          relPath: resolvedRelPath,
+          absPath: resolvedAbsPath,
           isPinned: isPreview ? false : true,
           isPreview,
           scrollTop: item.scrollTop,
           cursorPos: item.cursorPos,
-          doc,
+          doc: null,
           isDirty: false,
-          isMissing,
-          draftBody: doc?.body ?? '',
-          baseBodyHash: doc?.bodyHash ?? '',
+          isMissing: false,
+          evicted: true,
+          lastAccessedAt: Date.now(),
+          draftBody: '',
+          baseBodyHash: '',
           conflictState: null,
           saveStatus: 'saved',
           cursorLine: 1,
@@ -1152,8 +1395,11 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
         restored[0] ??
         null;
       activeKey.value = activeTarget?.key ?? null;
-      if (activeTarget?.doc) {
-        recordLastActiveDoc(activeTarget.doc);
+      if (activeTarget) {
+        await hydrateTabFromDisk(activeTarget);
+        if (activeTarget.doc) {
+          recordLastActiveDoc(activeTarget.doc);
+        }
       }
       initialized.value = true;
     } catch (error) {
@@ -1346,6 +1592,9 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
 
   async function refreshOpenTabsMetaFromDisk(): Promise<void> {
     for (const tab of tabs.value) {
+      if (tab.evicted) {
+        continue;
+      }
       try {
         const latest = await readNote({ absPath: tab.absPath });
         tab.doc = latest;
@@ -1354,6 +1603,9 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           tab.baseBodyHash = latest.bodyHash;
           tab.saveStatus = 'saved';
           tab.syncSeq += 1;
+          syncTabToPool(tab, { resetState: true, touch: false });
+        } else {
+          syncTabToPool(tab, { touch: false });
         }
       } catch {
         // 忽略单文件刷新失败
@@ -1374,6 +1626,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       clearTimeout(timer);
     }
     maxWaitTimers.clear();
+    editorStatePool.clear();
     if (unlistenExternalChange) {
       unlistenExternalChange();
       unlistenExternalChange = null;
@@ -1382,6 +1635,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
 
   return {
     tabs,
+    tabStubs,
     activeKey,
     closedStack,
     loading,
@@ -1396,7 +1650,14 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     inboxBloatThreshold,
     autoSaveDebounceMs,
     autoSaveMaxWaitMs,
+    maxActiveEditorRenders,
     isInboxBloated,
+    getPooledEditorState,
+    setPooledEditorState,
+    setPoolCapacity,
+    getPoolCapacity,
+    getPoolSize,
+    isTabInPool,
     openNote,
     openNoteByAbsPath,
     activateTab,
