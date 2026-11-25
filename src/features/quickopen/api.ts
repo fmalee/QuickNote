@@ -1,10 +1,12 @@
 import type {
   ExternalActionId,
+  ExternalBookmark,
+  ExternalDirectoryListing,
+  ExternalPathProbeResult,
   HideReason,
   NavTreeSnapshot,
   NoteSummary,
   NotesFilterArgs,
-  PathEntry,
   SearchQueryArgs,
   SearchResponse,
   WindowMode,
@@ -12,11 +14,12 @@ import type {
 } from '@/bindings/types';
 import {
   externalActionRun,
+  listExternalDirectory as listExternalDirectoryIpc,
   notesGetTreeAndTags,
   notesList,
-  pathComplete,
+  probeExternalPath as probeExternalPathIpc,
   searchNotesAndFiles,
-  searchSpotlight,
+  settingsGet,
   windowHideQuickBar,
   windowShowMain,
 } from '@/lib/ipc/commands';
@@ -34,18 +37,24 @@ export function fetchQuickOpenNotesAndFiles(args: SearchQueryArgs): Promise<Sear
   return searchNotesAndFiles(args);
 }
 
-export function fetchQuickOpenSpotlight(args: {
-  query: string;
-  requestId: number;
-}): Promise<SearchResponse> {
-  return searchSpotlight(args);
+export function probeQuickOpenExternalPath(rawPath: string): Promise<ExternalPathProbeResult> {
+  return probeExternalPathIpc(rawPath);
 }
 
-export function fetchQuickOpenPathComplete(args: {
-  prefix: string;
-  requestId: number;
-}): Promise<PathEntry[]> {
-  return pathComplete(args);
+export function listQuickOpenExternalDirectory(
+  dirPath: string,
+  options?: { query?: string | null; includeHidden?: boolean },
+): Promise<ExternalDirectoryListing> {
+  return listExternalDirectoryIpc({
+    dirPath,
+    query: options?.query ?? null,
+    includeHidden: options?.includeHidden ?? true,
+  });
+}
+
+export async function fetchQuickOpenExternalBookmarks(): Promise<ExternalBookmark[]> {
+  const snapshot = await settingsGet();
+  return snapshot.settings.externalBookmarks ?? [];
 }
 
 export function fetchQuickOpenTreeAndTags(): Promise<NavTreeSnapshot> {

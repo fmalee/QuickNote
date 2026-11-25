@@ -1,10 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NavTreeSnapshot, NoteSummary, PathEntry, SearchResponse } from '@/bindings/types';
+import type {
+  ExternalBookmark,
+  ExternalDirectoryListing,
+  ExternalPathProbeResult,
+  NavTreeSnapshot,
+  NoteSummary,
+  SearchResponse,
+} from '@/bindings/types';
 
 const {
   mockSearchNotesAndFiles,
-  mockSearchSpotlight,
-  mockPathComplete,
+  mockProbeExternalPath,
+  mockListExternalDirectory,
+  mockSettingsGet,
   mockNotesGetTreeAndTags,
   mockNotesList,
   mockExternalActionRun,
@@ -12,8 +20,9 @@ const {
   mockWindowHideQuickBar,
 } = vi.hoisted(() => ({
   mockSearchNotesAndFiles: vi.fn(),
-  mockSearchSpotlight: vi.fn(),
-  mockPathComplete: vi.fn(),
+  mockProbeExternalPath: vi.fn(),
+  mockListExternalDirectory: vi.fn(),
+  mockSettingsGet: vi.fn(),
   mockNotesGetTreeAndTags: vi.fn(),
   mockNotesList: vi.fn(),
   mockExternalActionRun: vi.fn(),
@@ -23,8 +32,9 @@ const {
 
 vi.mock('@/lib/ipc/commands', () => ({
   searchNotesAndFiles: mockSearchNotesAndFiles,
-  searchSpotlight: mockSearchSpotlight,
-  pathComplete: mockPathComplete,
+  probeExternalPath: mockProbeExternalPath,
+  listExternalDirectory: mockListExternalDirectory,
+  settingsGet: mockSettingsGet,
   notesGetTreeAndTags: mockNotesGetTreeAndTags,
   notesList: mockNotesList,
   externalActionRun: mockExternalActionRun,
@@ -47,17 +57,55 @@ function makeSearchResponse(requestId: number, items: SearchResponse['items']): 
   };
 }
 
-describe('quick-open-engine (M3-03)', () => {
+function makeProbeResult(
+  overrides: Partial<ExternalPathProbeResult> = {},
+): ExternalPathProbeResult {
+  return {
+    rawInput: '/etc/nginx/nginx.conf',
+    resolvedPath: '/etc/nginx/nginx.conf',
+    exists: true,
+    kind: 'file',
+    readable: true,
+    size: 128,
+    isText: true,
+    isUtf8: true,
+    isHidden: false,
+    ...overrides,
+  };
+}
+
+function makeDirectoryListing(
+  rootPath: string,
+  entries: ExternalDirectoryListing['entries'],
+): ExternalDirectoryListing {
+  return {
+    rootPath,
+    entries,
+    truncated: false,
+    visitedCount: entries.length,
+  };
+}
+
+function makeSettingsSnapshot(externalBookmarks: ExternalBookmark[] = []) {
+  return {
+    settings: {
+      externalBookmarks,
+    },
+  };
+}
+
+describe('quick-open-engine (M3-03 / v5 Refactor)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     mockSearchNotesAndFiles.mockImplementation(async (args: { requestId: number }) =>
       makeSearchResponse(args.requestId, []),
     );
-    mockSearchSpotlight.mockImplementation(async (args: { requestId: number }) =>
-      makeSearchResponse(args.requestId, []),
+    mockProbeExternalPath.mockResolvedValue(
+      makeProbeResult({ exists: false, kind: 'not_found', readable: false }),
     );
-    mockPathComplete.mockResolvedValue([]);
+    mockListExternalDirectory.mockResolvedValue(makeDirectoryListing('/', []));
+    mockSettingsGet.mockResolvedValue(makeSettingsSnapshot([]));
     mockNotesGetTreeAndTags.mockResolvedValue({
       inboxCount: 0,
       dirs: [],
@@ -105,13 +153,33 @@ describe('quick-open-engine (M3-03)', () => {
     });
   });
 
-  it('debounces 80ms and discards stale Spotlight responses with outdated requestId', async () => {
-    let resolveOldSpotlight!: (res: SearchResponse) => void;
-    const oldSpotlightPromise = new Promise<SearchResponse>((resolve) => {
-      resolveOldSpotlight = resolve;
+  it('debounces 80ms, merges vault notes with external bookmarks, filters spotlight items, and discards stale responses', async () => {
+    let resolveOldSearch!: (res: SearchResponse) => void;
+    const oldSearchPromise = new Promise<SearchResponse>((resolve) => {
+      resolveOldSearch = resolve;
     });
 
-    mockSearchNotesAndFiles.mockImplementation(async (args: { query: string; requestId: number }) =>
+    mockSettingsGet.mockResolvedValue(
+      makeSettingsSnapshot([
+        {
+          path: '/etc/nginx/nginx.conf',
+          kind: 'file',
+          alias: 'Nginx 主配置',
+          pinned: true,
+          lastOpenedAt: 200,
+        },
+        {
+          path: '/usr/local/etc/nginx',
+          kind: 'directory',
+          alias: 'Nginx 目录',
+          pinned: false,
+          lastOpenedAt: 100,
+        },
+      ]),
+    );
+
+    mockSearchNotesAndFiles.mockImplementationOnce(() => oldSearchPromise);
+    mockSearchNotesAndFiles.mockImplementationOnce(async (args: { query: string; requestId: number }) =>
       makeSearchResponse(args.requestId, [
         {
           kind: 'note',
@@ -123,31 +191,15 @@ describe('quick-open-engine (M3-03)', () => {
           score: 100,
           source: 'library',
         },
-      ]),
-    );
-
-    mockSearchSpotlight.mockImplementationOnce(() => oldSpotlightPromise);
-    mockSearchSpotlight.mockImplementationOnce(async (args: { requestId: number }) =>
-      makeSearchResponse(args.requestId, [
+        // Spotlight legacy results must be ignored
         {
           kind: 'file',
-          key: 'spot:new',
-          title: 'new-spotlight.conf',
-          subtitle: '/etc/new-spotlight.conf',
+          key: 'spot:legacy',
+          title: 'legacy-spotlight.conf',
+          subtitle: '/etc/legacy-spotlight.conf',
           relPath: null,
-          absPath: '/etc/new-spotlight.conf',
+          absPath: '/etc/legacy-spotlight.conf',
           score: 80,
-          source: 'spotlight',
-        },
-        // Duplicate absPath of local item should be deduplicated
-        {
-          kind: 'file',
-          key: 'spot:dup',
-          title: '本地-nginxx',
-          subtitle: '/vault/nginxx.md',
-          relPath: null,
-          absPath: '/vault/nginxx.md',
-          score: 70,
           source: 'spotlight',
         },
       ]),
@@ -155,106 +207,248 @@ describe('quick-open-engine (M3-03)', () => {
 
     const engine = useQuickOpen();
 
-    // Query 1: "ng" -> wait 80ms so it fires and Spotlight stays in-flight
+    // Query 1: "ng" -> wait 80ms so it fires and stays in-flight
     engine.setQuery('ng');
     expect(mockSearchNotesAndFiles).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(QUICKOPEN_DEBOUNCE_MS);
     expect(mockSearchNotesAndFiles).toHaveBeenCalledTimes(1);
-    expect(mockSearchSpotlight).toHaveBeenCalledTimes(1);
-    const firstReqId = mockSearchSpotlight.mock.calls[0]?.[0]?.requestId as number;
+    const firstReqId = mockSearchNotesAndFiles.mock.calls[0]?.[0]?.requestId as number;
 
-    // Query 2: "nginxx" -> fires after 80ms and finishes Spotlight
-    engine.setQuery('nginxx');
+    // Query 2: "nginx" -> fires after 80ms and finishes
+    engine.setQuery('nginx');
     await vi.advanceTimersByTimeAsync(QUICKOPEN_DEBOUNCE_MS);
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(engine.items.value.map((i) => i.absPath)).toEqual([
-      '/vault/nginxx.md',
-      '/etc/new-spotlight.conf',
+    expect(engine.items.value.map((i) => `${i.source}:${i.absPath}`)).toEqual([
+      'library:/vault/nginx.md',
+      'file_bookmark:/etc/nginx/nginx.conf',
+      'dir_bookmark:/usr/local/etc/nginx',
     ]);
 
-    // Now the stale Spotlight response from query 1 arrives late
-    resolveOldSpotlight(
+    // Now stale response from query 1 arrives late
+    resolveOldSearch(
       makeSearchResponse(firstReqId, [
         {
-          kind: 'file',
-          key: 'spot:stale',
-          title: 'stale.conf',
-          subtitle: '/etc/stale.conf',
-          relPath: null,
-          absPath: '/etc/stale.conf',
+          kind: 'note',
+          key: 'note:stale',
+          title: 'stale.md',
+          subtitle: 'stale.md',
+          relPath: 'stale.md',
+          absPath: '/vault/stale.md',
           score: 99,
-          source: 'spotlight',
+          source: 'library',
         },
       ]),
     );
     await Promise.resolve();
     await Promise.resolve();
 
-    // Stale response must NOT overwrite or pollute current results
+    // Stale response must NOT overwrite current results
     expect(engine.items.value.map((i) => i.absPath)).toEqual([
-      '/vault/nginxx.md',
-      '/etc/new-spotlight.conf',
+      '/vault/nginx.md',
+      '/etc/nginx/nginx.conf',
+      '/usr/local/etc/nginx',
     ]);
 
     engine.dispose();
   });
 
-  it('supports Tab completion (single match & common prefix) and Enter dir/file navigation in path mode', async () => {
+  it('supports direct external path probing, Tab completion, and directory drill-down with Backspace return', async () => {
     const onOpenItem = vi.fn();
     const engine = useQuickOpen({ onOpenItem });
 
-    // Multi-match common prefix completion
-    const multiEntries: PathEntry[] = [
-      { name: 'nginx.conf', absPath: '/etc/nginx/nginx.conf', isDir: false },
-      { name: 'nginx.d', absPath: '/etc/nginx/nginx.d', isDir: true },
-    ];
-    mockPathComplete.mockResolvedValueOnce(multiEntries);
+    // 1. Direct file probe for `/etc/nginx/nginx.conf`
+    mockProbeExternalPath.mockResolvedValueOnce(
+      makeProbeResult({
+        rawInput: '/etc/nginx/nginx.conf',
+        resolvedPath: '/etc/nginx/nginx.conf',
+        exists: true,
+        kind: 'file',
+        readable: true,
+      }),
+    );
+    engine.setQuery('/etc/nginx/nginx.conf', true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockProbeExternalPath).toHaveBeenCalledWith('/etc/nginx/nginx.conf');
+    expect(engine.items.value).toHaveLength(1);
+    expect(engine.items.value[0]).toEqual(
+      expect.objectContaining({
+        kind: 'file',
+        source: 'path',
+        title: '直接打开外部文件：nginx.conf',
+        absPath: '/etc/nginx/nginx.conf',
+      }),
+    );
+
+    // 2. Partial path listing + multi-match Tab LCP completion
+    mockProbeExternalPath.mockResolvedValueOnce(
+      makeProbeResult({
+        rawInput: '/etc/nginx/ng',
+        resolvedPath: '/etc/nginx/ng',
+        exists: false,
+        kind: 'not_found',
+        readable: false,
+      }),
+    );
+    mockListExternalDirectory.mockResolvedValueOnce(
+      makeDirectoryListing('/etc/nginx', [
+        {
+          name: 'nginx.conf',
+          path: '/etc/nginx/nginx.conf',
+          relPath: 'nginx.conf',
+          kind: 'file',
+          depth: 0,
+          size: 120,
+          isHidden: false,
+          matchScore: 90,
+        },
+        {
+          name: 'nginx.d',
+          path: '/etc/nginx/nginx.d',
+          relPath: 'nginx.d',
+          kind: 'directory',
+          depth: 0,
+          size: null,
+          isHidden: false,
+          matchScore: 80,
+        },
+      ]),
+    );
+
     engine.setQuery('/etc/nginx/ng');
     await vi.advanceTimersByTimeAsync(QUICKOPEN_DEBOUNCE_MS);
+    await Promise.resolve();
+    await Promise.resolve();
 
-    expect(computeLongestCommonPrefix(multiEntries.map((e) => e.absPath))).toBe(
+    expect(computeLongestCommonPrefix(engine.items.value.map((e) => e.absPath ?? ''))).toBe(
       '/etc/nginx/nginx.',
     );
 
-    mockPathComplete.mockResolvedValueOnce([
-      { name: 'nginx.conf', absPath: '/etc/nginx/nginx.conf', isDir: false },
-    ]);
+    mockProbeExternalPath.mockResolvedValueOnce(
+      makeProbeResult({
+        rawInput: '/etc/nginx/nginx.',
+        resolvedPath: '/etc/nginx/nginx.',
+        exists: false,
+        kind: 'not_found',
+        readable: false,
+      }),
+    );
+    mockListExternalDirectory.mockResolvedValueOnce(
+      makeDirectoryListing('/etc/nginx', [
+        {
+          name: 'nginx.conf',
+          path: '/etc/nginx/nginx.conf',
+          relPath: 'nginx.conf',
+          kind: 'file',
+          depth: 0,
+          size: 120,
+          isHidden: false,
+          matchScore: 90,
+        },
+      ]),
+    );
     await engine.handleTabComplete();
     expect(engine.query.value).toBe('/etc/nginx/nginx.');
     await Promise.resolve();
+    await Promise.resolve();
 
     // Single match Tab completion
-    mockPathComplete.mockResolvedValueOnce([]);
+    mockProbeExternalPath.mockResolvedValueOnce(
+      makeProbeResult({
+        rawInput: '/etc/nginx/nginx.conf',
+        resolvedPath: '/etc/nginx/nginx.conf',
+        exists: true,
+        kind: 'file',
+        readable: true,
+      }),
+    );
     await engine.handleTabComplete();
     expect(engine.query.value).toBe('/etc/nginx/nginx.conf');
 
-    // Enter on directory enters directory; Enter on file opens file
-    mockPathComplete.mockResolvedValueOnce([
-      { name: 'sites-enabled', absPath: '/etc/nginx/sites-enabled', isDir: true },
-      { name: 'mime.types', absPath: '/etc/nginx/mime.types', isDir: false },
-    ]);
+    // 3. Directory probe -> Enter directory enters scope -> filter -> Enter file opens -> Backspace exits scope
+    mockProbeExternalPath.mockResolvedValueOnce(
+      makeProbeResult({
+        rawInput: '/etc/nginx/',
+        resolvedPath: '/etc/nginx',
+        exists: true,
+        kind: 'directory',
+        readable: true,
+      }),
+    );
+    mockListExternalDirectory.mockResolvedValueOnce(
+      makeDirectoryListing('/etc/nginx', [
+        {
+          name: 'sites-enabled',
+          path: '/etc/nginx/sites-enabled',
+          relPath: 'sites-enabled',
+          kind: 'directory',
+          depth: 0,
+          size: null,
+          isHidden: false,
+          matchScore: 100,
+        },
+        {
+          name: 'mime.types',
+          path: '/etc/nginx/mime.types',
+          relPath: 'mime.types',
+          kind: 'file',
+          depth: 0,
+          size: 50,
+          isHidden: false,
+          matchScore: 90,
+        },
+      ]),
+    );
     engine.setQuery('/etc/nginx/', true);
     await Promise.resolve();
     await Promise.resolve();
 
-    // Index 0 is dir -> Enter should append '/' and refresh
-    mockPathComplete.mockResolvedValueOnce([
-      { name: 'default.conf', absPath: '/etc/nginx/sites-enabled/default.conf', isDir: false },
-    ]);
+    mockListExternalDirectory.mockResolvedValueOnce(
+      makeDirectoryListing('/etc/nginx/sites-enabled', [
+        {
+          name: 'default.conf',
+          path: '/etc/nginx/sites-enabled/default.conf',
+          relPath: 'default.conf',
+          kind: 'file',
+          depth: 0,
+          size: 80,
+          isHidden: false,
+          matchScore: 100,
+        },
+      ]),
+    );
     await engine.confirmItem(engine.items.value[0], 'open');
-    expect(engine.query.value).toBe('/etc/nginx/sites-enabled/');
+    expect(engine.activeDirectoryScope.value).toEqual({
+      dirPath: '/etc/nginx/sites-enabled',
+      title: 'sites-enabled',
+    });
+    expect(engine.query.value).toBe('');
     expect(onOpenItem).not.toHaveBeenCalled();
 
     await Promise.resolve();
     await Promise.resolve();
-    // Index 0 is now file -> Enter opens it
+
+    // Index 0 is now file -> Enter opens it in newTab
     await engine.confirmItem(engine.items.value[0], 'newTab');
     expect(onOpenItem).toHaveBeenCalledWith(
       expect.objectContaining({ absPath: '/etc/nginx/sites-enabled/default.conf' }),
       'newTab',
     );
+
+    // Empty input Backspace returns to parent scope
+    const handledBackspace = engine.handleKeydown({
+      key: 'Backspace',
+      isComposing: false,
+      keyCode: 8,
+      altKey: false,
+      metaKey: false,
+      preventDefault: vi.fn(),
+    } as unknown as KeyboardEvent);
+    expect(handledBackspace).toBe(true);
+    expect(engine.activeDirectoryScope.value).toBeNull();
 
     engine.dispose();
   });
@@ -338,8 +532,7 @@ describe('quick-open-engine (M3-03)', () => {
     );
 
     engine.setQuery('demo', true);
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
 
     // IME composing Enter must be ignored
     const handledIme = engine.handleKeydown({

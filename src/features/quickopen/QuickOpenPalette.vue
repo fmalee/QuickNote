@@ -18,6 +18,9 @@ const props = withDefaults(
 const inputRef = ref<HTMLInputElement | null>(null);
 
 const modeLabel = computed<string>(() => {
+  if (props.engine.activeDirectoryScope.value) {
+    return '目录';
+  }
   switch (props.engine.parsedQuery.value.mode) {
     case 'path':
       return '路径 /';
@@ -32,16 +35,25 @@ const modeLabel = computed<string>(() => {
   }
 });
 
-function sourceLabel(source: QuickOpenResultItem['source']): string {
-  switch (source) {
+const inputPlaceholder = computed<string>(() => {
+  if (props.engine.activeDirectoryScope.value) {
+    return '筛选目录文件（含隐藏文件），空输入按 Backspace 返回上级…';
+  }
+  return '搜索笔记、外部书签，或输入 / 与 ~/ 路径直开…（# 全文 · @ 标签 · > 动作）';
+});
+
+function itemBadgeLabel(item: QuickOpenResultItem): string {
+  switch (item.source) {
     case 'library':
-      return '库';
+      return '笔记';
     case 'recent':
       return '最近';
-    case 'spotlight':
-      return 'Spotlight';
+    case 'file_bookmark':
+      return '文件书签';
+    case 'dir_bookmark':
+      return '目录书签';
     case 'path':
-      return '路径';
+      return item.kind === 'dir' ? '目录' : '路径直开';
     case 'tag':
       return '标签';
     case 'action':
@@ -49,18 +61,20 @@ function sourceLabel(source: QuickOpenResultItem['source']): string {
   }
 }
 
-function sourceTone(
-  source: QuickOpenResultItem['source'],
+function itemBadgeTone(
+  item: QuickOpenResultItem,
 ): 'neutral' | 'accent' | 'warning' | 'success' {
-  switch (source) {
+  switch (item.source) {
     case 'library':
       return 'neutral';
     case 'recent':
       return 'accent';
-    case 'spotlight':
+    case 'file_bookmark':
+      return 'success';
+    case 'dir_bookmark':
       return 'warning';
     case 'path':
-      return 'success';
+      return item.kind === 'dir' ? 'warning' : 'success';
     case 'tag':
       return 'accent';
     case 'action':
@@ -84,6 +98,11 @@ function handleKeydown(event: KeyboardEvent): void {
   if (props.engine.handleKeydown(event)) {
     event.stopPropagation?.();
   }
+}
+
+function handleExitDirectory(): void {
+  props.engine.exitDirectory();
+  focusInput();
 }
 
 function handleItemClick(item: QuickOpenResultItem, index: number, event: MouseEvent): void {
@@ -116,23 +135,26 @@ watch(
       <QnBadge tone="accent" size="sm" data-testid="quickopen-mode-badge">
         {{ modeLabel }}
       </QnBadge>
+      <button
+        v-if="engine.activeDirectoryScope.value"
+        type="button"
+        class="qn-quickopen__scope-back"
+        data-testid="quickopen-directory-back"
+        :title="`返回上级（当前：${engine.activeDirectoryScope.value.dirPath}）`"
+        @click="handleExitDirectory"
+      >
+        ← {{ engine.activeDirectoryScope.value.title }}
+      </button>
       <input
         ref="inputRef"
         type="text"
         class="qn-quickopen__input"
         data-testid="quickopen-input"
         :value="engine.query.value"
-        placeholder="搜索笔记、外部文件…（/ 路径 · # 全文 · @ 标签 · > 动作）"
+        :placeholder="inputPlaceholder"
         @input="handleInput"
         @keydown="handleKeydown"
       />
-      <span
-        v-if="engine.spotlightLoading.value"
-        class="qn-quickopen__status"
-        data-testid="quickopen-spotlight-loading"
-      >
-        Spotlight…
-      </span>
       <button
         v-if="engine.query.value"
         type="button"
@@ -156,7 +178,11 @@ watch(
         正在检索…
       </div>
       <div v-else-if="engine.items.value.length === 0" class="qn-quickopen__empty">
-        未找到匹配结果
+        {{
+          engine.activeDirectoryScope.value
+            ? '当前目录暂无匹配项，清空输入按 Backspace 返回上级'
+            : '未找到匹配结果，可输入关键字或 /、~/ 绝对路径直开'
+        }}
       </div>
       <button
         v-for="(item, idx) in engine.items.value"
@@ -177,11 +203,11 @@ watch(
         @click="handleItemClick(item, idx, $event)"
       >
         <div class="qn-quickopen__item-main">
-          <QnBadge :tone="sourceTone(item.source)" size="sm">
-            {{ sourceLabel(item.source) }}
+          <QnBadge :tone="itemBadgeTone(item)" size="sm">
+            {{ itemBadgeLabel(item) }}
           </QnBadge>
           <span class="qn-quickopen__item-title">{{ item.title }}</span>
-          <span v-if="item.kind === 'dir'" class="qn-quickopen__dir-hint">目录</span>
+          <span v-if="item.kind === 'dir'" class="qn-quickopen__dir-hint">进入目录 ↵</span>
         </div>
         <div class="qn-quickopen__item-meta">
           <span v-if="item.shortcutLabel" class="qn-quickopen__shortcut">
@@ -206,11 +232,14 @@ watch(
     </div>
 
     <footer class="qn-quickopen__footer" data-testid="quickopen-footer">
-      <template v-if="variant === 'large'">
-        <span>↵ 主窗口打开 · ⌘↵ 新标签 · ⌥↵ Finder 显示 · / 路径 · # 全文 · @ 标签 · > 动作</span>
+      <template v-if="engine.activeDirectoryScope.value">
+        <span>↵ 进入目录 / 打开文件 · ⌘↵ 新标签 · 空输入 Backspace 返回上级 · ⌥↵ Finder</span>
+      </template>
+      <template v-else-if="variant === 'large'">
+        <span>↵ 打开 / 进入目录 · ⌘↵ 新标签 · ⌥↵ Finder · / 或 ~/ 路径直开 · # 全文 · @ 标签 · > 动作</span>
       </template>
       <template v-else>
-        <span>↵ 打开 · ⌘↵ 新标签 · ⌥↵ Finder · Tab 补全路径 · Esc 返回</span>
+        <span>↵ 打开 / 进入目录 · ⌘↵ 新标签 · ⌥↵ Finder · Tab 补全路径 · Esc 返回</span>
       </template>
     </footer>
   </div>
@@ -247,6 +276,26 @@ watch(
   border-color: var(--qn-accent);
 }
 
+.qn-quickopen__scope-back {
+  flex-shrink: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px var(--qn-space-2);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qn-radius-sm);
+  background-color: var(--qn-bg-sidebar);
+  color: var(--qn-text-primary);
+  font-size: var(--qn-text-xs);
+  cursor: pointer;
+}
+
+.qn-quickopen__scope-back:hover {
+  background-color: var(--qn-bg-hover);
+  border-color: var(--qn-accent);
+}
+
 .qn-quickopen__input {
   flex: 1;
   min-width: 0;
@@ -255,12 +304,6 @@ watch(
   background: transparent;
   color: var(--qn-text-primary);
   font-size: var(--qn-text-base);
-}
-
-.qn-quickopen__status {
-  font-size: var(--qn-text-xs);
-  color: var(--qn-text-secondary);
-  white-space: nowrap;
 }
 
 .qn-quickopen__clear-btn {
@@ -356,6 +399,7 @@ watch(
 }
 
 .qn-quickopen__dir-hint {
+  flex-shrink: 0;
   font-size: var(--qn-text-xs);
   color: var(--qn-text-secondary);
 }
