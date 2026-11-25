@@ -17,6 +17,17 @@
         "width": 1200,
         "height": 800,
         "resizable": true
+      },
+      {
+        "label": "quickbar",
+        "title": "QuickNote Quick Bar",
+        "url": "index.html?window=quickbar",
+        "width": 640,
+        "height": 420,
+        "decorations": false,
+        "resizable": false,
+        "visible": false,
+        "skipTaskbar": true
       }
     ],
     "security": {
