@@ -1071,7 +1071,7 @@ function handleCollapsedStripClick(id: string): void {
 
           <div class="qn-notes-sidebar__card-footer">
             <div class="qn-notes-sidebar__card-tags">
-              <span v-for="tag in note.tags.slice(0, 3)" :key="tag" class="qn-notes-sidebar__tag">
+              <span v-for="tag in note.tags.slice(0, 4)" :key="tag" class="qn-notes-sidebar__tag">
                 #{{ tag }}
               </span>
             </div>
@@ -1592,6 +1592,7 @@ function handleCollapsedStripClick(id: string): void {
 }
 
 .qn-notes-sidebar__card-tags {
+  flex: 1;
   display: flex;
   flex-wrap: wrap;
   gap: var(--qn-space-1);
@@ -1613,6 +1614,7 @@ function handleCollapsedStripClick(id: string): void {
 .qn-notes-sidebar__card-time {
   font-size: var(--qn-text-xs);
   color: var(--qn-text-muted);
+  white-space: nowrap;
 }
 
 .qn-notes-sidebar__pinned-external {
