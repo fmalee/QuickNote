@@ -1,15 +1,6 @@
-## Active Architecture Overrides (v5 Refactor)
-- 唯一事实依据：磁盘文档（.md 与目录级 .quicknote.yaml）是唯一真相源。启动全量增量对账 + 运行期监听单向收敛至 SQLite；无 Frontmatter id 的 .md 必须以基于 rel_path 的确定性兜底键收录，扫描过程只读不改写用户文件。
-- 数据库定位：SQLite（含 WAL/SHM）强制存于应用缓存目录（按 Vault 路径哈希隔离），严禁放入笔记库根目录，且必须支持随时删库全量重建。用户配置与外部书签持久化于配置目录配置文件，不以 SQLite 为唯一存储。
-- 外部文件引擎：废弃 Spotlight 作为 search_roots 主检索引擎，改用纯 Rust 受控文件系统探测与目录直扫（支持 .xxx 隐藏目录及 /usr/local/etc 等系统路径）。
-- 工作区模型：废弃脱离笔记库的独立全局工作区，改为笔记库子目录 `.quicknote.yaml` 绑定；外部动作与终端 cwd 严格按 `文档 Frontmatter > 最近祖先目录 .quicknote.yaml > 全局默认` 三级级联解析。`.quicknote.yaml` 必须排除出笔记列表与 FTS，应用内写入必须走原子写 + 自写守卫。
-- 常驻内存模型：主窗口与 QuickBar 常驻，Settings/Toast 等低频副窗口按需创建并闲置销毁；主编辑器单 EditorView 配合可配置上限的 CM6 EditorState LRU 池（绝不淘汰激活态或 isDirty 标签）。
-- 45% 侧栏辅助模式：复用主工作台 WebView，macOS 原生层配置全屏 Space 悬浮叠加行为，托盘与 QuickBar 均提供切换入口。
-- 文档冲突裁决：与 spec/quicknote-design-v4.md 冲突时，无条件以本节规则为准。
-
 # QuickNote 工程契约（`C1`–`C12`）
 
-> 本文档为 QuickNote 的机器级静态接口与工程边界契约，面向全程 AI 分模块构建。产品取舍以 [quicknote-design-v4.md](quicknote-design-v4.md) 为准，架构决策以 [DECISIONS.md](../DECISIONS.md) 为准。
+> 本文档为 QuickNote 的机器级静态接口与工程边界契约，面向全程 AI 分模块构建。产品取舍以 [quicknote-design-v5.md](quicknote-design-v5.md) 为准，架构决策以 [DECISIONS.md](../DECISIONS.md) 为准。
 
 ---
 
@@ -31,31 +22,33 @@ QuickNote/
 │   ├── check-architecture.mjs          # 分层、token、unwrap、生成物检查脚本
 │   └── check-all.sh                    # pnpm check:all 入口
 ├── spec/
-│   ├── quicknote-design-v4.md
+│   ├── quicknote-design-v5.md
+│   ├── CODEBASE_MAP.md
 │   ├── engineering-contract.md
 │   └── cards/                          # 分阶段施工任务卡
 ├── src/
 │   ├── app/                            # 多窗口入口（main / quickbar / toast / settings）与全局样式
 │   ├── styles/tokens.css               # 浅/深双主题 --qn-* CSS 变量定义
 │   ├── lib/
+│   │   ├── actions/                    # 统一动作注册表、快捷键映射与作用域分发
 │   │   ├── ipc/                        # commands.ts / events.ts（唯一调用 @tauri-apps/api 的手写层）
 │   │   └── utils/                      # 纯前端工具（无业务状态）
 │   ├── bindings/
 │   │   └── types.ts                    # 唯一由 Rust 导出的 TS 类型生成物（禁止手改）
 │   ├── components/                     # 纯 UI 组件（禁连 IPC 与跨 feature 状态）
-│   └── features/                       # 按业务垂直拆分（quickbar / notes / editor / panels / terminal / commands / settings）
+│   └── features/                       # 按业务垂直拆分（commands / editor / notes / onboarding / panels / quickbar / quickopen / settings / terminal / toast）
 └── src-tauri/
     ├── Cargo.toml / Cargo.lock
     ├── tauri.conf.json
     ├── capabilities/
-    ├── migrations/                     # 只追加的 SQLite 迁移文件（0001_init.sql...）
+    ├── migrations/                     # 只追加的 SQLite 迁移文件（0001_init.sql, 0002_directory_workspace_cache.sql...）
     ├── src/
     │   ├── lib.rs
     │   ├── main.rs
     │   ├── commands/                   # 薄层：Tauri IPC 命令与参数校验
-    │   ├── application/                # 用例编排、写入防回环、撤销快照、终端生命周期调度
+    │   ├── application/                # 用例编排、只读对账、配置/缓存隔离持久化、写入防回环、撤销快照、终端生命周期调度
     │   ├── domain/                     # 纯领域算法与模型（零 tauri / std::fs / rusqlite 依赖）
-    │   ├── infra/                      # SQLite FTS5、文件读写、notify 监听、portable-pty、macOS NSPanel/外部动作
+    │   ├── infra/                      # SQLite FTS5、文件读写、受控外部文件系统直扫（fs_browser）、notify 监听、portable-pty、macOS NSPanel/外部动作
     │   ├── bindings.rs                 # specta::Type 汇总导出列表
     │   └── bin/export_bindings.rs      # 绑定导出可执行入口
     └── tests/
@@ -99,7 +92,7 @@ QuickNote/
 ### C2.1 Rust 质量与进程调用红线
 
 - **零 Panic 容忍**：`src-tauri/src/**`（含 `commands`、`application`、`domain`、`infra`、`bin`）严禁使用 `.unwrap()` 与 `.expect()`（除非极其明确由门禁排除的 `tests/` 目录，按 `D-0010` 测试全放 `src-tauri/tests/**`）。错误全部经 `Result<T, AppError>` 与 `?` 传递。
-- **参数化外部命令**：调用外部工具（`open -R`、`osascript`、`mdfind`、编辑器 CLI、shell）必须使用 `std::process::Command::new(bin).args(&[...])` 数组传参；**严禁拼接任何包含用户路径或用户输入字符串的 shell 命令字串**。
+- **参数化外部命令**：调用外部工具（`open -R`、`osascript`、编辑器 CLI、shell）必须使用 `std::process::Command::new(bin).args(&[...])` 数组传参；**严禁拼接任何包含用户路径或用户输入字符串的 shell 命令字串**。外部文件检索严禁依赖 Spotlight（`mdfind`），统一使用纯 Rust 受控文件系统探测与目录直扫（`infra::fs_browser`）。
 
 ### C2.2 前端 TypeScript 质量与防竞态红线
 
@@ -200,20 +193,22 @@ pub enum ErrorCode {
    - `UndoAppendResult { relPath: String, restoredBodyHash: String, mtimeMs: i64 }`
    - `InboxExtractArgs { fromLine: u32, toLine: u32, newTitle: String, targetDirRelPath: String, templateName: String }`
 
-4. **搜索、命令书与面板关联**：
+4. **搜索、纯 Rust 外部文件直扫、外部书签与命令书**：
    - `SearchItemKind = "note" | "file" | "dir" | "action"`
-   - `SearchResultItem { kind: SearchItemKind, key: String, title: String, subtitle: String, relPath: Option<String>, absPath: String, score: f64, source: SearchSource }`（`SearchSource = "library" | "recent" | "spotlight" | "path"`）
+   - `SearchResultItem { kind: SearchItemKind, key: String, title: String, subtitle: String, relPath: Option<String>, absPath: String, score: f64, source: SearchSource }`（外部检索采用纯 Rust 受控探测与目录直扫，支持 `.xxx` 隐藏目录与 `/usr/local/etc` 等系统路径）
    - `SearchResponse { requestId: u64, items: Vec<SearchResultItem>, truncated: bool }`
    - `PathEntry { name: String, absPath: String, isDir: bool }`
+   - `ExternalPathProbeResult`、`ExternalDirectoryListing`、`ExternalDirectoryEntry`、`ExternalPathEntryKind`：受控文件系统路径探测与目录直扫强类型返回（带深度与条目数熔断）
+   - `ExternalBookmark`：持久化于应用配置目录的外部常用文件/目录书签模型
    - `CommandEntry { id: String, noteRelPath: String, section: String, title: String, description: String, code: String, language: Option<String>, keywords: Vec<String>, isDanger: bool, line: u32 }`
    - `RelatedNoteItem { key: String, relPath: String, title: String, reason: RelatedReason, score: f64 }`（`RelatedReason = "backlink" | "shared_tags" | "same_project"`）
 
-5. **窗口、状态、`settings.yaml` 容错与外部动作**：
+5. **窗口、状态、目录级工作区配置、`settings.yaml` 容错与外部动作**：
    - `WindowMode = "standard" | "fullscreen" | "auxiliary"`
    - `HideReason = "esc" | "hotkey" | "space_changed"`
    - `WindowState { windowId: String, visible: bool, fullscreen: bool, mode: Option<WindowMode>, reason: Option<HideReason> }`
    - `HotkeyStatus { combo: String, backupCombo: String, selfCheck: HotkeySelfCheck }`（`HotkeySelfCheck = "pending" | "ok" | "conflict"`）
-   - `WorkspaceConfig { name: String, key: String, root: String, openDir: String, codeWorkspace: Option<String>, terminalDir: Option<String>, defaultEditor: String, defaultEntryDoc: Option<String> }`
+   - `DirectoryWorkspaceConfig { vscodeWorkspacePath?: Option<String>, projectRoot?: Option<String>, defaultTerminalCwd?: Option<String>, externalAppOverrides?: Option<HashMap<String, String>> }` 与 `DirectoryWorkspaceConfigEntry { vaultRelDir: String, config: Option<DirectoryWorkspaceConfig>, mtimeMs: i64, parseError: Option<String> }`（笔记库子目录 `.quicknote.yaml` 绑定模型，替代已废弃的独立全局工作区）
    - `Settings` 按 `C6.2` Schema 严格映射（`#[serde(deny_unknown_fields)]`）；`SettingsPatch` 各顶层及子字段均为 `Option<...>`
    - `SettingsLoadStatus { valid: bool, activeSource: String, errorLine: Option<u32>, errorColumn: Option<u32>, errorMessage: Option<String> }`
    - `ExternalActionId = "external.reveal" | "external.terminal" | "external.vscode" | "external.sublime" | "external.workspace" | "external.default" | "external.copyPath" | "external.pin"`
@@ -243,10 +238,13 @@ pub enum ErrorCode {
 | 应用与库 | `index_get_status` | — | `IndexStatus` | M1 |
 | 应用与库 | `index_rebuild` | — | `IndexStatus` | M1 |
 | 窗口与热键 | `window_show_main` | `MainWindowArgs { mode: Option<WindowMode> }` | `WindowState` | M0 |
+| 窗口与热键 | `window_toggle_auxiliary_sidebar` | — | `WindowState` | v5 |
 | 窗口与热键 | `window_hide_main` | — | `WindowState` | M0 |
 | 窗口与热键 | `window_show_quick_bar` | `QuickBarArgs { mode: Option<QuickBarMode> }` | `WindowState` | M0 |
 | 窗口与热键 | `window_hide_quick_bar` | `HideQuickBarArgs { reason: HideReason }` | `WindowState` | M0 |
 | 窗口与热键 | `window_open_settings` | — | `WindowState` | M0 |
+| 窗口与热键 | `window_close_settings` | — | `()` | v5 |
+| 窗口与热键 | `window_dismiss_toast` | — | `()` | v5 |
 | 窗口与热键 | `hotkey_update` | `HotkeyUpdateArgs { combo: String }` | `HotkeyStatus` | M0 |
 | 配置与状态 | `settings_get` | — | `SettingsSnapshot { settings: Settings, status: SettingsLoadStatus }` | M0 |
 | 配置与状态 | `settings_update` | `SettingsPatch` | `SettingsSnapshot` | M2 |
@@ -268,10 +266,16 @@ pub enum ErrorCode {
 | 捕捉与收件箱 | `note_undo_last_append` | — | `UndoAppendResult` | M1 |
 | 捕捉与收件箱 | `inbox_extract_to_note` | `InboxExtractArgs` | `NoteDoc` | M2 |
 | 搜索与命令库 | `search_notes_and_files` | `SearchQueryArgs { query: String, limit: Option<u32>, requestId: u64 }` | `SearchResponse` | M1 |
-| 搜索与命令库 | `search_spotlight` | `SpotlightArgs { query: String, requestId: u64 }` | `SearchResponse` | M3 |
 | 搜索与命令库 | `path_complete` | `PathCompleteArgs { prefix: String, requestId: u64 }` | `Vec<PathEntry>` | M3 |
 | 搜索与命令库 | `commands_search` | `CommandSearchArgs { query: String }` | `Vec<CommandEntry>` | M3 |
 | 搜索与命令库 | `tags_batch_rename` | `TagRenameArgs { oldTag: String, newTag: String }` | `TagRenameResult { updatedFiles: u32 }` | M3 |
+| 外部直扫、书签与目录工作区 | `probe_external_path` | `{ rawPath: String }` | `ExternalPathProbeResult` | v5 |
+| 外部直扫、书签与目录工作区 | `list_external_directory` | `{ dirPath: String, query: Option<String>, includeHidden: bool }` | `ExternalDirectoryListing` | v5 |
+| 外部直扫、书签与目录工作区 | `list_current_doc_siblings` | `{ docPath: String }` | `ExternalDirectoryListing` | v5 |
+| 外部直扫、书签与目录工作区 | `upsert_external_bookmark` | `{ bookmark: ExternalBookmark }` | `Vec<ExternalBookmark>` | v5 |
+| 外部直扫、书签与目录工作区 | `remove_external_bookmark` | `{ path: String }` | `Vec<ExternalBookmark>` | v5 |
+| 外部直扫、书签与目录工作区 | `list_directory_workspace_configs` | — | `Vec<DirectoryWorkspaceConfigEntry>` | v5 |
+| 外部直扫、书签与目录工作区 | `set_directory_workspace_config` | `{ vaultRelDir: String, config: Option<DirectoryWorkspaceConfig> }` | `()` | v5 |
 | 关联、外部与导出 | `notes_get_related` | `RelPathArgs { relPath: String }` | `Vec<RelatedNoteItem>` | M3 |
 | 关联、外部与导出 | `external_actions_resolve` | `ResolveExternalArgs { absPath: Option<String>, workspaceKey: Option<String>, commandId: Option<String> }` | `Vec<ExternalActionState>` | M3 |
 | 关联、外部与导出 | `external_action_run` | `RunExternalArgs { id: ExternalActionId, absPath: Option<String>, dirPath: Option<String> }` | `()` | M3 |
@@ -302,10 +306,12 @@ pub enum ErrorCode {
 
 ## C5. SQLite 派生索引 DDL 与混合分词契约
 
-### C5.1 迁移与可重建原则
+### C5.1 唯一真相源、缓存目录隔离与迁移原则
 
-- 迁移文件存于 `src-tauri/migrations/`（如 `0001_init.sql`），遵循**只追加、不修改历史迁移文件**。
-- `index.sqlite` 严禁存储任何无法从 Markdown 源文件、`settings.yaml` 或 `ui-state.json` 重建的原始状态；删除后启动时可无损全量重建。
+- **磁盘文档为唯一真相源**：笔记库内的 `.md` 与目录级 `.quicknote.yaml` 是唯一真相源。启动时由 `application::reconciler` 执行全量/增量只读对账，运行期由文件系统监听单向收敛至 SQLite；无 Frontmatter `id` 的 `.md` 必须以基于 `rel_path` 的确定性兜底键（`path:<rel_path>`）收录，扫描与对账过程**只读不改写用户文件**。
+- **缓存目录强制隔离与可重建**：SQLite 数据库文件（含 `-wal` / `-shm`）强制存于应用缓存目录（`$APP_CACHE_DIR/<vault_hash>.db`），按 Vault 路径哈希隔离，**严禁放入笔记库根目录**；严禁存储任何无法从磁盘文档或配置目录重建的原始状态，必须支持随时删库全量重建。
+- **只追加迁移**：迁移文件存于 `src-tauri/migrations/`（`0001_init.sql`、`0002_directory_workspace_cache.sql` 等），遵循**只追加、不修改历史迁移文件**。
+- **`.quicknote.yaml` 隔离**：目录级 `.quicknote.yaml` 必须排除出 `notes` 列表与 `notes_fts` 全文索引，仅作为派生缓存记录在 `directory_workspace_configs` 表中。
 
 ### C5.2 核心表结构 DDL
 
@@ -372,6 +378,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
   body_tokens,
   tokenize = 'unicode61'
 );
+
+-- 0002_directory_workspace_cache.sql
+CREATE TABLE IF NOT EXISTS directory_workspace_configs (
+  vault_rel_dir TEXT PRIMARY KEY,
+  config_json   TEXT NOT NULL,
+  mtime_ms      INTEGER NOT NULL,
+  parse_error   TEXT
+);
 ```
 
 ### C5.3 CJK + ASCII 混合分词契约
@@ -387,16 +401,21 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
 
 ## C6. 持久化文件 Schema 与应用数据落盘
 
-### C6.1 应用数据目录与滚动清理
+### C6.1 应用配置目录、缓存目录隔离与目录级 `.quicknote.yaml`
 
-`$APP_DATA_DIR/` 下全部本机文件（严格不入笔记库、不参与外部云同步）：
-
-- `settings.yaml`：配置与工作区主文件（唯一配置文件格式，见 `D-0008`）。
-- `ui-state.json`：窗口、标签、滚动、面板、工作区锁定与热键状态。
-- `index.sqlite`：派生全文与元数据索引库。
-- `quickbar-draft.json`：Quick Bar 未提交草稿 `{ mode, targetRelPath, selectedWorkspaceKey, text, updatedAt }`，成功提交或用户显式清空时删除。
-- `recovery/<hash>.json`：脏标签每 2 秒增量落盘的崩溃恢复快照，正常保存或干净关闭时删除。
-- `backups/<name>.<YYYYMMDD-HHmmss>.bak`：冲突强制覆盖或损坏 YAML 重写前自动备份；每次写新备份后执行滚动清理，仅保留最近 **30 天**内且总数不超过 **50 份**的备份，超限按修改时间淘汰最旧文件。
+1. **配置目录（`$APP_CONFIG_DIR/`，严格不入笔记库，不以 SQLite 为唯一存储）**：
+   - `settings.yaml`：应用主配置文件（唯一配置文件格式，见 `D-0008`）。
+   - `ui-state.json`：窗口、标签、滚动、面板与热键状态。
+   - `bookmarks.json`：外部文件/目录书签持久化文件（同时与 `settings.yaml` 的 `external_bookmarks` 保持规范化同步）。
+   - `quickbar-draft.json`：Quick Bar 未提交草稿 `{ mode, targetRelPath, selectedWorkspaceKey, text, updatedAt }`，成功提交或用户显式清空时删除。
+   - `recovery/<hash>.json`：脏标签每 2 秒增量落盘的崩溃恢复快照，正常保存或干净关闭时删除。
+   - `backups/<name>.<YYYYMMDD-HHmmss>.bak`：冲突强制覆盖或损坏 YAML 重写前自动备份；每次写新备份后执行滚动清理，仅保留最近 **30 天**内且总数不超过 **50 份**的备份，超限按修改时间淘汰最旧文件。
+2. **缓存目录（`$APP_CACHE_DIR/`，随时可删除并无损重建）**：
+   - `<vault_hash>.db`（含 `-wal` / `-shm`）：按笔记库路径哈希隔离的 SQLite 派生全文与元数据索引库，严禁放入笔记库根目录。
+3. **目录级工作区配置文件（`<vault>/<dir>/.quicknote.yaml`）**：
+   - 废弃脱离笔记库的独立全局工作区，改为笔记库子目录 `.quicknote.yaml` 绑定（支持 `vscodeWorkspacePath`、`projectRoot`、`defaultTerminalCwd`、`externalAppOverrides`）。
+   - 外部动作与终端 `cwd` 严格按 **`文档 Frontmatter > 最近祖先目录 .quicknote.yaml > 全局默认`** 三级级联解析。
+   - `.quicknote.yaml` 必须排除出笔记列表与 FTS；应用内经 `set_directory_workspace_config` 写入或删除时必须走原子写 + 自写守卫。
 
 ### C6.2 `settings.yaml` 完整 Schema 与容错
 
@@ -448,10 +467,12 @@ search_roots:
   - ~/Sites/Projects
   - ~/.config
   - /opt/homebrew/etc
-workspaces: {}                            # key -> WorkspaceConfig
+max_active_editor_renders: 8              # 主编辑器 CM6 EditorState LRU 池上限
+scan_hidden_files: true                   # 受控目录直扫是否允许 .xxx 隐藏目录
+external_bookmarks: []                    # 常用外部文件/目录书签（持久化于配置目录）
 ```
 
-- 解析使用 `#[serde(deny_unknown_fields)]`；手改错误时保持原 `settings.yaml` **只读不动**，运行时回退上次有效配置或默认配置，并通过 `SettingsLoadStatus` 返回准确行列号与提示文案（`D-0008`）。
+- 解析使用 `#[serde(deny_unknown_fields)]`（历史 `workspaces` 字段仅作只读向后兼容保留，不再作为工作区主模型）；手改错误时保持原 `settings.yaml` **只读不动**，运行时回退上次有效配置或默认配置，并通过 `SettingsLoadStatus` 返回准确行列号与提示文案（`D-0008`）。
 
 ### C6.3 `ui-state.json` 完整 Schema
 
@@ -540,6 +561,8 @@ interface ActionDef {
 - `editor.*`：`editor.bold`（`⌘B`）、`editor.italic`（`⌘I`）、`editor.codeBlock`（`⌥⌘C`）、`editor.table`（`⌥⌘G`）、`editor.toggleTodo`（`⌥⌘X`）、`editor.link`（`⌥⌘K`）、`editor.image`（`⌥⌘I`）、`editor.bulletList`（`⌥⌘L`）、`editor.blockquote`（`⌥⌘Q`）、`editor.heading1`..`6`（`⌥⌘1..6`）、`editor.indent`（`Tab`）、`editor.outdent`（`⇧Tab`）、`editor.moveSelectionToNewNote`（`when: editor.hasSelection`）
 - `panel.*`：`panel.toggle.outline`（`⌃⌘O`）、`panel.toggle.terminal`（`⌃⌘T`）、`panel.toggle.related`（`⌃⌘R`）、`panel.toggle.recent`（`⌃⌘E`）、`panel.collapseGroup`（`⌃⌘0`）
 - `external.*`：同 `C3.4` `ExternalActionId`
+- `folder.*`：`folder.bindWorkspaceConfig`（绑定/编辑目录 `.quicknote.yaml`）、`folder.openWorkspaceInVscode`（以该目录绑定的工作区在 VS Code 中打开）
+- `window.*`：含 `window.toggleAuxiliary`（切换 45% 侧栏辅助模式）等主窗口命令
 
 ### C7.3 作用域优先级、放行与显式吞键
 
@@ -556,6 +579,12 @@ interface ActionDef {
   - `< 1200px`：面板组收起为窄图标条；
   - `< 1000px`：左侧导航+列表可收起为图标条；
   - `< 900px`（含 45% 侧栏辅助窄窗口）：面板组以覆盖式抽屉浮于编辑区右侧，禁止继续挤压编辑区至 `< 480px`。
+
+### C7.5 常驻内存模型、单视图 LRU 池与 45% 侧栏辅助模式
+
+- **窗口生命周期**：主窗口与 Quick Bar 常驻内存；Settings、Toast 等低频副窗口按需创建并在闲置/关闭后销毁释放 WebView 内存。
+- **主编辑器单视图 LRU 池**：主工作台全局复用单一 CM6 `EditorView` 实例，切换标签时经由 `DocTabStub` 与可配置上限（`settings.maxActiveEditorRenders`）的 `EditorState` LRU 池挂载/缓存状态，**绝不淘汰当前激活态或 `isDirty` 未保存标签**。
+- **45% 侧栏辅助模式**：复用主工作台 WebView，macOS 原生层配置全屏 Space 悬浮叠加行为，系统托盘与 Quick Bar 均提供切换入口。
 
 ---
 
@@ -600,7 +629,7 @@ interface ActionDef {
 
 ### C8.5 防回环与外部变更状态机
 
-- 应用每次写入成功（`note_write` / `note_append` / `note_update_meta`）后，记录 `(canonical_abs_path, body_hash, expires_at = now + 1500ms)` 到内存写入缓存表。
+- 应用每次写入成功（`note_write` / `note_append` / `note_update_meta` / `set_directory_workspace_config`）后，记录 `(canonical_abs_path, body_hash, expires_at = now + 1500ms)` 到内存写入缓存表；其中 `.quicknote.yaml` 应用内写入/清除同样必须走原子写 + 自写守卫。
 - `notify` 收到磁盘修改事件后先对文件重读正文计算 `disk_body_hash`：
   - 若 `disk_body_hash` 与写入缓存中的近期哈希相同（或处于抑制窗口且内容未变），仅更新索引 `mtime` 并**静默丢弃事件**。
   - 若哈希确实不同，发送 `fs:external-change(modified)`；前端若当前标签 **干净态（`!isDirty`）**，立即静默用新 `body`/`meta` 重置编辑器状态并尽量维持原滚动位置；若 **脏态（`isDirty`）**，暂停该标签自动保存并激活冲突横幅（重载 / 备份后覆盖 / CM6 `MergeView` 并排合并 / 暂缓）。
@@ -692,7 +721,7 @@ Card: M1-02
 ### C10.3 一卡一干净会话与独立审查
 
 - 严格推行**一卡一干净会话**：每张任务卡在独立新会话中从阅读 `AGENTS.md` 与当前卡片开始；卡片门禁全绿并提交后即终止会话。
-- **里程碑独立只读审查**：每个里程碑（M0–M4）全部卡片合入后，另起一个全新只读审查会话，仅输入 `spec/quicknote-design-v4.md`、`spec/engineering-contract.md`、`DECISIONS.md` 与当前代码 diff，核查是否存在未实现边界、隐性偏差或自测漏洞。
+- **里程碑独立只读审查**：每个里程碑全部卡片合入后，另起一个全新只读审查会话，仅输入 `spec/quicknote-design-v5.md`、`spec/engineering-contract.md`、`DECISIONS.md` 与当前代码 diff，核查是否存在未实现边界、隐性偏差或自测漏洞。
 
 ---
 
@@ -703,7 +732,7 @@ Card: M1-02
 施工中发现以下情况必须立刻停下当前编码，先执行变更流程：
 
 - 现有 `C3`–`C8` 接口定义、字段类型或算法无法满足真实边界；
-- 发现两处契约描述与 [quicknote-design-v4.md](quicknote-design-v4.md) 存在冲突；
+- 发现两处契约描述与 [quicknote-design-v5.md](quicknote-design-v5.md) 存在冲突；
 - 需要在契约之外新增未定义依赖、数据表字段或产品交互规则。
 
 ### C11.2 冲突仲裁优先级
@@ -713,7 +742,7 @@ Card: M1-02
 1. 用户在当前会话的最新明确指示（涉及产品行为时须先询问用户拍板）；
 2. [DECISIONS.md](../DECISIONS.md) 中状态为 `accepted` 的架构决策；
 3. [spec/engineering-contract.md](engineering-contract.md) 中的静态接口、DDL 与算法契约；
-4. [spec/quicknote-design-v4.md](quicknote-design-v4.md) 的产品框架说明；
+4. [spec/quicknote-design-v5.md](quicknote-design-v5.md) 的产品框架说明；
 5. 任务卡正文与既有代码实现（不得以代码现状倒逼修改上位契约）。
 
 ### C11.3 ADR 状态流转
