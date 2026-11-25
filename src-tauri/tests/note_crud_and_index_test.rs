@@ -507,3 +507,69 @@ fn test_write_directory_workspace_config_uses_atomic_write_and_self_write_guard(
         .expect("reconcile_watched_path self-write");
     assert_eq!(outcome, ReconcilePathOutcome::SuppressedSelfWrite);
 }
+
+#[test]
+fn test_update_meta_tags_visible_immediately_in_list_and_tree() {
+    let (_tmp, vault, pm) = setup_test_env();
+    let path = vault
+        .join("unknown-keys-comments.md")
+        .to_string_lossy()
+        .to_string();
+
+    note_update_meta(
+        &pm,
+        NoteUpdateMetaArgs {
+            abs_path: path.clone(),
+            patch: NoteMetaPatch {
+                tags: Some(vec!["zz-a".to_string(), "zz-b".to_string()]),
+                ..Default::default()
+            },
+        },
+    )
+    .expect("update tags");
+
+    let listed = notes_list(
+        &pm,
+        NotesFilterArgs {
+            tab: "tags".to_string(),
+            tags: vec!["zz-a".to_string()],
+            ..Default::default()
+        },
+    )
+    .expect("notes_list by new tag");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].tags, vec!["zz-a".to_string(), "zz-b".to_string()]);
+
+    let nav = notes_get_tree_and_tags(&pm).expect("tree and tags");
+    let flat = format!("{:?}", nav.tags);
+    assert!(flat.contains("zz-a") && flat.contains("zz-b"), "{flat}");
+
+    // 随后的正文自动保存不得把标签回退
+    let doc = note_read(
+        &pm,
+        ReadNoteArgs {
+            abs_path: path.clone(),
+        },
+    )
+    .expect("read");
+    note_write(
+        &pm,
+        WriteNoteArgs {
+            abs_path: path,
+            body: format!("{}\nmore\n", doc.body.trim_end()),
+            base_body_hash: doc.body_hash,
+        },
+    )
+    .expect("write after meta");
+    let listed = notes_list(
+        &pm,
+        NotesFilterArgs {
+            tab: "tags".to_string(),
+            tags: vec!["zz-b".to_string()],
+            ..Default::default()
+        },
+    )
+    .expect("notes_list after write");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].tags, vec!["zz-a".to_string(), "zz-b".to_string()]);
+}

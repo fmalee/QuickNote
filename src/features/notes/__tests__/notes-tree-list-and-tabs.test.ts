@@ -18,6 +18,7 @@ const {
   mockNoteCreate,
   mockNoteRename,
   mockNoteDelete,
+  mockNoteUpdateMeta,
   mockUiStateGet,
   mockUiStateSet,
   mockSettingsGet,
@@ -33,6 +34,7 @@ const {
   mockNoteCreate: vi.fn(),
   mockNoteRename: vi.fn(),
   mockNoteDelete: vi.fn(),
+  mockNoteUpdateMeta: vi.fn(),
   mockUiStateGet: vi.fn(),
   mockUiStateSet: vi.fn(),
   mockSettingsGet: vi.fn(),
@@ -50,6 +52,7 @@ vi.mock('@/lib/ipc/commands', () => ({
   noteCreate: mockNoteCreate,
   noteRename: mockNoteRename,
   noteDelete: mockNoteDelete,
+  noteUpdateMeta: mockNoteUpdateMeta,
   uiStateGet: mockUiStateGet,
   uiStateSet: mockUiStateSet,
   settingsGet: mockSettingsGet,
@@ -607,6 +610,36 @@ describe('M1-04a 导航树、笔记列表与多标签状态机', () => {
     const htmlBloated = await renderToString(appBloated);
     expect(htmlBloated).toContain('inbox-bloat-banner');
     expect(htmlBloated).toContain('收件箱已超过 500 行，建议整理');
+
+    editorTabsStore.dispose();
+  });
+
+  it('R21：updateActiveMeta 改标签后列表与标签树立即同步', async () => {
+    setActivePinia(createPinia());
+    const notesStore = useNotesStore();
+    const editorTabsStore = useEditorTabsStore();
+
+    mockNoteRead.mockResolvedValueOnce(makeDoc());
+    await editorTabsStore.openNote('projects/alpha.md', {
+      preview: false,
+      absPath: '/vault/projects/alpha.md',
+    });
+
+    const updated = makeDoc({ meta: { ...makeDoc().meta, tags: ['x'] } });
+    mockNoteUpdateMeta.mockResolvedValueOnce(updated);
+    mockNotesList.mockResolvedValue([makeSummary({ tags: ['x'] })]);
+    mockNotesGetTreeAndTags.mockResolvedValue({
+      inboxCount: 0,
+      dirs: [],
+      tags: [{ tag: 'x', count: 1, children: [] }],
+      workspaces: [],
+    });
+
+    await editorTabsStore.updateActiveMeta({ tags: ['x'] });
+    await vi.waitFor(() => {
+      expect(notesStore.notes[0]?.tags).toEqual(['x']);
+      expect(notesStore.navTree?.tags[0]?.tag).toBe('x');
+    });
 
     editorTabsStore.dispose();
   });
