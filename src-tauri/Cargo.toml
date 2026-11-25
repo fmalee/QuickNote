@@ -1,6 +1,6 @@
 [package]
 name = "quicknote"
-version = "1.0.0"
+version = "2.0.0"
 description = "QuickNote local-first markdown notes and quick capture"
 authors = ["QuickNote"]
 edition = "2021"
