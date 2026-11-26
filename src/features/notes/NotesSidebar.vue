@@ -1,12 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import type {
-  DirNode,
-  ExternalActionState,
-  NoteSummary,
-  SearchResultItem,
-  TagNode,
-} from '@/bindings/types';
+import type { DirNode, ExternalActionState, NoteSummary, TagNode } from '@/bindings/types';
 import { type ContextMenuEntry, QnBadge, QnBanner, QnButton, QnContextMenu } from '@/components';
 import {
   appendExternalContextMenuItems,
@@ -17,7 +11,9 @@ import {
 import { OutlinePanel, RelatedNotesPanel, usePanelsStore } from '@/features/panels';
 import { type ActionContext, actionRegistry } from '@/lib/actions';
 import DirWorkspaceBindModal from './DirWorkspaceBindModal.vue';
+import PinnedExternalFilesSection from './PinnedExternalFilesSection.vue';
 import { type NavTab, useNotesStore } from './store';
+import TagCloudSection from './TagCloudSection.vue';
 import TagRenameModal from './TagRenameModal.vue';
 import { useDirectoryWorkspaces } from './useDirectoryWorkspaces';
 
@@ -26,11 +22,6 @@ interface FlatDirItem {
   depth: number;
   hasChildren: boolean;
   expanded: boolean;
-}
-
-interface TagCloudItem {
-  tag: string;
-  count: number;
 }
 
 const props = withDefaults(
@@ -58,24 +49,6 @@ const expandedDirs = ref<Record<string, boolean>>({});
 
 const renamingRelPath = ref<string | null>(null);
 const renameDraft = ref<string>('');
-const pinnedExternalExpanded = ref<boolean>(true);
-const externalCtxOpen = ref<boolean>(false);
-const externalCtxPos = ref<{ x: number; y: number }>({ x: 0, y: 0 });
-const externalCtxItem = ref<SearchResultItem | null>(null);
-
-const externalCtxMenuItems: ContextMenuEntry[] = [
-  { type: 'item', id: 'external.open', title: '在标签页打开' },
-  { type: 'item', id: 'external.reveal', title: '在访达中显示' },
-  { type: 'separator', id: 'external-sep' },
-  { type: 'item', id: 'external.unpin', title: '取消固定常用文件' },
-];
-
-const tagCtxOpen = ref<boolean>(false);
-const tagCtxPos = ref<{ x: number; y: number }>({ x: 0, y: 0 });
-const tagCtxTarget = ref<string | null>(null);
-const tagCtxMenuItems: ContextMenuEntry[] = [
-  { type: 'item', id: 'tag.rename', title: '重命名 / 合并…' },
-];
 
 const tagRenameModalOpen = ref<boolean>(false);
 const tagRenameOld = ref<string>('');
@@ -227,20 +200,6 @@ const allExistingTags = computed<Set<string>>(() => {
   return set;
 });
 
-function openTagContextMenu(event: MouseEvent, tag: string): void {
-  tagCtxTarget.value = tag;
-  tagCtxPos.value = { x: event.clientX, y: event.clientY };
-  tagCtxOpen.value = true;
-}
-
-function handleTagContextSelect(id: string): void {
-  const target = tagCtxTarget.value;
-  tagCtxOpen.value = false;
-  if (id === 'tag.rename' && target) {
-    openTagRenameModal(target);
-  }
-}
-
 function openTagRenameModal(tag: string): void {
   tagRenameOld.value = tag;
   tagRenameModalOpen.value = true;
@@ -258,25 +217,6 @@ async function submitTagRename(oldTag: string, newTag: string): Promise<void> {
   }
 }
 
-function openExternalContextMenu(event: MouseEvent, item: SearchResultItem): void {
-  externalCtxItem.value = item;
-  externalCtxPos.value = { x: event.clientX, y: event.clientY };
-  externalCtxOpen.value = true;
-}
-
-async function handleExternalContextSelect(id: string): Promise<void> {
-  const item = externalCtxItem.value;
-  if (!item) {
-    return;
-  }
-  if (id === 'external.open') {
-    await editorTabsStore.openNoteByAbsPath(item.absPath, { preview: false });
-  } else if (id === 'external.reveal') {
-    await notesStore.revealExternalFile(item.absPath);
-  } else if (id === 'external.unpin') {
-    await notesStore.togglePinExternalFile(item.absPath);
-  }
-}
 const renameInputRef = ref<HTMLInputElement | null>(null);
 
 const noteCtxOpen = ref<boolean>(false);
@@ -437,46 +377,6 @@ const flatDirs = computed<FlatDirItem[]>(() => {
   walk(notesStore.navTree.dirs, 0);
   return result;
 });
-
-function flattenTagNodes(nodes: TagNode[]): TagCloudItem[] {
-  const result: TagCloudItem[] = [];
-  function walk(items: TagNode[]): void {
-    for (const node of items) {
-      result.push({ tag: node.tag, count: node.count });
-      if (node.children.length > 0) {
-        walk(node.children);
-      }
-    }
-  }
-  walk(nodes);
-  return result;
-}
-
-const tagCloudItems = computed<TagCloudItem[]>(() =>
-  flattenTagNodes(notesStore.navTree.tags)
-    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
-    .slice(0, 80),
-);
-
-function tagCloudTier(count: number): 'sm' | 'md' | 'lg' {
-  const items = tagCloudItems.value;
-  if (items.length === 0) {
-    return 'sm';
-  }
-  const maxCount = items[0]?.count ?? 0;
-  const minCount = items[items.length - 1]?.count ?? 0;
-  if (maxCount <= minCount) {
-    return 'md';
-  }
-  const ratio = (count - minCount) / (maxCount - minCount);
-  if (ratio >= 2 / 3) {
-    return 'lg';
-  }
-  if (ratio >= 1 / 3) {
-    return 'md';
-  }
-  return 'sm';
-}
 
 function toggleDirExpand(relPath: string): void {
   expandedDirs.value = {
@@ -762,135 +662,28 @@ function handleCollapsedStripClick(id: string): void {
         />
       </div>
 
-      <div
+      <TagCloudSection
         v-else-if="notesStore.activeTab === 'tags'"
-        class="qn-notes-sidebar__subpanel"
-        data-testid="nav-tags-tree"
-      >
-        <div class="qn-notes-sidebar__subpanel-header">
-          <span>标签（多选 AND）</span>
-          <button
-            v-if="notesStore.selectedTags.length > 0"
-            type="button"
-            class="qn-notes-sidebar__link-btn"
-            data-testid="clear-tags-btn"
-            @click="notesStore.clearTags()"
-          >
-            清除筛选
-          </button>
-        </div>
-        <div v-if="notesStore.selectedTags.length > 0" class="qn-notes-sidebar__chips">
-          <button
-            v-for="tag in notesStore.selectedTags"
-            :key="tag"
-            type="button"
-            class="qn-notes-sidebar__chip"
-            :data-testid="`selected-tag-chip-${tag}`"
-            @click="notesStore.toggleTag(tag)"
-          >
-            #{{ tag }} ×
-          </button>
-        </div>
-        <div v-if="tagRenameNotice" class="qn-notes-sidebar__tag-notice">
-          <QnBanner tone="success" data-testid="tag-rename-success-banner">
-            <span>{{ tagRenameNotice }}</span>
-            <template #actions>
-              <QnButton size="sm" variant="ghost" @click="tagRenameNotice = null">关闭</QnButton>
-            </template>
-          </QnBanner>
-        </div>
-        <div v-if="tagCloudItems.length === 0" class="qn-notes-sidebar__empty">暂无标签</div>
-        <div v-else class="qn-notes-sidebar__tag-cloud" data-testid="tag-cloud">
-          <button
-            v-for="item in tagCloudItems"
-            :key="item.tag"
-            type="button"
-            :class="[
-              'qn-notes-sidebar__tag-cloud-item',
-              `qn-notes-sidebar__tag-cloud-item--${tagCloudTier(item.count)}`,
-              {
-                'qn-notes-sidebar__tag-cloud-item--active': notesStore.selectedTags.includes(
-                  item.tag,
-                ),
-              },
-            ]"
-            :title="`${item.tag} · ${item.count}`"
-            :data-testid="`tag-cloud-item-${item.tag}`"
-            @click="notesStore.toggleTag(item.tag)"
-            @contextmenu.prevent="openTagContextMenu($event, item.tag)"
-          >
-            #{{ item.tag }}
-          </button>
-        </div>
-        <QnContextMenu
-          :open="tagCtxOpen"
-          :x="tagCtxPos.x"
-          :y="tagCtxPos.y"
-          :items="tagCtxMenuItems"
-          @select="handleTagContextSelect"
-          @close="tagCtxOpen = false"
-        />
-      </div>
+        :tags="notesStore.navTree.tags"
+        :selected-tags="notesStore.selectedTags"
+        :rename-notice="tagRenameNotice"
+        @toggle-tag="notesStore.toggleTag($event)"
+        @clear-tags="notesStore.clearTags()"
+        @dismiss-notice="tagRenameNotice = null"
+        @request-rename="openTagRenameModal($event)"
+      />
 
       <QnBanner v-if="notesStore.errorMessage" tone="danger" data-testid="notes-error-banner">
         {{ notesStore.errorMessage }}
       </QnBanner>
 
-      <div
-        v-if="notesStore.pinnedExternalFiles.length > 0"
-        class="qn-notes-sidebar__pinned-external"
-        data-testid="notes-pinned-external"
-      >
-        <button
-          type="button"
-          class="qn-notes-sidebar__pinned-header"
-          data-testid="notes-pinned-external-toggle"
-          @click="pinnedExternalExpanded = !pinnedExternalExpanded"
-        >
-          <span>{{ pinnedExternalExpanded ? '▾' : '▸' }} 常用外部文件</span>
-          <QnBadge tone="accent" size="sm">{{ notesStore.pinnedExternalFiles.length }}</QnBadge>
-        </button>
-
-        <div v-if="pinnedExternalExpanded" class="qn-notes-sidebar__pinned-list">
-          <div
-            v-for="item in notesStore.pinnedExternalFiles"
-            :key="item.absPath"
-            :class="[
-              'qn-notes-sidebar__pinned-item',
-              {
-                'qn-notes-sidebar__pinned-item--active':
-                  editorTabsStore.activeTab?.absPath === item.absPath,
-              },
-            ]"
-            :title="item.absPath"
-            :data-testid="`pinned-external-item-${item.absPath}`"
-            @click="editorTabsStore.openNoteByAbsPath(item.absPath, { preview: true })"
-            @dblclick="editorTabsStore.openNoteByAbsPath(item.absPath, { preview: false })"
-            @contextmenu.prevent="openExternalContextMenu($event, item)"
-          >
-            <span class="qn-notes-sidebar__pinned-title">{{ item.title }}</span>
-            <button
-              type="button"
-              class="qn-notes-sidebar__pinned-unpin"
-              title="取消固定"
-              :aria-label="`取消固定 ${item.title}`"
-              :data-testid="`pinned-external-unpin-${item.absPath}`"
-              @click.stop="notesStore.togglePinExternalFile(item.absPath)"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-
-        <QnContextMenu
-          :open="externalCtxOpen"
-          :x="externalCtxPos.x"
-          :y="externalCtxPos.y"
-          :items="externalCtxMenuItems"
-          @select="handleExternalContextSelect"
-          @close="externalCtxOpen = false"
-        />
-      </div>
+      <PinnedExternalFilesSection
+        :items="notesStore.pinnedExternalFiles"
+        :active-abs-path="editorTabsStore.activeTab?.absPath"
+        @open="(absPath, preview) => editorTabsStore.openNoteByAbsPath(absPath, { preview })"
+        @reveal="(absPath) => notesStore.revealExternalFile(absPath)"
+        @unpin="(absPath) => notesStore.togglePinExternalFile(absPath)"
+      />
 
       <div class="qn-notes-sidebar__list" data-testid="notes-list">
         <div v-if="notesStore.notes.length === 0" class="qn-notes-sidebar__empty">
@@ -1169,22 +962,6 @@ function handleCollapsedStripClick(id: string): void {
   cursor: pointer;
 }
 
-.qn-notes-sidebar__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--qn-space-1);
-}
-
-.qn-notes-sidebar__chip {
-  padding: 2px var(--qn-space-2);
-  border: 1px solid var(--qn-accent);
-  border-radius: var(--qn-radius-sm);
-  background-color: var(--qn-accent-soft);
-  color: var(--qn-accent);
-  font-size: var(--qn-text-xs);
-  cursor: pointer;
-}
-
 .qn-notes-sidebar__tree {
   display: flex;
   flex-direction: column;
@@ -1376,118 +1153,6 @@ function handleCollapsedStripClick(id: string): void {
   font-size: var(--qn-text-xs);
   color: var(--qn-text-muted);
   white-space: nowrap;
-}
-
-.qn-notes-sidebar__pinned-external {
-  border-bottom: 1px solid var(--qn-border-subtle);
-  padding: var(--qn-space-1) var(--qn-space-2);
-  background-color: var(--qn-bg-sidebar);
-}
-
-.qn-notes-sidebar__pinned-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: var(--qn-space-1);
-  border: none;
-  background: transparent;
-  color: var(--qn-text-secondary);
-  font-size: var(--qn-text-xs);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.qn-notes-sidebar__pinned-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 140px;
-  overflow-y: auto;
-  margin-top: var(--qn-space-1);
-}
-
-.qn-notes-sidebar__pinned-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--qn-space-1);
-  padding: 3px var(--qn-space-2);
-  border-radius: var(--qn-radius-sm);
-  color: var(--qn-text-primary);
-  font-size: var(--qn-text-xs);
-  cursor: pointer;
-}
-
-.qn-notes-sidebar__pinned-item:hover,
-.qn-notes-sidebar__pinned-item--active {
-  background-color: var(--qn-bg-hover);
-}
-
-.qn-notes-sidebar__pinned-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.qn-notes-sidebar__pinned-unpin {
-  border: none;
-  background: transparent;
-  color: var(--qn-text-muted);
-  font-size: var(--qn-text-xs);
-  cursor: pointer;
-  padding: 0 2px;
-  border-radius: var(--qn-radius-sm);
-}
-
-.qn-notes-sidebar__pinned-unpin:hover {
-  background-color: var(--qn-bg-active);
-  color: var(--qn-text-primary);
-}
-
-.qn-notes-sidebar__tag-notice {
-  margin-bottom: var(--qn-space-1);
-}
-
-.qn-notes-sidebar__tag-cloud {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--qn-space-1) var(--qn-space-2);
-}
-
-.qn-notes-sidebar__tag-cloud-item {
-  border: none;
-  border-radius: var(--qn-radius-sm);
-  background: transparent;
-  color: var(--qn-text-secondary);
-  padding: 2px var(--qn-space-1);
-  line-height: 1.3;
-  cursor: pointer;
-}
-
-.qn-notes-sidebar__tag-cloud-item:hover {
-  background-color: var(--qn-bg-hover);
-  color: var(--qn-text-primary);
-}
-
-.qn-notes-sidebar__tag-cloud-item--active {
-  background-color: var(--qn-accent-soft);
-  color: var(--qn-accent);
-}
-
-.qn-notes-sidebar__tag-cloud-item--sm {
-  font-size: var(--qn-text-sm);
-}
-
-.qn-notes-sidebar__tag-cloud-item--md {
-  font-size: var(--qn-text-base);
-  font-weight: 500;
-}
-
-.qn-notes-sidebar__tag-cloud-item--lg {
-  font-size: var(--qn-text-lg);
-  font-weight: 600;
 }
 
 .qn-notes-sidebar__ws-badge {
