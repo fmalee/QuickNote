@@ -38,7 +38,7 @@ QuickNote 严格执行前后端四层单向依赖，并通过 `scripts/check-arc
 2. **启动只读对账 + 运行期监听单向收敛**：
    - 启动或切库时，由 `application/reconciler.rs` 执行只读全量/增量对账，将磁盘 `.md` 与 `.quicknote.yaml` 单向同步至 SQLite。
    - 无 Frontmatter `id` 的 `.md` 以确定性兜底键 `path:<rel_path>` 收录，**扫描与对账过程严格只读，绝不改写用户文件**。
-   - 运行期由 `infra/vault_watch.rs` 与 `application/watch.rs` 监听外部变更并经自写防回环缓存剔除内部写入回声，单向更新派生索引与前端状态。
+   - 运行期由 `infra/vault_watch.rs` 与 `application/watch.rs` 监听外部变更并经自写防回环缓存剔除内部写入回声，单向更新派生索引与前端状态。应用内写盘前先预登记目标路径与预期内容哈希，前端同步层对同哈希外部变更通知自动忽略，抑制自写回声（`C8.5`）。
 3. **纯缓存 SQLite 物理隔离与无损重建**：
    - SQLite 数据库文件（含 `-wal` / `-shm`）强制落盘于应用缓存目录 `$APP_CACHE_DIR/<vault_hash>.db`（按 Vault 路径哈希隔离），**严禁放入笔记库根目录**，避免污染 Git / 云盘同步目录。
    - SQLite 仅存放可重建的派生元数据、FTS5 混合分词索引（`0001_init.sql`）与目录级工作区缓存表 `directory_workspace_configs`（`0002_directory_workspace_cache.sql`），迁移只追加不改历史，随时删除缓存库后启动可无损全量重建。
@@ -57,7 +57,7 @@ QuickNote 严格执行前后端四层单向依赖，并通过 `scripts/check-arc
 - **同级文件快速切换（`SiblingFilesPopover.vue`）**：
   - 经 `list_current_doc_siblings` 读取当前文档（含库内笔记与外部文件）所在目录的同级文件列表，支持在文档顶栏一键切换打开。
 - **外部文件直开与非 Markdown 编辑**：
-  - Quick Open（`⌘K`）与路径直扫命中的外部文件可直接作为标签页在主编辑器打开（key 为 `abs:<absPath>`），并支持多语言代码高亮与诊断。
+  - Quick Open（`⌘K`）与路径直扫命中的外部文件可直接作为标签页在主编辑器打开（key 为 `abs:<absPath>`），并支持多语言代码高亮与诊断；Quick Bar 的「打开」复用同一引擎。
 - **外部书签体系（`domain/bookmark.rs`）**：
   - 通过 `upsert_external_bookmark` / `remove_external_bookmark` 管理常用外部文件与目录书签，纯内存执行路径规范化、去重与排序，持久化至配置目录配置文件（`bookmarks.json` / `settings.yaml`）。
 
@@ -69,7 +69,7 @@ QuickNote 严格执行前后端四层单向依赖，并通过 `scripts/check-arc
 
 1. **目录绑定模型（`domain/workspace_context.rs`）**：
    - 在笔记库任意子目录下放置 `.quicknote.yaml`，可声明 `vscodeWorkspacePath`、`projectRoot`、`defaultTerminalCwd`、`externalAppOverrides`。
-   - 左侧项目目录树经统一动作注册表提供 `folder.bindWorkspaceConfig`（弹窗编辑/清除 `.quicknote.yaml`）与 `folder.openWorkspaceInVscode`（直接以绑定的工作区或项目根目录在 VS Code 中打开），并对已绑定目录渲染轻量工作区徽标与路径摘要提示。
+   - 左侧目录树经统一动作注册表提供 `folder.bindWorkspaceConfig`（弹窗编辑/清除 `.quicknote.yaml`）与 `folder.openWorkspaceInVscode`（直接以绑定的工作区或项目根目录在 VS Code 中打开），并对已绑定目录渲染轻量工作区徽标与路径摘要提示。
 2. **三级级联解析规则**：
    - 所有外部动作（Finder / 外部终端 / VS Code / Sublime / 工作区打开）与内嵌终端启动 `cwd`，严格按以下优先级级联解析：
      $$\text{文档 Frontmatter} > \text{最近祖先目录 } \texttt{.quicknote.yaml} > \text{全局默认}$$
@@ -84,7 +84,7 @@ QuickNote 严格执行前后端四层单向依赖，并通过 `scripts/check-arc
 依据 `D-0001`–`D-0005`、`D-0012`、`C7.5`，v5 在保持瞬时响应的前提下严控常驻内存：
 
 1. **多窗口分级生命周期**：
-   - **常驻窗口**：主工作台窗口（`index.html`）与 Quick Bar 原生非激活 `NSPanel`（`?window=quickbar`，`collectionBehavior = fullScreenAuxiliary` = `256`，不跨 Space、切 Space 自动复位、点外不关闭）。
+   - **常驻窗口**：主工作台窗口（`index.html`）与 Quick Bar 原生非激活 `NSPanel`（`?window=quickbar`，`collectionBehavior = fullScreenAuxiliary` = `256`，不跨 Space、切 Space 自动复位、默认失焦关闭，固定态例外（`D-0013`））。
    - **按需销毁窗口**：Settings（`?window=settings`）与全局 5 秒撤销 Toast（`?window=toast`）等低频副窗口按需创建，在关闭或闲置后经 `window_close_settings` / `window_dismiss_toast` 销毁并释放 WebView 内存。
    - **系统集成策略**：主窗口与设置窗隐藏时动态切为 `.accessory`，显示期间切为 `.regular`（`D-0003`）；默认全局热键 `⌃⌥Space`（备用 `⌃⌥⌘Space`）带首启自检与热重注册（`D-0004`）；内嵌终端折叠保活并在隐藏无前台子进程闲置 30 分钟后自动回收（`D-0005`）。
 2. **主编辑器单 `EditorView` + `EditorState` LRU 池**：
@@ -101,4 +101,5 @@ QuickNote 严格执行前后端四层单向依赖，并通过 `scripts/check-arc
 - **单 WebView 复用**：直接复用主工作台 WebView，不额外拉起独立辅助窗口实例，保持标签页、编辑态与终端会话完全连续。
 - **macOS 原生全屏 Space 悬浮叠加**：由 `src-tauri/src/infra/macos/bridge.m` 在原生层配置全屏 Space 悬浮叠加行为与右侧 45% 宽度贴靠，覆盖当前全屏应用右侧而不挤压或改变其他应用尺寸。
 - **异步退全屏竞态保护**：仅在非全屏态记录标准窗口 frame；从主窗口原生全屏切换至辅助侧栏时，通过一次性 `NSWindowDidExitFullScreenNotification` 观察者等待退出全屏动画结束后再执行右侧贴靠，避免窗口错位。
-- **统一入口与窄屏适配**：系统托盘菜单、Quick Bar 及动作注册表（`window.toggleAuxiliary` → `window_toggle_auxiliary_sidebar`）均提供切换入口；窗口宽度 `< 900px` 时右侧面板组自动转为覆盖式抽屉，保证编辑区最小宽度不低于 `480px`。
+- **统一入口与窄屏适配**：系统托盘菜单、Quick Bar 及动作注册表（`window.toggleAuxiliary` → `window_toggle_auxiliary_sidebar`）均提供切换入口；侧栏模式下编辑器区右上角提供「拉出导航 / 退出侧栏辅助」；窗口宽度 `< 900px` 时左侧栏以覆盖式抽屉浮于编辑区之上，编辑区最小宽度不低于 `480px`；内嵌终端位于编辑器下方，可拖动高度并持久化。
+- **左侧栏顶层视图**：工作区（目录 / 标签 / 最近）、相关文档、大纲。
