@@ -689,4 +689,120 @@ describe('quick-open-engine (M3-03 / v5 Refactor)', () => {
       ts: 456,
     });
   });
+
+  it('completes unique prefix match without regressing when deeper subdir matches exist and dedupes duplicate paths (M5-06b)', async () => {
+    const engine = useQuickOpen();
+
+    mockProbeExternalPath.mockResolvedValueOnce(
+      makeProbeResult({
+        rawInput: '/usr/loca',
+        resolvedPath: '/usr/loca',
+        exists: false,
+        kind: 'not_found',
+        readable: false,
+      }),
+    );
+    mockListExternalDirectory.mockResolvedValueOnce(
+      makeDirectoryListing('/usr', [
+        {
+          name: 'local',
+          path: '/usr/local',
+          relPath: 'local',
+          kind: 'directory',
+          depth: 0,
+          size: null,
+          isHidden: false,
+          matchScore: 100,
+        },
+        {
+          name: 'locale',
+          path: '/usr/bin/locale',
+          relPath: 'bin/locale',
+          kind: 'file',
+          depth: 1,
+          size: 100,
+          isHidden: false,
+          matchScore: 80,
+        },
+        {
+          name: 'locale',
+          path: '/usr/bin/locale',
+          relPath: 'bin/locale',
+          kind: 'file',
+          depth: 1,
+          size: 100,
+          isHidden: false,
+          matchScore: 80,
+        },
+      ]),
+    );
+
+    engine.setQuery('/usr/loca', true);
+    await engine.waitForPendingSearch();
+
+    // Duplicate absPath entries must be deduplicated
+    expect(engine.items.value.map((item) => item.absPath)).toEqual([
+      '/usr/local',
+      '/usr/bin/locale',
+    ]);
+
+    // Tab must complete the unique prefix match `/usr/local/` instead of regressing to `/usr/`
+    mockProbeExternalPath.mockResolvedValueOnce(
+      makeProbeResult({
+        rawInput: '/usr/local/',
+        resolvedPath: '/usr/local',
+        exists: true,
+        kind: 'directory',
+        readable: true,
+      }),
+    );
+    mockListExternalDirectory.mockResolvedValueOnce(makeDirectoryListing('/usr/local', []));
+    const completed = await engine.handleTabComplete();
+    expect(completed).toBe(true);
+    expect(engine.query.value).toBe('/usr/local/');
+    await engine.waitForPendingSearch();
+
+    // When no candidate starts with the current term, Tab must NOT shorten/regress the query
+    mockProbeExternalPath.mockResolvedValueOnce(
+      makeProbeResult({
+        rawInput: '/usr/xyz',
+        resolvedPath: '/usr/xyz',
+        exists: false,
+        kind: 'not_found',
+        readable: false,
+      }),
+    );
+    mockListExternalDirectory.mockResolvedValueOnce(
+      makeDirectoryListing('/usr', [
+        {
+          name: 'xyz1',
+          path: '/usr/bin/xyz1',
+          relPath: 'bin/xyz1',
+          kind: 'file',
+          depth: 1,
+          size: 10,
+          isHidden: false,
+          matchScore: 50,
+        },
+        {
+          name: 'xyz2',
+          path: '/usr/share/xyz2',
+          relPath: 'share/xyz2',
+          kind: 'file',
+          depth: 1,
+          size: 10,
+          isHidden: false,
+          matchScore: 40,
+        },
+      ]),
+    );
+    engine.setQuery('/usr/xyz', true);
+    await engine.waitForPendingSearch();
+
+    const noRegress = await engine.handleTabComplete();
+    expect(noRegress).toBe(false);
+    expect(engine.query.value).toBe('/usr/xyz');
+
+    engine.dispose();
+  });
 });

@@ -178,6 +178,21 @@ function flattenTagNodes(nodes: TagNode[]): Array<{ tag: string; count: number }
   return flat;
 }
 
+function dedupeItemsByAbsPath(list: QuickOpenResultItem[]): QuickOpenResultItem[] {
+  const seen = new Set<string>();
+  const out: QuickOpenResultItem[] = [];
+  for (const item of list) {
+    if (item.absPath) {
+      if (seen.has(item.absPath)) {
+        continue;
+      }
+      seen.add(item.absPath);
+    }
+    out.push(item);
+  }
+  return out;
+}
+
 function extractErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -399,9 +414,11 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
           if (reqId !== activeRequestId) {
             return;
           }
-          items.value = listing.entries
-            .map((entry) => mapDirectoryEntryItem(entry, 'path', false))
-            .filter((item): item is QuickOpenResultItem => item !== null);
+          items.value = dedupeItemsByAbsPath(
+            listing.entries
+              .map((entry) => mapDirectoryEntryItem(entry, 'path', false))
+              .filter((item): item is QuickOpenResultItem => item !== null),
+          );
           selectedIndex.value = 0;
           return;
         }
@@ -417,9 +434,11 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
           if (reqId !== activeRequestId) {
             return;
           }
-          items.value = (listing?.entries ?? [])
-            .map((entry) => mapDirectoryEntryItem(entry, 'path', false))
-            .filter((item): item is QuickOpenResultItem => item !== null);
+          items.value = dedupeItemsByAbsPath(
+            (listing?.entries ?? [])
+              .map((entry) => mapDirectoryEntryItem(entry, 'path', false))
+              .filter((item): item is QuickOpenResultItem => item !== null),
+          );
           selectedIndex.value = 0;
           return;
         }
@@ -634,8 +653,31 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
       return false;
     }
 
-    if (items.value.length === 1) {
-      const only = items.value[0];
+    const rawTerm = parsedQuery.value.term.trim();
+    const resolvedTerm = pathProbeResult.value?.resolvedPath || rawTerm;
+    const resolvedLower = resolvedTerm.toLowerCase();
+
+    const exactPrefixMatches = items.value.filter(
+      (item) => typeof item.absPath === 'string' && item.absPath.startsWith(resolvedTerm),
+    );
+    const prefixMatches =
+      exactPrefixMatches.length > 0
+        ? exactPrefixMatches
+        : items.value.filter(
+            (item) =>
+              typeof item.absPath === 'string' &&
+              item.absPath.toLowerCase().startsWith(resolvedLower),
+          );
+
+    const candidates =
+      prefixMatches.length > 0 ? prefixMatches : items.value.length === 1 ? items.value : [];
+
+    if (candidates.length === 0) {
+      return false;
+    }
+
+    if (candidates.length === 1) {
+      const only = candidates[0];
       if (!only?.absPath) {
         return false;
       }
@@ -644,15 +686,18 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
           ? only.absPath
           : `${only.absPath}/`
         : only.absPath;
+      if (nextPrefix === rawTerm) {
+        return false;
+      }
       setQuery(nextPrefix, true);
       return true;
     }
 
-    const paths = items.value
+    const paths = candidates
       .map((item) => item.absPath)
       .filter((p): p is string => typeof p === 'string' && p.length > 0);
     const lcp = computeLongestCommonPrefix(paths);
-    if (lcp && lcp !== parsedQuery.value.term) {
+    if (lcp.length > resolvedTerm.length && lcp !== rawTerm) {
       setQuery(lcp, true);
       return true;
     }
