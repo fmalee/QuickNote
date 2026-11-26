@@ -26,7 +26,7 @@
 
 ## 已定形态（勿重新论证）
 
-- Quick Bar 与全局 Toast 采用原生非激活 `NSPanel`，`collectionBehavior = fullScreenAuxiliary`（256，不含 `canJoinAllSpaces`），不跨 Space、切 Space 自动复位、点击外部不关闭（`D-0001`、`D-0002`）。
+- Quick Bar 与全局 Toast 采用原生非激活 `NSPanel`，`collectionBehavior = fullScreenAuxiliary`（256，不含 `canJoinAllSpaces`），不跨 Space、切 Space 自动复位、默认失焦即关闭，「固定」态例外（`D-0001`、`D-0002`、`D-0013`）。
 - 常驻内存与渲染模型：主窗口与 Quick Bar 常驻，Settings / Toast 等低频副窗口按需创建并闲置销毁；主编辑器复用单一 CM6 `EditorView`，配合可配置上限的 `EditorState` LRU 池（绝不淘汰激活态或 `isDirty` 标签）（`C7.5`）。
 - 45% 侧栏辅助模式：复用主工作台 WebView，macOS 原生层配置全屏 Space 悬浮叠加行为，托盘与 Quick Bar 均提供切换入口（`C7.5`）。
 - macOS 激活策略动态切换：主窗口与设置窗隐藏时为 `.accessory`，显示期间为 `.regular`（`D-0003`）。

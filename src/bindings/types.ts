@@ -544,6 +544,7 @@ export type QuickBarSettings = {
 	lastActiveTtlHours: number,
 	destroyAfterHiddenMinutes: number,
 	autoCreateMissingSection: boolean,
+	pinned: boolean,
 };
 
 /**  Partial patch for `QuickBarSettings` (`C3.4`, `C4.2`). */
@@ -552,6 +553,7 @@ export type QuickBarSettingsPatch = {
 	lastActiveTtlHours?: number | null,
 	destroyAfterHiddenMinutes?: number | null,
 	autoCreateMissingSection?: boolean | null,
+	pinned?: boolean | null,
 };
 
 /**  Arguments for `note_read` (`C4.2`). */
@@ -667,6 +669,11 @@ export type SearchSource = "library" | "recent" | "spotlight" | "path";
 /**  IPC arguments for `app_set_menu_accelerators` (`M2-QA`). */
 export type SetMenuAcceleratorsArgs = {
 	entries: { [key in string]: string | null },
+};
+
+/**  Arguments for `window_set_quick_bar_pinned` (`C4.2`, `D-0013`). */
+export type SetQuickBarPinnedArgs = {
+	pinned: boolean,
 };
 
 /**  Arguments for `library_set_root` (`C4.2`). */

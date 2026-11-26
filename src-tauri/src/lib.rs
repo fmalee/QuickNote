@@ -1,7 +1,8 @@
 use std::sync::{Arc, OnceLock};
 
 use tauri::menu::{
-    CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
+    CheckMenuItem, CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem,
+    SubmenuBuilder,
 };
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
@@ -54,7 +55,8 @@ extern "C" fn on_quick_bar_esc() {
 extern "C" fn on_quick_bar_resign() {
     if let Some(app) = GLOBAL_APP_HANDLE.get() {
         let wm = app.state::<Arc<WindowManager>>();
-        if let Err(err) = wm.on_quick_bar_lost_focus(app) {
+        let pm = app.state::<Arc<PersistenceManager>>();
+        if let Err(err) = wm.on_quick_bar_lost_focus(app, &pm) {
             eprintln!("[quickbar] focus_lost hide failed: code={:?}", err.code);
         }
     }
@@ -90,7 +92,9 @@ fn noop_bridge() -> Arc<dyn NativeWindowBridge> {
     Arc::new(NoopNativeBridge)
 }
 
-fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
+fn build_app_menu(
+    app: &AppHandle,
+) -> Result<(Menu<tauri::Wry>, CheckMenuItem<tauri::Wry>), tauri::Error> {
     let app_submenu = SubmenuBuilder::new(app, "QuickNote")
         .item(&PredefinedMenuItem::about(
             app,
@@ -263,6 +267,16 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         .item(&MenuItemBuilder::with_id("menu_tools_toast", "调试：触发 5 秒 Toast").build(app)?)
         .build()?;
 
+    let initial_pinned = app
+        .try_state::<Arc<PersistenceManager>>()
+        .and_then(|pm| pm.settings_get().ok())
+        .map(|s| s.settings.quick_bar.pinned)
+        .unwrap_or(false);
+
+    let pin_quick_bar_item = CheckMenuItemBuilder::with_id("window.pinQuickBar", "固定 Quick Bar")
+        .checked(initial_pinned)
+        .build(app)?;
+
     let window_submenu = SubmenuBuilder::new(app, "窗口")
         .item(&PredefinedMenuItem::minimize(app, Some("最小化"))?)
         .item(&PredefinedMenuItem::maximize(app, Some("缩放"))?)
@@ -278,13 +292,14 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         )
         .separator()
         .item(&MenuItemBuilder::with_id("menu_show_main", "显示主窗口").build(app)?)
+        .item(&pin_quick_bar_item)
         .build()?;
 
     let help_submenu = SubmenuBuilder::new(app, "帮助")
         .item(&MenuItemBuilder::with_id("menu_help_about", "QuickNote 快捷键指南").build(app)?)
         .build()?;
 
-    MenuBuilder::new(app)
+    let menu = MenuBuilder::new(app)
         .item(&app_submenu)
         .item(&file_submenu)
         .item(&edit_submenu)
@@ -293,7 +308,9 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         .item(&tools_submenu)
         .item(&window_submenu)
         .item(&help_submenu)
-        .build()
+        .build()?;
+
+    Ok((menu, pin_quick_bar_item))
 }
 
 fn format_tray_auxiliary_label(is_active: bool) -> &'static str {
@@ -305,8 +322,11 @@ fn format_tray_auxiliary_label(is_active: bool) -> &'static str {
 }
 
 fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
-    let menu = build_app_menu(app)?;
+    let (menu, pin_quick_bar_item) = build_app_menu(app)?;
     app.set_menu(menu)?;
+    if let Some(wm) = app.try_state::<Arc<WindowManager>>() {
+        let _ = wm.register_quick_bar_pin_menu_item(pin_quick_bar_item);
+    }
 
     let initial_aux_active = app
         .try_state::<Arc<WindowManager>>()
@@ -429,6 +449,21 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
             }
             "tray_quit" => {
                 app_handle.exit(0);
+            }
+            "window.pinQuickBar" => {
+                let pinned = app_handle
+                    .try_state::<Arc<PersistenceManager>>()
+                    .and_then(|pm| pm.settings_get().ok())
+                    .map(|s| s.settings.quick_bar.pinned)
+                    .unwrap_or(false);
+                if let (Some(pm), Some(wm)) = (
+                    app_handle.try_state::<Arc<PersistenceManager>>(),
+                    app_handle.try_state::<Arc<WindowManager>>(),
+                ) {
+                    if let Err(err) = wm.set_quick_bar_pinned(app_handle, &pm, !pinned) {
+                        eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
+                    }
+                }
             }
             "window.newNote"
             | "window.quickOpen"
@@ -732,6 +767,7 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::window::window_close_settings,
             commands::window::window_dismiss_toast,
             commands::window::hotkey_update,
+            commands::window::window_set_quick_bar_pinned,
             commands::index::index_get_status,
             commands::index::index_rebuild,
             commands::notes::notes_list,

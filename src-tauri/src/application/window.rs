@@ -2,14 +2,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use tauri::menu::CheckMenuItem;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 #[cfg(not(target_os = "macos"))]
 use tauri::{PhysicalPosition, PhysicalSize, Position, Size};
 
+use crate::application::persistence::PersistenceManager;
 use crate::domain::app::ActivationPolicy;
 use crate::domain::capture::AppendResult;
 use crate::domain::error::{AppError, ErrorCode};
-use crate::domain::settings::WindowMode;
+use crate::domain::settings::{QuickBarSettingsPatch, SettingsPatch, WindowMode};
 use crate::domain::window::{
     clamp_auxiliary_width_percent, HideReason, QuickBarMode, WindowPolicyState, WindowState,
     DEFAULT_AUXILIARY_WIDTH_PERCENT,
@@ -158,6 +160,7 @@ pub struct WindowManager {
     layout_state: Mutex<MainWindowModeStateMachine>,
     bridge: Arc<dyn NativeWindowBridge>,
     toast_generation: AtomicU64,
+    quick_bar_pin_menu_item: Mutex<Option<CheckMenuItem<tauri::Wry>>>,
 }
 
 impl WindowManager {
@@ -177,6 +180,7 @@ impl WindowManager {
             )),
             bridge,
             toast_generation: AtomicU64::new(0),
+            quick_bar_pin_menu_item: Mutex::new(None),
         }
     }
 
@@ -624,10 +628,54 @@ impl WindowManager {
         Ok(win_state)
     }
 
+    pub fn register_quick_bar_pin_menu_item(
+        &self,
+        item: CheckMenuItem<tauri::Wry>,
+    ) -> Result<(), AppError> {
+        let mut guard = self.quick_bar_pin_menu_item.lock().map_err(|_| {
+            AppError::new(
+                ErrorCode::InternalError,
+                "Quick Bar pin menu item lock poisoned",
+            )
+        })?;
+        *guard = Some(item);
+        Ok(())
+    }
+
+    pub fn set_quick_bar_pinned(
+        &self,
+        app: &AppHandle,
+        pm: &PersistenceManager,
+        pinned: bool,
+    ) -> Result<bool, AppError> {
+        let snapshot = pm.settings_update(SettingsPatch {
+            quick_bar: Some(QuickBarSettingsPatch {
+                pinned: Some(pinned),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })?;
+        let applied = snapshot.settings.quick_bar.pinned;
+        if let Ok(guard) = self.quick_bar_pin_menu_item.lock() {
+            if let Some(item) = guard.as_ref() {
+                let _ = item.set_checked(applied);
+            }
+        }
+        let _ = app.emit("settings:status", &snapshot.status);
+        Ok(applied)
+    }
+
     /// Called when the Quick Bar panel loses key-window focus (`D-0013`).
-    /// No-op when the panel is already hidden (programmatic hides also trigger resign-key).
-    pub fn on_quick_bar_lost_focus(&self, app: &AppHandle) -> Result<(), AppError> {
+    /// No-op when the panel is already hidden or pinned.
+    pub fn on_quick_bar_lost_focus(
+        &self,
+        app: &AppHandle,
+        pm: &PersistenceManager,
+    ) -> Result<(), AppError> {
         if !self.is_quick_bar_visible()? {
+            return Ok(());
+        }
+        if pm.settings_get()?.settings.quick_bar.pinned {
             return Ok(());
         }
         self.hide_quick_bar(app, HideReason::FocusLost)?;

@@ -58,6 +58,13 @@ pub struct HideQuickBarArgs {
     pub reason: HideReason,
 }
 
+/// Arguments for `window_set_quick_bar_pinned` (`C4.2`, `D-0013`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SetQuickBarPinnedArgs {
+    pub pinned: bool,
+}
+
 /// Pure in-memory state machine for dynamic `.accessory` <-> `.regular` activation policy (`D-0003`, `M0-03`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowPolicyState {

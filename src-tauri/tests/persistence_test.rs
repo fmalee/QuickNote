@@ -7,7 +7,8 @@ use quicknote_lib::application::persistence::PersistenceManager;
 use quicknote_lib::domain::backup::{select_backups_to_prune, BackupEntry, MAX_BACKUP_COUNT};
 use quicknote_lib::domain::error::ErrorCode;
 use quicknote_lib::domain::settings::{
-    parse_settings_yaml, EditorSettingsPatch, SetRootArgs, Settings, SettingsPatch,
+    parse_settings_yaml, EditorSettingsPatch, QuickBarSettingsPatch, SetRootArgs, Settings,
+    SettingsPatch,
 };
 use quicknote_lib::domain::ui_state::{
     BackupPathsUiState, LeftSidebarUiState, LeftViewId, NavTab, TerminalPanelUiState, UiState,
@@ -517,6 +518,31 @@ fn settings_show_tab_close_button_defaults_false_and_persists_patch() {
 
     let reloaded = pm.settings_get().expect("reloaded settings_get");
     assert!(reloaded.settings.editor.show_tab_close_button);
+
+    let _ = fs::remove_dir_all(&app_data_dir);
+}
+
+#[test]
+fn settings_quick_bar_pinned_defaults_false_and_persists_patch() {
+    let app_data_dir = make_temp_dir("quick_bar_pinned_setting");
+    let pm = PersistenceManager::open(app_data_dir.clone()).expect("open PersistenceManager");
+
+    let initial = pm.settings_get().expect("initial settings_get");
+    assert!(!initial.settings.quick_bar.pinned);
+
+    let updated = pm
+        .settings_update(SettingsPatch {
+            quick_bar: Some(QuickBarSettingsPatch {
+                pinned: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .expect("settings_update quick_bar.pinned");
+    assert!(updated.settings.quick_bar.pinned);
+
+    let reloaded = pm.settings_get().expect("reloaded settings_get");
+    assert!(reloaded.settings.quick_bar.pinned);
 
     let _ = fs::remove_dir_all(&app_data_dir);
 }

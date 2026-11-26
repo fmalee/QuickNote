@@ -124,6 +124,7 @@ pub struct QuickBarSettings {
     pub last_active_ttl_hours: u32,
     pub destroy_after_hidden_minutes: u32,
     pub auto_create_missing_section: bool,
+    pub pinned: bool,
 }
 
 impl Default for QuickBarSettings {
@@ -133,6 +134,7 @@ impl Default for QuickBarSettings {
             last_active_ttl_hours: 24,
             destroy_after_hidden_minutes: 10,
             auto_create_missing_section: false,
+            pinned: false,
         }
     }
 }
@@ -371,6 +373,8 @@ pub struct QuickBarSettingsPatch {
     pub destroy_after_hidden_minutes: Option<u32>,
     #[serde(default)]
     pub auto_create_missing_section: Option<bool>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
 }
 
 /// Partial patch for `MainWindowSettings` (`C3.4`, `C4.2`).
@@ -539,6 +543,9 @@ pub fn apply_settings_patch(base: &Settings, patch: &SettingsPatch) -> Result<Se
         }
         if let Some(auto) = qb.auto_create_missing_section {
             next.quick_bar.auto_create_missing_section = auto;
+        }
+        if let Some(pinned) = qb.pinned {
+            next.quick_bar.pinned = pinned;
         }
     }
 
@@ -791,6 +798,7 @@ struct QuickBarSettingsYaml {
     last_active_ttl_hours: u32,
     destroy_after_hidden_minutes: u32,
     auto_create_missing_section: bool,
+    pinned: bool,
 }
 
 impl Default for QuickBarSettingsYaml {
@@ -801,6 +809,7 @@ impl Default for QuickBarSettingsYaml {
             last_active_ttl_hours: d.last_active_ttl_hours,
             destroy_after_hidden_minutes: d.destroy_after_hidden_minutes,
             auto_create_missing_section: d.auto_create_missing_section,
+            pinned: d.pinned,
         }
     }
 }
@@ -1063,6 +1072,7 @@ impl From<SettingsYaml> for Settings {
                 last_active_ttl_hours: y.quick_bar.last_active_ttl_hours,
                 destroy_after_hidden_minutes: y.quick_bar.destroy_after_hidden_minutes,
                 auto_create_missing_section: y.quick_bar.auto_create_missing_section,
+                pinned: y.quick_bar.pinned,
             },
             main_window: MainWindowSettings {
                 mode: y.main_window.mode,
@@ -1162,6 +1172,7 @@ impl From<&Settings> for SettingsYaml {
                 last_active_ttl_hours: s.quick_bar.last_active_ttl_hours,
                 destroy_after_hidden_minutes: s.quick_bar.destroy_after_hidden_minutes,
                 auto_create_missing_section: s.quick_bar.auto_create_missing_section,
+                pinned: s.quick_bar.pinned,
             },
             main_window: MainWindowSettingsYaml {
                 mode: s.main_window.mode,

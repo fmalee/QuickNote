@@ -43,6 +43,7 @@ function makeInvalidSettingsSnapshot(): SettingsSnapshot {
         lastActiveTtlHours: 24,
         destroyAfterHiddenMinutes: 10,
         autoCreateMissingSection: false,
+        pinned: false,
       },
       mainWindow: { mode: 'standard', auxiliaryWidthPercent: 45 },
       editor: {

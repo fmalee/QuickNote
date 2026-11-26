@@ -162,6 +162,7 @@ function makeSnapshot(overrides?: Partial<SettingsSnapshot['settings']>): Settin
         lastActiveTtlHours: 24,
         destroyAfterHiddenMinutes: 10,
         autoCreateMissingSection: false,
+        pinned: false,
       },
       mainWindow: {
         mode: 'standard',

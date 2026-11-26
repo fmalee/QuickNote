@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::application::hotkey::HotkeyManager;
 use crate::application::persistence::PersistenceManager;
@@ -10,7 +10,7 @@ use crate::domain::hotkey::HotkeyUpdateArgs;
 use crate::domain::ui_state::HotkeyStatus;
 use crate::domain::window::{
     clamp_auxiliary_width_percent, HideQuickBarArgs, HideReason, MainWindowArgs, QuickBarArgs,
-    WindowState, DEFAULT_AUXILIARY_WIDTH_PERCENT,
+    SetQuickBarPinnedArgs, WindowState, DEFAULT_AUXILIARY_WIDTH_PERCENT,
 };
 use crate::on_hotkey_pressed;
 
@@ -110,4 +110,15 @@ pub fn hotkey_update(
     args: HotkeyUpdateArgs,
 ) -> Result<HotkeyStatus, AppError> {
     hm.update_hotkey(&args.combo, on_hotkey_pressed)
+}
+
+/// Persists `quick_bar.pinned` and syncs the native menu checkmark (`C4.2`, `D-0013`).
+#[tauri::command]
+pub fn window_set_quick_bar_pinned(
+    pm: State<'_, Arc<PersistenceManager>>,
+    app: AppHandle,
+    args: SetQuickBarPinnedArgs,
+) -> Result<bool, AppError> {
+    app.state::<Arc<WindowManager>>()
+        .set_quick_bar_pinned(&app, &pm, args.pinned)
 }

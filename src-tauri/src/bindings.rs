@@ -50,7 +50,8 @@ use crate::domain::watch::{
     ExternalChangeEvent, ExternalChangeKind, QuickBarDraft, RecoverySnapshot,
 };
 use crate::domain::window::{
-    HideQuickBarArgs, HideReason, MainWindowArgs, QuickBarArgs, QuickBarMode, WindowState,
+    HideQuickBarArgs, HideReason, MainWindowArgs, QuickBarArgs, QuickBarMode,
+    SetQuickBarPinnedArgs, WindowState,
 };
 use crate::domain::workspace_context::{DirectoryWorkspaceConfig, EffectiveWorkspaceContext};
 
@@ -117,6 +118,7 @@ pub fn collect_types() -> Types {
         .register::<MainWindowArgs>()
         .register::<QuickBarArgs>()
         .register::<HideQuickBarArgs>()
+        .register::<SetQuickBarPinnedArgs>()
         .register::<HotkeyUpdateArgs>()
         .register::<NoteType>()
         .register::<NoteMeta>()
