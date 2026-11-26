@@ -4,6 +4,7 @@ import type {
   DirNode,
   DirectoryWorkspaceConfig,
   DirectoryWorkspaceConfigEntry,
+  ExternalActionState,
   NoteSummary,
   SearchResultItem,
   TagNode,
@@ -17,7 +18,12 @@ import {
   QnInput,
   QnModalShell,
 } from '@/components';
-import { useEditorTabsStore } from '@/features/editor';
+import {
+  appendExternalContextMenuItems,
+  isExternalActionId,
+  useEditorTabsStore,
+  useExternalActions,
+} from '@/features/editor';
 import { OutlinePanel, RelatedNotesPanel, usePanelsStore } from '@/features/panels';
 import { type ActionContext, actionRegistry } from '@/lib/actions';
 import {
@@ -58,6 +64,7 @@ const emit = defineEmits<{
 const notesStore = useNotesStore();
 const editorTabsStore = useEditorTabsStore();
 const panelsStore = usePanelsStore();
+const externalActions = useExternalActions();
 
 const filterInputRef = ref<HTMLInputElement | null>(null);
 const expandedDirs = ref<Record<string, boolean>>({});
@@ -445,13 +452,14 @@ const renameInputRef = ref<HTMLInputElement | null>(null);
 const noteCtxOpen = ref<boolean>(false);
 const noteCtxPos = ref<{ x: number; y: number }>({ x: 0, y: 0 });
 const noteCtxTarget = ref<NoteSummary | null>(null);
+const noteCtxExternalStates = ref<ExternalActionState[]>([]);
+let noteMenuSeq = 0;
 
 const noteCtxMenuItems = computed<ContextMenuEntry[]>(() => {
   const note = noteCtxTarget.value;
   const entries: ContextMenuEntry[] = [
     { type: 'item', id: 'note.open', title: '打开' },
-    { type: 'item', id: 'note.openPinned', title: '在新标签打开' },
-    { type: 'item', id: 'note.reveal', title: '在访达中显示' },
+    { type: 'item', id: 'note.preview', title: '预览' },
   ];
   if (note && canMutateNote(note)) {
     entries.push(
@@ -460,13 +468,38 @@ const noteCtxMenuItems = computed<ContextMenuEntry[]>(() => {
       { type: 'item', id: 'note.delete', title: '删除', danger: true },
     );
   }
-  return entries;
+  return appendExternalContextMenuItems(entries, noteCtxExternalStates.value, 'note-ext-sep');
 });
 
-function openNoteContextMenu(event: MouseEvent, note: NoteSummary): void {
+async function openNoteContextMenu(event: MouseEvent, note: NoteSummary): Promise<void> {
+  const reqSeq = ++noteMenuSeq;
   noteCtxTarget.value = note;
   noteCtxPos.value = { x: event.clientX, y: event.clientY };
+
+  if (
+    note.absPath &&
+    note.absPath === externalActions.resolvedAbsPath &&
+    externalActions.states.length > 0
+  ) {
+    noteCtxExternalStates.value = externalActions.states;
+    noteCtxOpen.value = true;
+    return;
+  }
+
+  noteCtxExternalStates.value = [];
   noteCtxOpen.value = true;
+  try {
+    const resolved = await externalActions.resolveForTarget({
+      absPath: note.absPath || null,
+    });
+    if (reqSeq === noteMenuSeq) {
+      noteCtxExternalStates.value = resolved;
+    }
+  } catch {
+    if (reqSeq === noteMenuSeq) {
+      noteCtxExternalStates.value = [];
+    }
+  }
 }
 
 async function handleNoteContextSelect(id: string): Promise<void> {
@@ -475,12 +508,17 @@ async function handleNoteContextSelect(id: string): Promise<void> {
   if (!note) {
     return;
   }
+  if (isExternalActionId(id)) {
+    await externalActions.executeAction(id, {
+      overrideStates: noteCtxExternalStates.value,
+      pinned: note.pinned,
+    });
+    return;
+  }
   if (id === 'note.open') {
-    openNoteFromList(note, true);
-  } else if (id === 'note.openPinned') {
     openNoteFromList(note, false);
-  } else if (id === 'note.reveal') {
-    await notesStore.revealExternalFile(note.absPath);
+  } else if (id === 'note.preview') {
+    openNoteFromList(note, true);
   } else if (id === 'note.rename') {
     await startRename(note);
   } else if (id === 'note.delete') {

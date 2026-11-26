@@ -8,6 +8,7 @@ export { default as InboxBloatBanner } from './InboxBloatBanner.vue';
 export { default as InboxExtractModal } from './InboxExtractModal.vue';
 export { default as MarkdownEditor } from './MarkdownEditor.vue';
 export {
+  appendExternalContextMenuItems,
   buildExternalContextMenuItems,
   buildExternalRunArgs,
   EXTERNAL_ACTION_SPECS,

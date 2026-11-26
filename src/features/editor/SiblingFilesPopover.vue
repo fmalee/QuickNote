@@ -45,7 +45,7 @@ let entryMenuSeq = 0;
 const contextMenuItems = computed<ContextMenuEntry[]>(() => {
   const baseEntries: ContextMenuEntry[] = [
     { type: 'item', id: 'sibling.open', title: '打开' },
-    { type: 'item', id: 'sibling.openNewTab', title: '在新标签打开' },
+    { type: 'item', id: 'sibling.preview', title: '预览' },
   ];
   return appendExternalContextMenuItems(baseEntries, contextEntryStates.value, 'sibling-ext-sep');
 });
@@ -159,8 +159,10 @@ async function handleContextMenuSelect(id: string): Promise<void> {
     await handleSelectEntry(entry);
     return;
   }
-  if (id === 'sibling.openNewTab') {
-    await editorTabsStore.openNoteByAbsPath(entry.path, { preview: false });
+  if (id === 'sibling.preview') {
+    if (entry.path !== props.docPath) {
+      await editorTabsStore.openNoteByAbsPath(entry.path, { preview: true });
+    }
     emit('select', entry.path);
     emit('close');
     return;
