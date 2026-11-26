@@ -91,9 +91,13 @@ fn noop_bridge() -> Arc<dyn NativeWindowBridge> {
     Arc::new(NoopNativeBridge)
 }
 
-fn build_app_menu(
-    app: &AppHandle,
-) -> Result<(Menu<tauri::Wry>, CheckMenuItem<tauri::Wry>), tauri::Error> {
+struct BuiltAppMenu {
+    menu: Menu<tauri::Wry>,
+    pin_quick_bar_item: CheckMenuItem<tauri::Wry>,
+    show_tab_close_button_item: CheckMenuItem<tauri::Wry>,
+}
+
+fn build_app_menu(app: &AppHandle) -> Result<BuiltAppMenu, tauri::Error> {
     let app_submenu = SubmenuBuilder::new(app, "QuickNote")
         .item(&PredefinedMenuItem::about(
             app,
@@ -276,6 +280,17 @@ fn build_app_menu(
         .checked(initial_pinned)
         .build(app)?;
 
+    let initial_show_tab_close_button = app
+        .try_state::<Arc<PersistenceManager>>()
+        .and_then(|pm| pm.settings_get().ok())
+        .map(|s| s.settings.editor.show_tab_close_button)
+        .unwrap_or(false);
+
+    let show_tab_close_button_item =
+        CheckMenuItemBuilder::with_id("window.toggleTabCloseButton", "显示标签关闭按钮")
+            .checked(initial_show_tab_close_button)
+            .build(app)?;
+
     let window_submenu = SubmenuBuilder::new(app, "窗口")
         .item(&PredefinedMenuItem::minimize(app, Some("最小化"))?)
         .item(&PredefinedMenuItem::maximize(app, Some("缩放"))?)
@@ -289,6 +304,7 @@ fn build_app_menu(
                 .accelerator("Ctrl+Shift+Tab")
                 .build(app)?,
         )
+        .item(&show_tab_close_button_item)
         .separator()
         .item(&MenuItemBuilder::with_id("menu_show_main", "显示主窗口").build(app)?)
         .item(&pin_quick_bar_item)
@@ -309,7 +325,11 @@ fn build_app_menu(
         .item(&help_submenu)
         .build()?;
 
-    Ok((menu, pin_quick_bar_item))
+    Ok(BuiltAppMenu {
+        menu,
+        pin_quick_bar_item,
+        show_tab_close_button_item,
+    })
 }
 
 fn format_tray_auxiliary_label(is_active: bool) -> &'static str {
@@ -321,7 +341,11 @@ fn format_tray_auxiliary_label(is_active: bool) -> &'static str {
 }
 
 fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
-    let (menu, pin_quick_bar_item) = build_app_menu(app)?;
+    let BuiltAppMenu {
+        menu,
+        pin_quick_bar_item,
+        show_tab_close_button_item,
+    } = build_app_menu(app)?;
     app.set_menu(menu)?;
     if let Some(wm) = app.try_state::<Arc<WindowManager>>() {
         let _ = wm.register_quick_bar_pin_menu_item(pin_quick_bar_item);
@@ -388,7 +412,19 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
         }
     });
 
+    let show_tab_close_for_event = show_tab_close_button_item.clone();
+    let app_for_settings_event = app.clone();
+    app.listen("settings:status", move |_| {
+        if let Some(pm) = app_for_settings_event.try_state::<Arc<PersistenceManager>>() {
+            if let Ok(snapshot) = pm.settings_get() {
+                let _ = show_tab_close_for_event
+                    .set_checked(snapshot.settings.editor.show_tab_close_button);
+            }
+        }
+    });
+
     let tray_aux_for_menu = tray_aux_item.clone();
+    let show_tab_close_for_menu = show_tab_close_button_item;
     app.on_menu_event(move |app_handle, event| {
         let wm = app_handle.state::<Arc<WindowManager>>();
         let menu_id = event.id().as_ref();
@@ -461,6 +497,31 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
                 ) {
                     if let Err(err) = wm.set_quick_bar_pinned(app_handle, &pm, !pinned) {
                         eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
+                    }
+                }
+            }
+            "window.toggleTabCloseButton" => {
+                if let Some(pm) = app_handle.try_state::<Arc<PersistenceManager>>() {
+                    let current = pm
+                        .settings_get()
+                        .map(|s| s.settings.editor.show_tab_close_button)
+                        .unwrap_or(false);
+                    match pm.settings_update(crate::domain::settings::SettingsPatch {
+                        editor: Some(crate::domain::settings::EditorSettingsPatch {
+                            show_tab_close_button: Some(!current),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }) {
+                        Ok(snapshot) => {
+                            let _ = show_tab_close_for_menu
+                                .set_checked(snapshot.settings.editor.show_tab_close_button);
+                            let _ = app_handle.emit("settings:status", &snapshot.status);
+                        }
+                        Err(err) => {
+                            let _ = show_tab_close_for_menu.set_checked(current);
+                            eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
+                        }
                     }
                 }
             }
