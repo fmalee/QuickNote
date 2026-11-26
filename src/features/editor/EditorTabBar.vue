@@ -18,11 +18,19 @@ const settingsStore = useSettingsStore();
 const externalActions = useExternalActions();
 
 const SCROLL_INDICATOR_HIDE_MS = 600;
+const DRAG_THRESHOLD_PX = 5;
 
 const tabListRef = ref<HTMLElement | null>(null);
 const isScrolling = ref(false);
 const draggingKey = ref<string | null>(null);
 const dropTarget = ref<{ key: string; position: 'before' | 'after' } | null>(null);
+let pointerDragState: {
+  key: string;
+  startX: number;
+  startY: number;
+  active: boolean;
+} | null = null;
+let suppressNextClick = false;
 const contextMenuOpen = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
 const contextTab = ref<EditorTab | null>(null);
@@ -110,18 +118,11 @@ const contextMenuItems = computed<ContextMenuEntry[]>(() => [
     disabled: tabsStore.tabs.length <= 1,
   },
   {
-    type: 'submenu',
-    id: 'tab.delete',
-    title: '删除',
+    type: 'item',
+    id: 'tab.deleteFile',
+    title: '删除（移到废纸篓）',
+    danger: true,
     disabled: !canDeleteFile(contextTab.value),
-    items: [
-      {
-        type: 'item',
-        id: 'tab.deleteFile',
-        title: '删除文件（移到废纸篓）',
-        danger: true,
-      },
-    ],
   },
 ]);
 
@@ -172,43 +173,112 @@ async function handleContextMenuSelect(id: string): Promise<void> {
   }
 }
 
-function handleTabDragStart(event: DragEvent, tab: EditorTab): void {
-  draggingKey.value = tab.key;
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', tab.key);
+function handleTabClick(tab: EditorTab): void {
+  if (suppressNextClick) {
+    suppressNextClick = false;
+    return;
   }
+  void tabsStore.activateTab(tab.key);
 }
 
-function handleTabDragOver(event: DragEvent, tab: EditorTab): void {
-  if (!draggingKey.value || draggingKey.value === tab.key) {
+function updatePointerDropTarget(clientX: number, clientY: number, fromKey: string): void {
+  const listEl = tabListRef.value;
+  if (!listEl || typeof listEl.getBoundingClientRect !== 'function') {
     dropTarget.value = null;
     return;
   }
-  const el = event.currentTarget as HTMLElement | null;
-  if (!el) {
+  const listRect = listEl.getBoundingClientRect();
+  if (clientY < listRect.top - 12 || clientY > listRect.bottom + 12) {
+    dropTarget.value = null;
     return;
   }
-  const rect = el.getBoundingClientRect();
-  const position: 'before' | 'after' =
-    event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-  dropTarget.value = { key: tab.key, position };
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'move';
+
+  const itemEls = Array.from(listEl.querySelectorAll<HTMLElement>('[data-tab-key]'));
+  for (const el of itemEls) {
+    const key = el.dataset.tabKey;
+    if (!key) {
+      continue;
+    }
+    const rect = el.getBoundingClientRect();
+    if (clientX >= rect.left && clientX <= rect.right) {
+      if (key === fromKey) {
+        dropTarget.value = null;
+        return;
+      }
+      const position: 'before' | 'after' =
+        clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+      dropTarget.value = { key, position };
+      return;
+    }
   }
+  dropTarget.value = null;
 }
 
-function handleTabDrop(tab: EditorTab): void {
-  if (draggingKey.value && dropTarget.value && dropTarget.value.key === tab.key) {
-    tabsStore.reorderTab(draggingKey.value, tab.key, dropTarget.value.position);
+function handleWindowPointerMove(event: PointerEvent): void {
+  if (!pointerDragState) {
+    return;
   }
+  if (!pointerDragState.active) {
+    const dx = event.clientX - pointerDragState.startX;
+    const dy = event.clientY - pointerDragState.startY;
+    if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) {
+      return;
+    }
+    pointerDragState.active = true;
+    draggingKey.value = pointerDragState.key;
+  }
+  updatePointerDropTarget(event.clientX, event.clientY, pointerDragState.key);
+}
+
+function stopWindowPointerListeners(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.removeEventListener('pointermove', handleWindowPointerMove);
+  window.removeEventListener('pointerup', handleWindowPointerUp);
+  window.removeEventListener('pointercancel', handleWindowPointerCancel);
+}
+
+function handleWindowPointerUp(): void {
+  stopWindowPointerListeners();
+  if (pointerDragState?.active) {
+    if (draggingKey.value && dropTarget.value) {
+      tabsStore.reorderTab(draggingKey.value, dropTarget.value.key, dropTarget.value.position);
+    }
+    suppressNextClick = true;
+  }
+  pointerDragState = null;
   draggingKey.value = null;
   dropTarget.value = null;
 }
 
-function handleTabDragEnd(): void {
+function handleWindowPointerCancel(): void {
+  stopWindowPointerListeners();
+  pointerDragState = null;
   draggingKey.value = null;
   dropTarget.value = null;
+}
+
+function handleTabPointerDown(event: PointerEvent, tab: EditorTab): void {
+  if (event.button !== 0) {
+    return;
+  }
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('button')) {
+    return;
+  }
+  suppressNextClick = false;
+  pointerDragState = {
+    key: tab.key,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerCancel);
+  }
 }
 
 function getTabTitle(tab: EditorTab): string {
@@ -280,6 +350,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  stopWindowPointerListeners();
   while (actionDisposers.length > 0) {
     actionDisposers.pop()?.();
   }
@@ -306,8 +377,8 @@ onUnmounted(() => {
         v-for="tab in tabsStore.tabs"
         :key="tab.key"
         role="tab"
-        draggable="true"
         :aria-selected="tab.key === tabsStore.activeKey"
+        :data-tab-key="tab.key"
         :data-testid="`editor-tab-${tab.relPath ?? tab.absPath}`"
         :class="[
           'qn-tabbar__item',
@@ -315,6 +386,7 @@ onUnmounted(() => {
             'qn-tabbar__item--active': tab.key === tabsStore.activeKey,
             'qn-tabbar__item--preview': tab.isPreview,
             'qn-tabbar__item--missing': tab.isMissing || tab.conflictState?.kind === 'deleted',
+            'qn-tabbar__item--dragging': draggingKey === tab.key,
             'qn-tabbar__item--drop-before':
               dropTarget?.key === tab.key && dropTarget.position === 'before',
             'qn-tabbar__item--drop-after':
@@ -322,14 +394,11 @@ onUnmounted(() => {
           },
         ]"
         :title="tab.absPath || tab.relPath || undefined"
-        @click="tabsStore.activateTab(tab.key)"
+        @pointerdown="handleTabPointerDown($event, tab)"
+        @click="handleTabClick(tab)"
         @dblclick="tabsStore.promoteTabToPinned(tab.key)"
         @mousedown.middle.prevent="tabsStore.closeTab(tab.key)"
         @contextmenu.prevent="openTabContextMenu($event, tab)"
-        @dragstart="handleTabDragStart($event, tab)"
-        @dragover.prevent="handleTabDragOver($event, tab)"
-        @drop.prevent="handleTabDrop(tab)"
-        @dragend="handleTabDragEnd"
       >
         <span class="qn-tabbar__title">{{ getTabTitle(tab) }}</span>
         <QnBadge
@@ -459,6 +528,10 @@ onUnmounted(() => {
 
 .qn-tabbar__item--missing {
   color: var(--qn-danger);
+}
+
+.qn-tabbar__item--dragging {
+  opacity: 0.6;
 }
 
 .qn-tabbar__item--drop-before {

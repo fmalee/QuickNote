@@ -488,7 +488,7 @@ describe('tabbar-and-focus-guard (M3-qa)', () => {
       // 4. R24: 不再渲染「关闭其他」按钮
       expect(host.querySelector('[data-testid="editor-tab-close-others"]')).toBeNull();
 
-      // 5. R25: 普通笔记标签右键菜单包含 tab.delete 子菜单且未禁用；inbox.md 标签上禁用
+      // 5. R25: 普通笔记标签右键菜单包含 tab.deleteFile 菜单项且未禁用；inbox.md 标签上禁用
       const tabAEl = host.querySelector('[data-testid="editor-tab-a.md"]');
       expect(tabAEl).not.toBeNull();
       tabAEl!.dispatchEvent({
@@ -499,9 +499,9 @@ describe('tabbar-and-focus-guard (M3-qa)', () => {
       });
       await nextTick();
 
-      const deleteSubmenuNormal = host.querySelector('[data-menu-id="tab.delete"]');
-      expect(deleteSubmenuNormal).not.toBeNull();
-      expect(deleteSubmenuNormal!.getAttribute('disabled')).toBeNull();
+      const deleteItemNormal = host.querySelector('[data-menu-id="tab.deleteFile"]');
+      expect(deleteItemNormal).not.toBeNull();
+      expect(deleteItemNormal!.getAttribute('disabled')).toBeNull();
 
       await tabsStore.openNoteByAbsPath('/vault/inbox.md', { preview: false });
       await nextTick();
@@ -515,9 +515,9 @@ describe('tabbar-and-focus-guard (M3-qa)', () => {
       });
       await nextTick();
 
-      const deleteSubmenuInbox = host.querySelector('[data-menu-id="tab.delete"]');
-      expect(deleteSubmenuInbox).not.toBeNull();
-      expect(deleteSubmenuInbox!.getAttribute('disabled')).not.toBeNull();
+      const deleteItemInbox = host.querySelector('[data-menu-id="tab.deleteFile"]');
+      expect(deleteItemInbox).not.toBeNull();
+      expect(deleteItemInbox!.getAttribute('disabled')).not.toBeNull();
     } finally {
       app.unmount();
       tabsStore.dispose();
