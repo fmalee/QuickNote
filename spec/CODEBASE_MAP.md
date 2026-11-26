@@ -136,3 +136,6 @@ src-tauri/
 7. **`meta + body` 分离与坐标系**：编辑器内所有行号（大纲 / 收件箱提取 / 命令书 `line`）均为剥离 frontmatter 后的 `NoteDoc.body` 1-based 行号；`note_write` 绝不改写 YAML（缺失 ULID 补写为唯一例外），且扫描对账过程只读不改写用户文件。
 8. **Rust 与安全底线**：`src-tauri/src/**` 零 `.unwrap()`/`.expect()`；所有测试落位 `src-tauri/tests/**`；外部命令严禁 shell 拼接；日志严禁打印笔记正文、剪贴板、终端字节流或 PDF HTML；`git commit` / `git merge` 必须带 `--no-gpg-sign`；收工必过 `pnpm check:all`。
 9. **编辑器输入法组合态防抖**：编辑器自动保存在输入法组合态（IME composition）期间不触发，组合结束后再补排保存。
+10. **切库必切 DB + 启动必增量对账（静态门禁强约束）**：`application/library.rs::set_library_root` 必须调用 `pm.switch_vault_db` 切至 `cache/vaults/<hash>.db`（并同步在 `cache/index.db` 留存 `library_root` 供损坏配置冷启动回退）；`lib.rs` 启动 `setup` 必须执行一次只读增量对账 `index_rebuild`/`reconcile_vault`，防止首次选库重启后连向空库导致目录全空与标签全失联。
+11. **外部文件/目录监听全链路对齐（静态门禁强约束）**：`VaultWatcher` 回调必须走 `application/watch.rs::handle_vault_watch_path`（覆盖 `.md`、`.quicknote.yaml` 与目录移动/删除增量对账）；`notes/store.ts` 必须同时订阅 `index:status` 与 `fs:external-change` 实时刷新侧边栏；`SelfWriteGuard` 按路径保留窗口内多次自写历史，避免连续自动保存回声误判冲突。
+12. **`EditorStatePool` 防旧状态复活 & 冲突/退出保存护栏（静态门禁强约束）**：`MarkdownEditor.vue` 复用池化 `EditorState` 前必须校验 `pooled.state.doc.toString() === tab.draftBody`；无 `id` 文档首次保存补写 ULID 升级 `tab.key` 时原地继承当前 `view.state` 绝不读回旧快照；冲突暂缓态须保留「自动保存已暂停」提示且手动 `⌘S` 须重新展开冲突横幅；窗口失焦/隐藏/卸载前必须触发 `flushAllDirtyTabs()`。

@@ -255,4 +255,36 @@ pub fn bad_calls(a: Option<i32>, b: Result<i32, i32>) -> i32 {
     expect(res.stderr).toContain('char_and_panics.rs:7');
     expect(res.stderr).toContain('char_and_panics.rs:8');
   });
+
+  it('rejects broken runtime wiring invariants (startup reconcile, switch_vault_db, notes external watch, editor pool draft guard)', () => {
+    const fixture = createValidRepoFixture();
+    writeRepoFile(
+      fixture,
+      'src-tauri/src/lib.rs',
+      'pub fn run() { let _ = VaultWatcher::start(None, |_| {}); }\n',
+    );
+    writeRepoFile(
+      fixture,
+      'src-tauri/src/application/library.rs',
+      'pub fn set_library_root() { let _ = 1; }\n',
+    );
+    writeRepoFile(
+      fixture,
+      'src/features/notes/store.ts',
+      'export function init() { void subscribeIndexStatus(() => {}); }\n',
+    );
+    writeRepoFile(
+      fixture,
+      'src/features/editor/MarkdownEditor.vue',
+      '<script setup lang="ts">\nconst p = store.getPooledEditorState(tab.key);\nvoid p;\n</script>\n<template><div /></template>\n',
+    );
+
+    const res = runCheck(fixture);
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain('C5.1-startup-reconcile');
+    expect(res.stderr).toContain('C8.5-watch-unified-handler');
+    expect(res.stderr).toContain('C6.1-library-switch-vault-db');
+    expect(res.stderr).toContain('C8.5-notes-subscribe-external-change');
+    expect(res.stderr).toContain('C7.5-editor-pool-draft-guard');
+  });
 });

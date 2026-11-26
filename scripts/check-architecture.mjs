@@ -773,6 +773,82 @@ function checkStyles(rootDir, violations) {
   }
 }
 
+function checkRuntimeWiringInvariants(rootDir, violations) {
+  const libRsPath = path.join(rootDir, 'src-tauri', 'src', 'lib.rs');
+  if (fs.existsSync(libRsPath)) {
+    const cleaned = stripRust(fs.readFileSync(libRsPath, 'utf8'), { stripStrings: false });
+    if (!/\b(?:index_rebuild|reconcile_vault)\s*\(/.test(cleaned)) {
+      violations.push({
+        rule: 'C5.1-startup-reconcile',
+        file: 'src-tauri/src/lib.rs',
+        line: 1,
+        message:
+          'Application startup setup must run read-only incremental vault reconciliation (index_rebuild / reconcile_vault)',
+      });
+    }
+    if (
+      /\bVaultWatcher\s*::\s*start\b/.test(cleaned) &&
+      !/\bhandle_vault_watch_path\s*\(/.test(cleaned)
+    ) {
+      violations.push({
+        rule: 'C8.5-watch-unified-handler',
+        file: 'src-tauri/src/lib.rs',
+        line: 1,
+        message:
+          'VaultWatcher callback must delegate to handle_vault_watch_path so directory moves/deletes and .quicknote.yaml reconcile cleanly',
+      });
+    }
+  }
+
+  const libraryRsPath = path.join(rootDir, 'src-tauri', 'src', 'application', 'library.rs');
+  if (fs.existsSync(libraryRsPath)) {
+    const cleaned = stripRust(fs.readFileSync(libraryRsPath, 'utf8'), { stripStrings: true });
+    if (/\bfn\s+set_library_root\b/.test(cleaned) && !/\bswitch_vault_db\s*\(/.test(cleaned)) {
+      violations.push({
+        rule: 'C6.1-library-switch-vault-db',
+        file: 'src-tauri/src/application/library.rs',
+        line: 1,
+        message:
+          'set_library_root must call switch_vault_db before indexing so cache does not split between cache/index.db and cache/vaults/<hash>.db',
+      });
+    }
+  }
+
+  const notesStorePath = path.join(rootDir, 'src', 'features', 'notes', 'store.ts');
+  if (fs.existsSync(notesStorePath)) {
+    const cleaned = stripJsComments(fs.readFileSync(notesStorePath, 'utf8'));
+    if (
+      !/\bsubscribeFsExternalChange\s*\(/.test(cleaned) ||
+      !/\bsubscribeIndexStatus\s*\(/.test(cleaned)
+    ) {
+      violations.push({
+        rule: 'C8.5-notes-subscribe-external-change',
+        file: 'src/features/notes/store.ts',
+        line: 1,
+        message:
+          'Notes sidebar store must subscribe to both subscribeFsExternalChange and subscribeIndexStatus to stay synced with Finder/vault changes',
+      });
+    }
+  }
+
+  const markdownEditorPath = path.join(rootDir, 'src', 'features', 'editor', 'MarkdownEditor.vue');
+  if (fs.existsSync(markdownEditorPath)) {
+    const cleaned = stripJsComments(fs.readFileSync(markdownEditorPath, 'utf8'));
+    if (
+      /\bgetPooledEditorState\s*\(/.test(cleaned) &&
+      !/\.state\.doc\.toString\(\)\s*===\s*tab\.draftBody/.test(cleaned)
+    ) {
+      violations.push({
+        rule: 'C7.5-editor-pool-draft-guard',
+        file: 'src/features/editor/MarkdownEditor.vue',
+        line: 1,
+        message:
+          'Reusing a pooled EditorState must verify pooled.state.doc.toString() === tab.draftBody to prevent stale content resurrection',
+      });
+    }
+  }
+}
+
 export function checkArchitecture(rootDir) {
   const resolvedRoot = path.resolve(rootDir);
   const violations = [];
@@ -783,6 +859,7 @@ export function checkArchitecture(rootDir) {
   checkFrontendBoundaries(resolvedRoot, violations);
   checkBindingsDir(resolvedRoot, violations);
   checkStyles(resolvedRoot, violations);
+  checkRuntimeWiringInvariants(resolvedRoot, violations);
 
   return violations;
 }
