@@ -127,6 +127,7 @@ export type EditorSettings = {
 	autoSaveDebounceMs: number,
 	autoSaveMaxWaitMs: number,
 	singleClickLink: boolean,
+	showTabCloseButton: boolean,
 };
 
 /**  Partial patch for `EditorSettings` (`C3.4`, `C4.2`). */
@@ -140,6 +141,7 @@ export type EditorSettingsPatch = {
 	autoSaveDebounceMs?: number | null,
 	autoSaveMaxWaitMs?: number | null,
 	singleClickLink?: boolean | null,
+	showTabCloseButton?: boolean | null,
 };
 
 /**  Editor color theme preference (`C6.2`). */

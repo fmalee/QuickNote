@@ -122,6 +122,7 @@ function makeSettingsSnapshot(): SettingsSnapshot {
         autoSaveDebounceMs: 600,
         autoSaveMaxWaitMs: 2000,
         singleClickLink: false,
+        showTabCloseButton: false,
       },
       panels: {
         default: 'outline',

@@ -113,6 +113,14 @@ async function onToggleSingleClickLink(event: Event): Promise<void> {
     },
   });
 }
+
+async function onToggleTabCloseButton(): Promise<void> {
+  await store.patchSettings({
+    editor: {
+      showTabCloseButton: !store.showTabCloseButton,
+    },
+  });
+}
 </script>
 
 <template>
@@ -259,6 +267,17 @@ async function onToggleSingleClickLink(event: Event): Promise<void> {
             @change="onToggleSingleClickLink"
           />
           <span>允许普通单击打开链接（关闭时需按住 ⌘ + 单击）</span>
+        </label>
+
+        <label class="qn-appearance-panel__checkbox-row">
+          <input
+            :checked="store.showTabCloseButton"
+            type="checkbox"
+            :disabled="store.isSettingsInvalid"
+            data-testid="toggle-tab-close-button"
+            @change="onToggleTabCloseButton"
+          />
+          <span>显示标签页关闭按钮</span>
         </label>
       </div>
     </QnPanelCard>

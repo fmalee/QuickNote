@@ -463,4 +463,22 @@ describe('ActionRegistry 作用域优先级、显式吞键与冲突矩阵', () =
     expect(registry.detectConflicts('editor.find', 'cmd+f')).toEqual([]);
     expect(registry.detectConflicts('editor.replace', 'alt+cmd+f')).toEqual([]);
   });
+
+  it('9. window.nextTab 与 window.prevTab 注册默认快捷键且无冲突，⌃⇥ 正确识别为 ctrl+tab', () => {
+    const { event: ctrlTab } = createFakeKeyboardEvent({
+      key: 'Tab',
+      code: 'Tab',
+      ctrlKey: true,
+    });
+    expect(keyboardEventToCombo(ctrlTab)).toBe('ctrl+tab');
+
+    const registry = createActionRegistry({ storage: null });
+    registerDefaultActionCatalog(registry);
+
+    expect(registry.getEffectiveKeys('window.nextTab')).toBe('ctrl+tab');
+    expect(registry.getEffectiveKeys('window.prevTab')).toBe('ctrl+shift+tab');
+
+    expect(registry.detectConflicts('window.nextTab', 'ctrl+tab')).toEqual([]);
+    expect(registry.detectConflicts('window.prevTab', 'ctrl+shift+tab')).toEqual([]);
+  });
 });

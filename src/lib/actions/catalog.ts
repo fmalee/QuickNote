@@ -170,6 +170,24 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     menuGroup: 'view',
     run: noopAction,
   },
+  {
+    id: 'window.nextTab',
+    title: '下一个标签',
+    category: 'window',
+    defaultKeys: 'ctrl+tab',
+    scope: 'main-window',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
+    run: noopAction,
+  },
+  {
+    id: 'window.prevTab',
+    title: '上一个标签',
+    category: 'window',
+    defaultKeys: 'ctrl+shift+tab',
+    scope: 'main-window',
+    when: (ctx) => Boolean(ctx.hasActiveDoc),
+    run: noopAction,
+  },
 
   // editor.*
   {

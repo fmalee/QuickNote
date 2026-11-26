@@ -2,6 +2,8 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { ExternalActionState } from '@/bindings/types';
 import { QnBadge, QnContextMenu, type ContextMenuEntry } from '@/components';
+import { useSettingsStore } from '@/features/settings';
+import { actionRegistry } from '@/lib/actions';
 import { type EditorTab, useEditorTabsStore } from './store';
 import {
   buildExternalContextMenuItems,
@@ -10,6 +12,7 @@ import {
 } from './useExternalActions';
 
 const tabsStore = useEditorTabsStore();
+const settingsStore = useSettingsStore();
 const externalActions = useExternalActions();
 
 const SCROLL_INDICATOR_HIDE_MS = 600;
@@ -22,6 +25,14 @@ const contextTab = ref<EditorTab | null>(null);
 const contextTabStates = ref<ExternalActionState[]>([]);
 let tabMenuSeq = 0;
 let scrollHideTimer: ReturnType<typeof setTimeout> | null = null;
+const actionDisposers: Array<() => void> = [];
+
+function nextIndex(tabs: readonly EditorTab[], currentIndex: number, step: 1 | -1): number {
+  if (tabs.length === 0 || currentIndex < 0 || currentIndex >= tabs.length) {
+    return 0;
+  }
+  return (currentIndex + step + tabs.length) % tabs.length;
+}
 
 function markScrolling(): void {
   isScrolling.value = true;
@@ -190,12 +201,25 @@ function handleKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(() => {
+  actionDisposers.push(
+    actionRegistry.bindHandler('window.nextTab', () => {
+      const currentIndex = tabsStore.tabs.findIndex((tab) => tab.key === tabsStore.activeKey);
+      void tabsStore.activateTabByIndex(nextIndex(tabsStore.tabs, currentIndex, 1));
+    }),
+    actionRegistry.bindHandler('window.prevTab', () => {
+      const currentIndex = tabsStore.tabs.findIndex((tab) => tab.key === tabsStore.activeKey);
+      void tabsStore.activateTabByIndex(nextIndex(tabsStore.tabs, currentIndex, -1));
+    }),
+  );
   if (typeof window !== 'undefined') {
     window.addEventListener('keydown', handleKeydown);
   }
 });
 
 onUnmounted(() => {
+  while (actionDisposers.length > 0) {
+    actionDisposers.pop()?.();
+  }
   if (scrollHideTimer !== null) {
     clearTimeout(scrollHideTimer);
     scrollHideTimer = null;
@@ -260,6 +284,7 @@ onUnmounted(() => {
         <QnBadge v-else-if="tab.conflictState?.kind === 'modified'" tone="warning">冲突</QnBadge>
         <span v-else-if="tab.isDirty" class="qn-tabbar__dirty" aria-label="未保存" />
         <button
+          v-if="settingsStore.showTabCloseButton"
           type="button"
           class="qn-tabbar__close"
           :aria-label="`关闭 ${getTabTitle(tab)}`"

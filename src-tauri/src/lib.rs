@@ -257,6 +257,16 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
     let window_submenu = SubmenuBuilder::new(app, "窗口")
         .item(&PredefinedMenuItem::minimize(app, Some("最小化"))?)
         .item(&PredefinedMenuItem::maximize(app, Some("缩放"))?)
+        .item(
+            &MenuItemBuilder::with_id("window.nextTab", "下一个标签")
+                .accelerator("Ctrl+Tab")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("window.prevTab", "上一个标签")
+                .accelerator("Ctrl+Shift+Tab")
+                .build(app)?,
+        )
         .separator()
         .item(&MenuItemBuilder::with_id("menu_show_main", "显示主窗口").build(app)?)
         .build()?;
@@ -437,7 +447,9 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
             | "panel.toggle.outline"
             | "panel.toggle.related"
             | "panel.toggle.terminal"
-            | "window.toggleAuxiliary" => {
+            | "window.toggleAuxiliary"
+            | "window.nextTab"
+            | "window.prevTab" => {
                 let main_focused = app_handle
                     .get_webview_window("main")
                     .and_then(|win| win.is_focused().ok())

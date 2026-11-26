@@ -73,6 +73,7 @@ function makeValidSettingsSnapshot(overrides?: Partial<SettingsSnapshot>): Setti
         autoSaveDebounceMs: 600,
         autoSaveMaxWaitMs: 2000,
         singleClickLink: false,
+        showTabCloseButton: false,
       },
       panels: {
         default: 'outline',
@@ -157,6 +158,9 @@ describe('settings-update-and-shortcuts', () => {
             maxWidth: patch.editor?.maxWidth ?? currentSnapshot.settings.editor.maxWidth,
             singleClickLink:
               patch.editor?.singleClickLink ?? currentSnapshot.settings.editor.singleClickLink,
+            showTabCloseButton:
+              patch.editor?.showTabCloseButton ??
+              currentSnapshot.settings.editor.showTabCloseButton,
           },
           inbox: {
             ...currentSnapshot.settings.inbox,
@@ -178,21 +182,24 @@ describe('settings-update-and-shortcuts', () => {
     const store = useSettingsStore();
     await store.initialize();
 
+    expect(store.showTabCloseButton).toBe(false);
+
     const okEditor = await store.patchSettings({
-      editor: { fontSize: 18, maxWidth: 720, singleClickLink: true },
+      editor: { fontSize: 18, maxWidth: 720, singleClickLink: true, showTabCloseButton: true },
       inbox: { bloatThresholdLines: 300 },
       quickBar: { autoCreateMissingSection: true },
     });
 
     expect(okEditor).toBe(true);
     expect(mockSettingsUpdate).toHaveBeenCalledWith({
-      editor: { fontSize: 18, maxWidth: 720, singleClickLink: true },
+      editor: { fontSize: 18, maxWidth: 720, singleClickLink: true, showTabCloseButton: true },
       inbox: { bloatThresholdLines: 300 },
       quickBar: { autoCreateMissingSection: true },
     });
     expect(store.snapshot?.settings.editor.fontSize).toBe(18);
     expect(store.snapshot?.settings.editor.maxWidth).toBe(720);
     expect(store.snapshot?.settings.editor.singleClickLink).toBe(true);
+    expect(store.showTabCloseButton).toBe(true);
     expect(store.snapshot?.settings.inbox.bloatThresholdLines).toBe(300);
     expect(store.snapshot?.settings.quickBar.autoCreateMissingSection).toBe(true);
 

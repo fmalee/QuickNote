@@ -28,6 +28,8 @@ export const NATIVE_MENU_ACTION_IDS = [
   'window.newNote',
   'window.quickOpen',
   'window.commandBook',
+  'window.nextTab',
+  'window.prevTab',
   'editor.bold',
   'editor.italic',
   'editor.codeBlock',

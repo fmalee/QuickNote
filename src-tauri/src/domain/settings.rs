@@ -168,6 +168,7 @@ pub struct EditorSettings {
     pub auto_save_debounce_ms: u32,
     pub auto_save_max_wait_ms: u32,
     pub single_click_link: bool,
+    pub show_tab_close_button: bool,
 }
 
 impl Default for EditorSettings {
@@ -182,6 +183,7 @@ impl Default for EditorSettings {
             auto_save_debounce_ms: 600,
             auto_save_max_wait_ms: 2000,
             single_click_link: false,
+            show_tab_close_button: false,
         }
     }
 }
@@ -404,6 +406,8 @@ pub struct EditorSettingsPatch {
     pub auto_save_max_wait_ms: Option<u32>,
     #[serde(default)]
     pub single_click_link: Option<bool>,
+    #[serde(default)]
+    pub show_tab_close_button: Option<bool>,
 }
 
 /// Partial patch for `TerminalPanelSettings` (`C3.4`, `C4.2`).
@@ -574,6 +578,9 @@ pub fn apply_settings_patch(base: &Settings, patch: &SettingsPatch) -> Result<Se
         }
         if let Some(scl) = ed.single_click_link {
             next.editor.single_click_link = scl;
+        }
+        if let Some(stcb) = ed.show_tab_close_button {
+            next.editor.show_tab_close_button = stcb;
         }
     }
 
@@ -827,6 +834,7 @@ struct EditorSettingsYaml {
     auto_save_debounce_ms: u32,
     auto_save_max_wait_ms: u32,
     single_click_link: bool,
+    show_tab_close_button: bool,
 }
 
 impl Default for EditorSettingsYaml {
@@ -842,6 +850,7 @@ impl Default for EditorSettingsYaml {
             auto_save_debounce_ms: d.auto_save_debounce_ms,
             auto_save_max_wait_ms: d.auto_save_max_wait_ms,
             single_click_link: d.single_click_link,
+            show_tab_close_button: d.show_tab_close_button,
         }
     }
 }
@@ -1069,6 +1078,7 @@ impl From<SettingsYaml> for Settings {
                 auto_save_debounce_ms: y.editor.auto_save_debounce_ms,
                 auto_save_max_wait_ms: y.editor.auto_save_max_wait_ms,
                 single_click_link: y.editor.single_click_link,
+                show_tab_close_button: y.editor.show_tab_close_button,
             },
             panels: PanelsSettings {
                 default: y.panels.default,
@@ -1167,6 +1177,7 @@ impl From<&Settings> for SettingsYaml {
                 auto_save_debounce_ms: s.editor.auto_save_debounce_ms,
                 auto_save_max_wait_ms: s.editor.auto_save_max_wait_ms,
                 single_click_link: s.editor.single_click_link,
+                show_tab_close_button: s.editor.show_tab_close_button,
             },
             panels: PanelsSettingsYaml {
                 default: s.panels.default,

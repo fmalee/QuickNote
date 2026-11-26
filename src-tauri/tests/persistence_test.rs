@@ -6,7 +6,9 @@ use quicknote_lib::application::library::{get_library_info, set_library_root};
 use quicknote_lib::application::persistence::PersistenceManager;
 use quicknote_lib::domain::backup::{select_backups_to_prune, BackupEntry, MAX_BACKUP_COUNT};
 use quicknote_lib::domain::error::ErrorCode;
-use quicknote_lib::domain::settings::{parse_settings_yaml, SetRootArgs, Settings};
+use quicknote_lib::domain::settings::{
+    parse_settings_yaml, EditorSettingsPatch, SetRootArgs, Settings, SettingsPatch,
+};
 use quicknote_lib::domain::ui_state::{
     BackupPathsUiState, LeftSidebarUiState, LeftViewId, NavTab, TerminalPanelUiState, UiState,
     UiStateArgs, UiStatePatchKey,
@@ -490,6 +492,31 @@ fn legacy_ui_state_inbox_active_tab_loads_as_projects() {
     let pm = PersistenceManager::open(app_data_dir.clone()).expect("open PersistenceManager");
     let loaded = pm.ui_state_get().expect("ui_state_get");
     assert_eq!(loaded.filters.active_tab, NavTab::Projects);
+
+    let _ = fs::remove_dir_all(&app_data_dir);
+}
+
+#[test]
+fn settings_show_tab_close_button_defaults_false_and_persists_patch() {
+    let app_data_dir = make_temp_dir("tab_close_button_setting");
+    let pm = PersistenceManager::open(app_data_dir.clone()).expect("open PersistenceManager");
+
+    let initial = pm.settings_get().expect("initial settings_get");
+    assert!(!initial.settings.editor.show_tab_close_button);
+
+    let updated = pm
+        .settings_update(SettingsPatch {
+            editor: Some(EditorSettingsPatch {
+                show_tab_close_button: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .expect("settings_update show_tab_close_button");
+    assert!(updated.settings.editor.show_tab_close_button);
+
+    let reloaded = pm.settings_get().expect("reloaded settings_get");
+    assert!(reloaded.settings.editor.show_tab_close_button);
 
     let _ = fs::remove_dir_all(&app_data_dir);
 }

@@ -81,6 +81,9 @@ export const useSettingsStore = defineStore('settings', () => {
     const backup = hotkeyStatus.value?.backupCombo || BACKUP_HOTKEY_COMBO;
     return active === backup;
   });
+  const showTabCloseButton = computed<boolean>(
+    () => snapshot.value?.settings.editor.showTabCloseButton ?? false,
+  );
 
   function applyThemeLocal(theme: EditorTheme): void {
     themePreference.value = theme;
@@ -465,6 +468,7 @@ export const useSettingsStore = defineStore('settings', () => {
     isSettingsInvalid,
     isHotkeyConflict,
     isUsingBackupHotkey,
+    showTabCloseButton,
     setTheme,
     patchSettings,
     setMainWindowMode,
