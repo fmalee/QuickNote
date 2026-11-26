@@ -26,7 +26,7 @@ import {
 } from './registry';
 
 export const OUTLINE_DEBOUNCE_MS = 150;
-export const MIN_SIDEBAR_WIDTH = 220;
+export const MIN_SIDEBAR_WIDTH = 260;
 export const MIN_TERMINAL_DOCK_HEIGHT = 120;
 export const MAX_TERMINAL_DOCK_HEIGHT = 600;
 
