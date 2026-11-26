@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { ExternalActionState } from '@/bindings/types';
 import { QnBadge, QnContextMenu, type ContextMenuEntry } from '@/components';
+import { useNotesStore } from '@/features/notes';
 import { useSettingsStore } from '@/features/settings';
 import { actionRegistry } from '@/lib/actions';
 import { type EditorTab, useEditorTabsStore } from './store';
@@ -12,6 +13,7 @@ import {
 } from './useExternalActions';
 
 const tabsStore = useEditorTabsStore();
+const notesStore = useNotesStore();
 const settingsStore = useSettingsStore();
 const externalActions = useExternalActions();
 
@@ -19,6 +21,8 @@ const SCROLL_INDICATOR_HIDE_MS = 600;
 
 const tabListRef = ref<HTMLElement | null>(null);
 const isScrolling = ref(false);
+const draggingKey = ref<string | null>(null);
+const dropTarget = ref<{ key: string; position: 'before' | 'after' } | null>(null);
 const contextMenuOpen = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
 const contextTab = ref<EditorTab | null>(null);
@@ -91,6 +95,10 @@ watch(
   },
 );
 
+function canDeleteFile(tab: EditorTab | null): boolean {
+  return Boolean(tab?.relPath && tab.relPath !== 'inbox.md');
+}
+
 const contextMenuItems = computed<ContextMenuEntry[]>(() => [
   ...buildExternalContextMenuItems(contextTabStates.value),
   { type: 'separator', id: 'tab-sep' },
@@ -100,6 +108,20 @@ const contextMenuItems = computed<ContextMenuEntry[]>(() => [
     id: 'tab.closeOthers',
     title: '关闭其他标签',
     disabled: tabsStore.tabs.length <= 1,
+  },
+  {
+    type: 'submenu',
+    id: 'tab.delete',
+    title: '删除',
+    disabled: !canDeleteFile(contextTab.value),
+    items: [
+      {
+        type: 'item',
+        id: 'tab.deleteFile',
+        title: '删除文件（移到废纸篓）',
+        danger: true,
+      },
+    ],
   },
 ]);
 
@@ -145,7 +167,48 @@ async function handleContextMenuSelect(id: string): Promise<void> {
     tabsStore.closeTab(tab.key);
   } else if (id === 'tab.closeOthers') {
     tabsStore.closeOtherTabs(tab.key);
+  } else if (id === 'tab.deleteFile' && tab.relPath && tab.relPath !== 'inbox.md') {
+    await notesStore.deleteNoteItem(tab.relPath);
   }
+}
+
+function handleTabDragStart(event: DragEvent, tab: EditorTab): void {
+  draggingKey.value = tab.key;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', tab.key);
+  }
+}
+
+function handleTabDragOver(event: DragEvent, tab: EditorTab): void {
+  if (!draggingKey.value || draggingKey.value === tab.key) {
+    dropTarget.value = null;
+    return;
+  }
+  const el = event.currentTarget as HTMLElement | null;
+  if (!el) {
+    return;
+  }
+  const rect = el.getBoundingClientRect();
+  const position: 'before' | 'after' =
+    event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+  dropTarget.value = { key: tab.key, position };
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move';
+  }
+}
+
+function handleTabDrop(tab: EditorTab): void {
+  if (draggingKey.value && dropTarget.value && dropTarget.value.key === tab.key) {
+    tabsStore.reorderTab(draggingKey.value, tab.key, dropTarget.value.position);
+  }
+  draggingKey.value = null;
+  dropTarget.value = null;
+}
+
+function handleTabDragEnd(): void {
+  draggingKey.value = null;
+  dropTarget.value = null;
 }
 
 function getTabTitle(tab: EditorTab): string {
@@ -243,6 +306,7 @@ onUnmounted(() => {
         v-for="tab in tabsStore.tabs"
         :key="tab.key"
         role="tab"
+        draggable="true"
         :aria-selected="tab.key === tabsStore.activeKey"
         :data-testid="`editor-tab-${tab.relPath ?? tab.absPath}`"
         :class="[
@@ -251,6 +315,10 @@ onUnmounted(() => {
             'qn-tabbar__item--active': tab.key === tabsStore.activeKey,
             'qn-tabbar__item--preview': tab.isPreview,
             'qn-tabbar__item--missing': tab.isMissing || tab.conflictState?.kind === 'deleted',
+            'qn-tabbar__item--drop-before':
+              dropTarget?.key === tab.key && dropTarget.position === 'before',
+            'qn-tabbar__item--drop-after':
+              dropTarget?.key === tab.key && dropTarget.position === 'after',
           },
         ]"
         :title="tab.absPath || tab.relPath || undefined"
@@ -258,6 +326,10 @@ onUnmounted(() => {
         @dblclick="tabsStore.promoteTabToPinned(tab.key)"
         @mousedown.middle.prevent="tabsStore.closeTab(tab.key)"
         @contextmenu.prevent="openTabContextMenu($event, tab)"
+        @dragstart="handleTabDragStart($event, tab)"
+        @dragover.prevent="handleTabDragOver($event, tab)"
+        @drop.prevent="handleTabDrop(tab)"
+        @dragend="handleTabDragEnd"
       >
         <span class="qn-tabbar__title">{{ getTabTitle(tab) }}</span>
         <QnBadge
@@ -294,17 +366,6 @@ onUnmounted(() => {
           ×
         </button>
       </div>
-    </div>
-
-    <div v-if="tabsStore.tabs.length > 1 && tabsStore.activeKey" class="qn-tabbar__actions">
-      <button
-        type="button"
-        class="qn-tabbar__action-btn"
-        data-testid="editor-tab-close-others"
-        @click="tabsStore.closeOtherTabs(tabsStore.activeKey)"
-      >
-        关闭其他
-      </button>
     </div>
 
     <QnContextMenu
@@ -400,6 +461,14 @@ onUnmounted(() => {
   color: var(--qn-danger);
 }
 
+.qn-tabbar__item--drop-before {
+  box-shadow: inset 2px 0 0 var(--qn-accent);
+}
+
+.qn-tabbar__item--drop-after {
+  box-shadow: inset -2px 0 0 var(--qn-accent);
+}
+
 .qn-tabbar__title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -451,27 +520,6 @@ onUnmounted(() => {
 
 .qn-tabbar__close:hover {
   background-color: var(--qn-bg-active);
-  color: var(--qn-text-primary);
-}
-
-.qn-tabbar__actions {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.qn-tabbar__action-btn {
-  padding: var(--qn-space-1) var(--qn-space-2);
-  border: none;
-  border-radius: var(--qn-radius-sm);
-  background: transparent;
-  color: var(--qn-text-muted);
-  font-size: var(--qn-text-xs);
-  cursor: pointer;
-}
-
-.qn-tabbar__action-btn:hover {
-  background-color: var(--qn-bg-hover);
   color: var(--qn-text-primary);
 }
 </style>

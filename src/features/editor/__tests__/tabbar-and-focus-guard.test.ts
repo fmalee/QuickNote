@@ -39,6 +39,8 @@ vi.mock('@/lib/ipc/commands', () => ({
   noteSaveImage: vi.fn(),
   externalActionResolve: mockExternalActionResolve,
   externalActionRun: mockExternalActionRun,
+  externalActionsResolve: mockExternalActionResolve,
+  externalActionsRun: mockExternalActionRun,
 }));
 
 vi.mock('@/lib/ipc/events', () => ({
@@ -291,6 +293,10 @@ describe('tabbar-and-focus-guard (M3-qa)', () => {
         this.attributes.delete(name);
       }
 
+      getBoundingClientRect(): { left: number; top: number; width: number; height: number } {
+        return { left: 0, top: 0, width: 220, height: 200 };
+      }
+
       scrollIntoView(options?: unknown): void {
         scrollIntoViewCalls.push({
           testId: this.getAttribute('data-testid'),
@@ -308,8 +314,12 @@ describe('tabbar-and-focus-guard (M3-qa)', () => {
                 return node;
               }
             } else {
-              const testIdMatch = /^\[data-testid="([^"]+)"\]$/.exec(selector);
-              if (testIdMatch?.[1] && node.getAttribute('data-testid') === testIdMatch[1]) {
+              const attrMatch = /^\[([a-z0-9-]+)="([^"]+)"\]$/.exec(selector);
+              if (
+                attrMatch?.[1] &&
+                attrMatch[2] &&
+                node.getAttribute(attrMatch[1]) === attrMatch[2]
+              ) {
                 return node;
               }
             }
@@ -346,6 +356,7 @@ describe('tabbar-and-focus-guard (M3-qa)', () => {
       });
     }
 
+    const host = new FakeElement('div');
     const { createApp } = createRenderer<FakeNode, FakeElement>({
       createElement: (tag) => new FakeElement(tag),
       createText: (text) => {
@@ -363,7 +374,8 @@ describe('tabbar-and-focus-guard (M3-qa)', () => {
       insert: (child, parent, anchor) => parent.insertBefore(child, anchor ?? null),
       remove: (child) => child.parentNode?.removeChild(child),
       parentNode: (node) => node.parentNode as FakeElement | null,
-      nextSibling: (node) => node.nextSibling,
+      nextSibling: (node) => node?.nextSibling ?? null,
+      querySelector: (selector) => (selector === 'body' ? host : null),
       patchProp: (el, key, prev, next) => {
         if (key.startsWith('on')) {
           const ev = key.slice(2).toLowerCase();
@@ -414,13 +426,20 @@ describe('tabbar-and-focus-guard (M3-qa)', () => {
       if (absPath === '/vault/a.md') {
         return makeDoc({ key: 'k-a', relPath: 'a.md', absPath: '/vault/a.md', isInbox: false });
       }
+      if (absPath === '/vault/inbox.md') {
+        return makeDoc({
+          key: 'k-inbox',
+          relPath: 'inbox.md',
+          absPath: '/vault/inbox.md',
+          isInbox: true,
+        });
+      }
       return makeDoc({ key: 'k-b', relPath: 'b.md', absPath: '/vault/b.md', isInbox: false });
     });
 
     await tabsStore.openNoteByAbsPath('/vault/a.md', { preview: false });
     await tabsStore.openNoteByAbsPath('/vault/b.md', { preview: false });
 
-    const host = new FakeElement('div');
     const app = createApp(EditorTabBar);
     app.use(pinia);
     app.provide(ssrContextKey, { modules: new Set() });
@@ -465,6 +484,40 @@ describe('tabbar-and-focus-guard (M3-qa)', () => {
         testId: 'editor-tab-a.md',
         options: { behavior: 'smooth', block: 'nearest', inline: 'nearest' },
       });
+
+      // 4. R24: 不再渲染「关闭其他」按钮
+      expect(host.querySelector('[data-testid="editor-tab-close-others"]')).toBeNull();
+
+      // 5. R25: 普通笔记标签右键菜单包含 tab.delete 子菜单且未禁用；inbox.md 标签上禁用
+      const tabAEl = host.querySelector('[data-testid="editor-tab-a.md"]');
+      expect(tabAEl).not.toBeNull();
+      tabAEl!.dispatchEvent({
+        type: 'contextmenu',
+        clientX: 50,
+        clientY: 20,
+        preventDefault: vi.fn(),
+      });
+      await nextTick();
+
+      const deleteSubmenuNormal = host.querySelector('[data-menu-id="tab.delete"]');
+      expect(deleteSubmenuNormal).not.toBeNull();
+      expect(deleteSubmenuNormal!.getAttribute('disabled')).toBeNull();
+
+      await tabsStore.openNoteByAbsPath('/vault/inbox.md', { preview: false });
+      await nextTick();
+      const tabInboxEl = host.querySelector('[data-testid="editor-tab-inbox.md"]');
+      expect(tabInboxEl).not.toBeNull();
+      tabInboxEl!.dispatchEvent({
+        type: 'contextmenu',
+        clientX: 50,
+        clientY: 20,
+        preventDefault: vi.fn(),
+      });
+      await nextTick();
+
+      const deleteSubmenuInbox = host.querySelector('[data-menu-id="tab.delete"]');
+      expect(deleteSubmenuInbox).not.toBeNull();
+      expect(deleteSubmenuInbox!.getAttribute('disabled')).not.toBeNull();
     } finally {
       app.unmount();
       tabsStore.dispose();
@@ -472,5 +525,34 @@ describe('tabbar-and-focus-guard (M3-qa)', () => {
         restorers.pop()?.();
       }
     }
+  });
+
+  it('reorders tabs via reorderTab and ignores nonexistent keys', async () => {
+    const store = useEditorTabsStore();
+
+    mockNoteRead.mockImplementation(async ({ absPath }: { absPath: string }) => {
+      if (absPath === '/vault/a.md') {
+        return makeDoc({ key: 'a', relPath: 'a.md', absPath: '/vault/a.md', isInbox: false });
+      }
+      if (absPath === '/vault/b.md') {
+        return makeDoc({ key: 'b', relPath: 'b.md', absPath: '/vault/b.md', isInbox: false });
+      }
+      return makeDoc({ key: 'c', relPath: 'c.md', absPath: '/vault/c.md', isInbox: false });
+    });
+
+    await store.openNoteByAbsPath('/vault/a.md', { preview: false });
+    await store.openNoteByAbsPath('/vault/b.md', { preview: false });
+    await store.openNoteByAbsPath('/vault/c.md', { preview: false });
+
+    expect(store.tabs.map((t) => t.key)).toEqual(['a', 'b', 'c']);
+
+    store.reorderTab('a', 'c', 'after');
+    expect(store.tabs.map((t) => t.key)).toEqual(['b', 'c', 'a']);
+
+    store.reorderTab('missing', 'c', 'before');
+    store.reorderTab('a', 'missing', 'before');
+    expect(store.tabs.map((t) => t.key)).toEqual(['b', 'c', 'a']);
+
+    store.dispose();
   });
 });

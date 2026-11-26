@@ -1283,6 +1283,22 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     persistTabsDebounced();
   }
 
+  function reorderTab(fromKey: string, toKey: string, position: 'before' | 'after'): void {
+    const fromIndex = tabs.value.findIndex((tab) => tab.key === fromKey);
+    const toIndex = tabs.value.findIndex((tab) => tab.key === toKey);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+      return;
+    }
+    const [moved] = tabs.value.splice(fromIndex, 1);
+    if (!moved) {
+      return;
+    }
+    const insertAt =
+      tabs.value.findIndex((tab) => tab.key === toKey) + (position === 'after' ? 1 : 0);
+    tabs.value.splice(insertAt, 0, moved);
+    persistTabsDebounced();
+  }
+
   async function reopenLastClosedTab(): Promise<EditorTab | null> {
     const absPath = closedStack.value.pop();
     if (!absPath) {
@@ -1740,6 +1756,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     ensureExternalChangeListener,
     closeTab,
     closeOtherTabs,
+    reorderTab,
     reopenLastClosedTab,
     handleNoteRenamed,
     handleNoteDeleted,

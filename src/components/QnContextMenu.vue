@@ -12,6 +12,13 @@ export type ContextMenuEntry =
   | {
       type: 'separator';
       id: string;
+    }
+  | {
+      type: 'submenu';
+      id: string;
+      title: string;
+      disabled?: boolean;
+      items: ContextMenuEntry[];
     };
 </script>
 
@@ -35,6 +42,7 @@ const VIEWPORT_PADDING = 8;
 const menuRef = ref<HTMLElement | null>(null);
 const clampedX = ref(props.x);
 const clampedY = ref(props.y);
+const openSubmenuId = ref<string | null>(null);
 
 function clampToViewport(): void {
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
@@ -92,6 +100,7 @@ watch(
   () => [props.open, props.x, props.y, props.items.length] as const,
   ([isOpen]) => {
     if (isOpen) {
+      openSubmenuId.value = null;
       clampedX.value = props.x;
       clampedY.value = props.y;
       attachGlobalListeners();
@@ -99,6 +108,7 @@ watch(
         clampToViewport();
       });
     } else {
+      openSubmenuId.value = null;
       detachGlobalListeners();
     }
   },
@@ -134,6 +144,71 @@ function handleItemClick(entry: Extract<ContextMenuEntry, { type: 'item' }>): vo
           class="qn-context-menu__separator"
           role="separator"
         />
+        <div
+          v-else-if="entry.type === 'submenu'"
+          class="qn-context-menu__submenu-wrapper"
+          @mouseenter="!entry.disabled && (openSubmenuId = entry.id)"
+          @mouseleave="openSubmenuId === entry.id && (openSubmenuId = null)"
+        >
+          <button
+            type="button"
+            class="qn-context-menu__item"
+            :class="{ 'qn-context-menu__item--disabled': entry.disabled }"
+            role="menuitem"
+            aria-haspopup="menu"
+            :aria-expanded="!entry.disabled && openSubmenuId === entry.id"
+            :data-menu-id="entry.id"
+            :disabled="entry.disabled"
+            @focus="!entry.disabled && (openSubmenuId = entry.id)"
+          >
+            <span class="qn-context-menu__main">
+              <span class="qn-context-menu__label">{{ entry.title }}</span>
+            </span>
+            <span class="qn-context-menu__submenu-arrow" aria-hidden="true">▸</span>
+          </button>
+          <div
+            v-if="!entry.disabled && openSubmenuId === entry.id"
+            class="qn-context-menu__submenu"
+            role="menu"
+          >
+            <template v-for="subEntry in entry.items" :key="subEntry.id">
+              <div
+                v-if="subEntry.type === 'separator'"
+                class="qn-context-menu__separator"
+                role="separator"
+              />
+              <button
+                v-else-if="subEntry.type === 'item'"
+                type="button"
+                class="qn-context-menu__item"
+                :class="{
+                  'qn-context-menu__item--disabled': subEntry.disabled,
+                  'qn-context-menu__item--danger': subEntry.danger,
+                }"
+                role="menuitem"
+                :data-menu-id="subEntry.id"
+                :disabled="subEntry.disabled"
+                :title="
+                  subEntry.disabled && subEntry.disabledReason ? subEntry.disabledReason : undefined
+                "
+                @click="handleItemClick(subEntry)"
+              >
+                <span class="qn-context-menu__main">
+                  <span class="qn-context-menu__label">{{ subEntry.title }}</span>
+                  <span
+                    v-if="subEntry.disabled && subEntry.disabledReason"
+                    class="qn-context-menu__reason"
+                  >
+                    {{ subEntry.disabledReason }}
+                  </span>
+                </span>
+                <span v-if="subEntry.shortcutLabel" class="qn-context-menu__shortcut">
+                  {{ subEntry.shortcutLabel }}
+                </span>
+              </button>
+            </template>
+          </div>
+        </div>
         <button
           v-else
           type="button"
@@ -143,6 +218,7 @@ function handleItemClick(entry: Extract<ContextMenuEntry, { type: 'item' }>): vo
             'qn-context-menu__item--danger': entry.danger,
           }"
           role="menuitem"
+          :data-menu-id="entry.id"
           :disabled="entry.disabled"
           :title="entry.disabled && entry.disabledReason ? entry.disabledReason : undefined"
           @click="handleItemClick(entry)"
@@ -247,5 +323,32 @@ function handleItemClick(entry: Extract<ContextMenuEntry, { type: 'item' }>): vo
   font-family: var(--qn-font-mono);
   font-size: var(--qn-text-xs);
   color: var(--qn-text-muted);
+}
+
+.qn-context-menu__submenu-wrapper {
+  position: relative;
+}
+
+.qn-context-menu__submenu-arrow {
+  flex-shrink: 0;
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-muted);
+}
+
+.qn-context-menu__submenu {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  z-index: var(--qn-z-popover);
+  min-width: 196px;
+  max-width: 300px;
+  padding: var(--qn-space-1);
+  border-radius: var(--qn-radius-md);
+  border: 1px solid var(--qn-border-subtle);
+  background-color: var(--qn-bg-elevated);
+  box-shadow: var(--qn-shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 </style>
