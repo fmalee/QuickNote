@@ -70,7 +70,6 @@ function makeUiState(): UiState {
       listScrollTop: 0,
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
-    selectedWorkspaceKey: null,
   } as unknown as UiState;
 }
 
@@ -89,7 +88,6 @@ function makeNavTree(): NavTreeSnapshot {
         children: [],
       },
     ],
-    workspaces: [],
   };
 }
 

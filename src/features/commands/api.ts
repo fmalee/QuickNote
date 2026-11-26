@@ -4,7 +4,6 @@ import {
   externalActionRun,
   externalActionsResolve,
   libraryGetInfo,
-  settingsGet,
   windowHideQuickBar,
   windowShowMain,
 } from '@/lib/ipc/commands';
@@ -33,12 +32,10 @@ export async function searchCommands(query: string): Promise<CommandEntry[]> {
 
 export async function resolveCommandExternalActions(args: {
   absPath: string | null;
-  workspaceKey: string | null;
   commandId: string;
 }): Promise<ExternalActionState[]> {
   return externalActionsResolve({
     absPath: args.absPath,
-    workspaceKey: args.workspaceKey,
     commandId: args.commandId,
   });
 }
@@ -61,19 +58,7 @@ export async function fetchLibraryRoot(): Promise<string | null> {
 }
 
 export async function fetchCommandWorkspaces(): Promise<CommandWorkspaceOption[]> {
-  try {
-    const snapshot = await settingsGet();
-    const workspaces = snapshot.settings?.workspaces ?? {};
-    return Object.values(workspaces)
-      .map((ws) => ({
-        key: ws.key,
-        name: ws.name || ws.key,
-        dirPath: (ws.terminalDir || ws.openDir || ws.root || '').trim(),
-      }))
-      .filter((item) => item.dirPath.length > 0);
-  } catch {
-    return [];
-  }
+  return [];
 }
 
 export async function showMainWindow(): Promise<void> {

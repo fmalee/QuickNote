@@ -280,7 +280,7 @@ describe('command-book-palette', () => {
     expect(mockClipboardWrite).toHaveBeenCalledWith('git reset --soft HEAD~1');
     expect(mockExternalActionRun).not.toHaveBeenCalled();
     expect(engine.dirPickerOpen.value).toBe(true);
-    expect(engine.workspaceOptions.value).toHaveLength(1);
+    expect(engine.workspaceOptions.value).toHaveLength(0);
     expect(onRequestClose).not.toHaveBeenCalled();
 
     // 空输入不允许提交

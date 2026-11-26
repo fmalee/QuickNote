@@ -19,7 +19,6 @@ export const ALL_SECTIONS_KEY = '__all__';
 
 export interface CommandPaletteContext {
   absPath: string | null;
-  workspaceKey: string | null;
 }
 
 export interface CommandSectionSummary {
@@ -136,10 +135,9 @@ export function useCommandPalette(options: UseCommandPaletteOptions = {}): Comma
       return;
     }
     try {
-      const ctx = options.getContext?.() ?? { absPath: null, workspaceKey: null };
+      const ctx = options.getContext?.() ?? { absPath: null };
       const states = await resolveCommandExternalActions({
         absPath: ctx.absPath,
-        workspaceKey: ctx.workspaceKey,
         commandId: entry.id,
       });
       if (seq !== resolveSeq) {

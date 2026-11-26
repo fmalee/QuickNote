@@ -152,7 +152,6 @@ function makeSettingsSnapshot(): SettingsSnapshot {
         sublime: { name: 'Sublime Text', bundleId: 'com.sublimetext.4' },
       },
       searchRoots: [],
-      workspaces: {},
     },
     status: {
       valid: true,
@@ -166,8 +165,6 @@ function makeSettingsSnapshot(): SettingsSnapshot {
 
 function makeUiState(): UiState {
   return {
-    selectedWorkspaceKey: null,
-    workspaceModes: {},
     filters: { activeTab: 'recent', selectedDir: null, selectedTags: [], listScrollTop: 0 },
     tabs: { items: [], activeKey: null, closedStack: [] },
     lastActiveDoc: null,
@@ -220,9 +217,6 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
       targetRelPath: 'inbox.md',
       targetTitle: '收件箱',
       sectionHint: null,
-      workspaceKey: null,
-      workspaceName: null,
-      isCrossWorkspaceFallback: false,
       recommendedMode: 'list',
       chipLabel: '收件箱 · inbox.md',
     } satisfies ResolvedTarget);
@@ -254,7 +248,6 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
     mockNotesGetTreeAndTags.mockResolvedValue({
       dirs: [],
       tags: [],
-      workspaces: [],
     } satisfies NavTreeSnapshot);
     mockNotesList.mockResolvedValue([]);
     mockWindowShowMain.mockResolvedValue({
@@ -1113,7 +1106,6 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
         { tag: 'task', count: 3, children: [] },
         { tag: 'other', count: 1, children: [] },
       ],
-      workspaces: [],
     } satisfies NavTreeSnapshot);
 
     const store = useQuickBarStore();

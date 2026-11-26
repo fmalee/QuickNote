@@ -66,7 +66,6 @@ function makeSettingsSnapshot(pinned: boolean): SettingsSnapshot {
         sublime: { name: 'Sublime Text', bundleId: 'com.sublimetext.4' },
       },
       searchRoots: [],
-      workspaces: {},
     },
     status: {
       valid: true,

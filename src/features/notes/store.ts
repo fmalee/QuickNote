@@ -27,7 +27,7 @@ import {
   togglePinExternalFileByPath,
 } from './api';
 
-export type NavTab = 'projects' | 'tags' | 'recent' | 'workspaces';
+export type NavTab = 'projects' | 'tags' | 'recent';
 
 export const FILTER_DEBOUNCE_MS = 80;
 const FILTERS_PERSIST_DEBOUNCE_MS = 250;
@@ -56,14 +56,12 @@ export const useNotesStore = defineStore('notes', () => {
   const activeTab = ref<NavTab>('projects');
   const selectedDir = ref<string | null>(null);
   const selectedTags = ref<string[]>([]);
-  const selectedWorkspace = ref<string | null>(null);
   const filterText = ref<string>('');
   const listScrollTop = ref<number>(0);
 
   const navTree = ref<NavTreeSnapshot>({
     dirs: [],
     tags: [],
-    workspaces: [],
   });
   const notes = ref<NoteSummary[]>([]);
   const loadingTree = ref<boolean>(false);
@@ -87,7 +85,6 @@ export const useNotesStore = defineStore('notes', () => {
       tab: activeTab.value,
       dirRelPath: activeTab.value === 'projects' ? selectedDir.value : null,
       tags: [...selectedTags.value],
-      workspaceKey: activeTab.value === 'workspaces' ? selectedWorkspace.value : null,
       filterText: trimmedFilter ? trimmedFilter : null,
     };
   }
@@ -205,14 +202,6 @@ export const useNotesStore = defineStore('notes', () => {
     }
     selectedTags.value = [];
     persistFiltersDebounced();
-    await loadNotesList();
-  }
-
-  async function selectWorkspace(workspaceKey: string | null): Promise<void> {
-    const next =
-      workspaceKey === null || selectedWorkspace.value === workspaceKey ? null : workspaceKey;
-    selectedWorkspace.value = next;
-    void patchUiState('selectedWorkspace', next).catch(() => undefined);
     await loadNotesList();
   }
 
@@ -396,7 +385,6 @@ export const useNotesStore = defineStore('notes', () => {
       selectedDir.value = uiState.filters.selectedDir ?? null;
       selectedTags.value = [...(uiState.filters.selectedTags ?? [])];
       listScrollTop.value = uiState.filters.listScrollTop ?? 0;
-      selectedWorkspace.value = uiState.selectedWorkspaceKey ?? null;
     } catch {
       // 容错：读取 ui-state 失败时保留默认筛选状态
     }
@@ -433,7 +421,6 @@ export const useNotesStore = defineStore('notes', () => {
     activeTab,
     selectedDir,
     selectedTags,
-    selectedWorkspace,
     filterText,
     listScrollTop,
     navTree,
@@ -459,7 +446,6 @@ export const useNotesStore = defineStore('notes', () => {
     selectDir,
     toggleTag,
     clearTags,
-    selectWorkspace,
     openNewNoteModal,
     closeNewNoteModal,
     createNoteAndOpen,

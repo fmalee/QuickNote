@@ -8,7 +8,6 @@ interface PickerDocCandidate {
   relPath: string;
   title: string;
   subtitle: string;
-  workspaceKey: string | null;
 }
 
 const store = useQuickBarStore();
@@ -42,7 +41,6 @@ const displayedDocs = computed<PickerDocCandidate[]>(() => {
         relPath: item.relPath ?? item.key,
         title: item.title,
         subtitle: item.subtitle || item.relPath || '',
-        workspaceKey: null,
       }));
   }
   return store.pickerNotes
@@ -52,7 +50,6 @@ const displayedDocs = computed<PickerDocCandidate[]>(() => {
       relPath: note.relPath,
       title: note.title || note.relPath,
       subtitle: note.relPath,
-      workspaceKey: null,
     }));
 });
 
@@ -60,7 +57,6 @@ function selectInbox(): void {
   store.selectExplicitDoc({
     relPath: 'inbox.md',
     title: '收件箱',
-    workspaceKey: null,
   });
 }
 
@@ -72,7 +68,6 @@ function handleEnterSelect(): void {
   store.selectExplicitDoc({
     relPath: first.relPath,
     title: first.title,
-    workspaceKey: first.workspaceKey,
   });
 }
 </script>
@@ -80,38 +75,8 @@ function handleEnterSelect(): void {
 <template>
   <div v-if="store.targetPickerOpen" class="qn-target-picker" data-testid="quickbar-target-picker">
     <div class="qn-target-picker__header">
-      <span class="qn-target-picker__title">选择追加目标与锁定工作区 (⌘T)</span>
+      <span class="qn-target-picker__title">选择追加目标 (⌘T)</span>
       <QnButton variant="ghost" size="sm" @click="store.closeTargetPicker()">关闭 Esc</QnButton>
-    </div>
-
-    <div class="qn-target-picker__section">
-      <div class="qn-target-picker__label">锁定工作区</div>
-      <div class="qn-target-picker__chips">
-        <button
-          type="button"
-          :class="[
-            'qn-target-picker__chip',
-            { 'qn-target-picker__chip--active': store.selectedWorkspaceKey === null },
-          ]"
-          data-testid="picker-workspace-unlock"
-          @click="store.selectWorkspaceLock(null)"
-        >
-          不锁定工作区
-        </button>
-        <button
-          v-for="ws in store.availableWorkspaces"
-          :key="ws.key"
-          type="button"
-          :class="[
-            'qn-target-picker__chip',
-            { 'qn-target-picker__chip--active': store.selectedWorkspaceKey === ws.key },
-          ]"
-          :data-testid="`picker-workspace-${ws.key}`"
-          @click="store.selectWorkspaceLock(ws.key)"
-        >
-          {{ ws.name }}
-        </button>
-      </div>
     </div>
 
     <div class="qn-target-picker__section">
@@ -165,7 +130,6 @@ function handleEnterSelect(): void {
           store.selectExplicitDoc({
             relPath: doc.relPath,
             title: doc.title,
-            workspaceKey: doc.workspaceKey,
           })
         "
       >

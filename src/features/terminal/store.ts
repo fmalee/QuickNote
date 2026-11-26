@@ -5,10 +5,8 @@ import type {
   TerminalData,
   TerminalExitPayload,
   TerminalSessionInfo,
-  WorkspaceConfig,
 } from '@/bindings/types';
 import { useEditorTabsStore } from '@/features/editor';
-import { useNotesStore } from '@/features/notes';
 import { useSettingsStore } from '@/features/settings';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import {
@@ -30,14 +28,7 @@ import {
 } from './theme';
 
 export type TerminalLaunchSource =
-  | 'doc-terminal-dir'
-  | 'doc-open-dir'
-  | 'workspace-terminal-dir'
-  | 'workspace-open-dir'
-  | 'workspace-root'
-  | 'doc-parent-dir'
-  | 'library-root'
-  | 'none';
+  'doc-terminal-dir' | 'doc-open-dir' | 'doc-parent-dir' | 'library-root' | 'none';
 
 export interface TerminalLaunchContext {
   workspaceKey: string;
@@ -74,63 +65,13 @@ function quoteShellPath(dirPath: string): string {
   return `'${dirPath.replace(/'/g, `'\\''`)}'`;
 }
 
-function findMatchedWorkspace(
-  workspaces: Record<string, WorkspaceConfig>,
-  projectOrKey: string | null | undefined,
-  selectedWorkspaceKey: string | null | undefined,
-): WorkspaceConfig | null {
-  const values = Object.values(workspaces);
-  const projectNorm = normalizeNonEmpty(projectOrKey);
-  if (projectNorm) {
-    const direct = workspaces[projectNorm];
-    if (direct) {
-      return direct;
-    }
-    const lower = projectNorm.toLowerCase();
-    const matched = values.find(
-      (ws) => ws.key.toLowerCase() === lower || ws.name.toLowerCase() === lower,
-    );
-    if (matched) {
-      return matched;
-    }
-  }
-
-  const selectedNorm = normalizeNonEmpty(selectedWorkspaceKey);
-  if (selectedNorm) {
-    const direct = workspaces[selectedNorm];
-    if (direct) {
-      return direct;
-    }
-    const lower = selectedNorm.toLowerCase();
-    const matched = values.find(
-      (ws) => ws.key.toLowerCase() === lower || ws.name.toLowerCase() === lower,
-    );
-    if (matched) {
-      return matched;
-    }
-  }
-
-  return null;
-}
-
 export function resolveTerminalLaunchContext(
   activeDoc: NoteDoc | null,
-  workspaces: Record<string, WorkspaceConfig>,
-  selectedWorkspaceKey: string | null,
   libraryRoot: string | null,
 ): TerminalLaunchContext {
   const activeDocPath = normalizeNonEmpty(activeDoc?.absPath);
-  const matchedWs = findMatchedWorkspace(
-    workspaces,
-    activeDoc?.meta.project ?? null,
-    selectedWorkspaceKey,
-  );
-  const fallbackKey =
-    matchedWs?.key ??
-    normalizeNonEmpty(activeDoc?.meta.project) ??
-    normalizeNonEmpty(selectedWorkspaceKey) ??
-    'default';
-  const fallbackLabel = matchedWs?.name ?? (fallbackKey === 'default' ? '默认工作区' : fallbackKey);
+  const fallbackKey = normalizeNonEmpty(activeDoc?.meta.project) ?? 'default';
+  const fallbackLabel = fallbackKey === 'default' ? '默认工作区' : fallbackKey;
 
   // 外部文件终端默认 cwd 必须取该文件所在父目录
   if (activeDoc && !activeDoc.isLibrary && activeDocPath) {
@@ -166,41 +107,6 @@ export function resolveTerminalLaunchContext(
       source: 'doc-open-dir',
       activeDocPath,
     };
-  }
-
-  if (matchedWs) {
-    const wsTerminalDir = normalizeNonEmpty(matchedWs.terminalDir);
-    if (wsTerminalDir) {
-      return {
-        workspaceKey: matchedWs.key,
-        workspaceLabel: matchedWs.name,
-        cwd: wsTerminalDir,
-        source: 'workspace-terminal-dir',
-        activeDocPath,
-      };
-    }
-
-    const wsOpenDir = normalizeNonEmpty(matchedWs.openDir);
-    if (wsOpenDir) {
-      return {
-        workspaceKey: matchedWs.key,
-        workspaceLabel: matchedWs.name,
-        cwd: wsOpenDir,
-        source: 'workspace-open-dir',
-        activeDocPath,
-      };
-    }
-
-    const wsRoot = normalizeNonEmpty(matchedWs.root);
-    if (wsRoot) {
-      return {
-        workspaceKey: matchedWs.key,
-        workspaceLabel: matchedWs.name,
-        cwd: wsRoot,
-        source: 'workspace-root',
-        activeDocPath,
-      };
-    }
   }
 
   if (activeDocPath) {
@@ -271,17 +177,10 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   function getCurrentLaunchContext(): TerminalLaunchContext {
     const editorTabsStore = useEditorTabsStore();
-    const notesStore = useNotesStore();
     const settingsStore = useSettingsStore();
 
-    const workspaces = settingsStore.snapshot?.settings.workspaces ?? {};
     const libraryRoot = settingsStore.snapshot?.settings.libraryRoot ?? null;
-    return resolveTerminalLaunchContext(
-      editorTabsStore.activeDoc,
-      workspaces,
-      notesStore.selectedWorkspace,
-      libraryRoot,
-    );
+    return resolveTerminalLaunchContext(editorTabsStore.activeDoc, libraryRoot);
   }
 
   function getOrCreateDecoder(sessionId: string): StreamingBase64Decoder {

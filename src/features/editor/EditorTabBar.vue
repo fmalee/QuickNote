@@ -145,7 +145,6 @@ async function openTabContextMenu(event: MouseEvent, tab: EditorTab): Promise<vo
   contextMenuOpen.value = true;
   const resolved = await externalActions.resolveForTarget({
     absPath: tab.absPath || null,
-    workspaceKey: tab.doc?.meta.project ?? null,
   });
   if (reqSeq === tabMenuSeq) {
     contextTabStates.value = resolved;
@@ -305,7 +304,6 @@ async function handleTogglePinExternalTab(tab: EditorTab): Promise<void> {
       ? externalActions.states
       : await externalActions.resolveForTarget({
           absPath: tab.absPath || null,
-          workspaceKey: tab.doc?.meta.project ?? null,
         });
   await externalActions.executeAction('external.pin', {
     overrideStates: states,

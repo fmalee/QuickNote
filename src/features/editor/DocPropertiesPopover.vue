@@ -26,7 +26,16 @@ const pinnedDraft = ref(false);
 const archivedDraft = ref(false);
 const saving = ref(false);
 
-const workspaceSuggestions = computed(() => notesStore.navTree.workspaces);
+const projectSuggestions = computed(() => {
+  const unique = new Set<string>();
+  for (const note of notesStore.notes) {
+    const proj = note.project?.trim();
+    if (proj) {
+      unique.add(proj);
+    }
+  }
+  return Array.from(unique).sort();
+});
 
 function syncFromMeta(meta: NoteMeta): void {
   projectDraft.value = meta.project ?? '';
@@ -134,14 +143,14 @@ onUnmounted(() => {
         <input
           v-model="projectDraft"
           type="text"
-          list="qn-doc-prop-workspaces"
+          list="qn-doc-prop-projects"
           class="qn-doc-properties-popover__input"
           data-testid="doc-prop-project-input"
-          placeholder="工作区或项目标识"
+          placeholder="项目标识"
         />
-        <datalist id="qn-doc-prop-workspaces">
-          <option v-for="ws in workspaceSuggestions" :key="ws.key" :value="ws.key">
-            {{ ws.name }}
+        <datalist id="qn-doc-prop-projects">
+          <option v-for="proj in projectSuggestions" :key="proj" :value="proj">
+            {{ proj }}
           </option>
         </datalist>
       </label>

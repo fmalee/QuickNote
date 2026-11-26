@@ -91,11 +91,7 @@ function makeUiState(lastRelPath: string | null = 'inbox.md'): UiState {
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
     filters: { activeTab: 'recent', selectedDir: null, selectedTags: [], listScrollTop: 0 },
-    selectedWorkspaceKey: null,
-    lastActiveDoc: lastRelPath
-      ? { relPath: lastRelPath, workspaceKey: null, touchedAtMs: 100 }
-      : null,
-    workspaceModes: {},
+    lastActiveDoc: lastRelPath ? { relPath: lastRelPath, touchedAtMs: 100 } : null,
     hotkey: { combo: 'ctrl+alt+space', backupCombo: 'ctrl+alt+cmd+space', selfCheck: 'ok' },
   };
 }

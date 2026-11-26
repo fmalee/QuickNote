@@ -99,7 +99,6 @@ function makeSettingsSnapshot(
         sublime: { name: 'Sublime Text', bundleId: 'com.sublimetext.4' },
       },
       searchRoots: ['/Users/demo/Projects'],
-      workspaces: {},
       ...overrides,
     },
     status: {
@@ -119,9 +118,7 @@ function makeUiState(): UiState {
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
     filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },
-    selectedWorkspaceKey: null,
     lastActiveDoc: null,
-    workspaceModes: {},
     hotkey: {
       combo: 'ctrl+alt+space',
       backupCombo: 'ctrl+alt+cmd+space',

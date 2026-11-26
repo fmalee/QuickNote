@@ -528,7 +528,6 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
     void patchUiState('lastActiveDoc', {
       relPath: doc.relPath,
-      workspaceKey: doc.meta.project ?? null,
       touchedAtMs: Date.now(),
     }).catch(() => undefined);
   }

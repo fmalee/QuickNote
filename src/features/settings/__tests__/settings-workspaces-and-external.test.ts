@@ -137,7 +137,6 @@ function makeSettingsSnapshot(valid = true): SettingsSnapshot {
           lastOpenedAt: null,
         },
       ],
-      workspaces: {},
     },
     status: valid
       ? {
@@ -164,9 +163,7 @@ function makeUiState(): UiState {
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
     filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },
-    selectedWorkspaceKey: null,
     lastActiveDoc: null,
-    workspaceModes: {},
     hotkey: {
       combo: 'ctrl+alt+space',
       backupCombo: 'ctrl+alt+cmd+space',
@@ -186,7 +183,6 @@ describe('settings-workspaces-and-external', () => {
       inboxCount: 0,
       dirs: [],
       tags: [],
-      workspaces: [],
     });
   });
 

@@ -76,7 +76,6 @@ function makeInvalidSettingsSnapshot(): SettingsSnapshot {
         sublime: { name: 'Sublime Text', bundleId: 'com.sublimetext.4' },
       },
       searchRoots: [],
-      workspaces: {},
     },
     status: {
       valid: false,
@@ -95,9 +94,7 @@ function makeUiState(hotkey: HotkeyStatus): UiState {
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
     filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },
-    selectedWorkspaceKey: null,
     lastActiveDoc: null,
-    workspaceModes: {},
     hotkey,
   };
 }

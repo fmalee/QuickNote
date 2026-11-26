@@ -18,7 +18,6 @@ const commandPaletteEngine = useCommandPalette({
     const relPath = store.uiState?.lastActiveDoc?.relPath ?? null;
     return {
       absPath: root && relPath ? joinLibraryPath(root, relPath) : null,
-      workspaceKey: store.resolvedTarget?.workspaceKey ?? null,
     };
   },
   onOpenSource: async (absPath, line) => {

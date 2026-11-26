@@ -241,7 +241,6 @@ describe('external-actions-integration', () => {
 
     expect(mockResolveExternalActions).toHaveBeenCalledWith({
       absPath: '/Users/demo/Sites/App/README.md',
-      workspaceKey: 'app',
       commandId: null,
     });
 
@@ -446,12 +445,10 @@ describe('external-actions-integration', () => {
     const externalActions = useExternalActions();
     const states = await externalActions.resolveForTarget({
       absPath: '/Users/demo/Sites/App/notes.md',
-      workspaceKey: 'app',
     });
 
     expect(mockResolveExternalActions).toHaveBeenCalledWith({
       absPath: '/Users/demo/Sites/App/notes.md',
-      workspaceKey: 'app',
       commandId: null,
     });
 

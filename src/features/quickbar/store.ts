@@ -17,7 +17,6 @@ import type {
   UiState,
   WindowMode,
   WindowState,
-  WorkspaceSummary,
 } from '@/bindings/types';
 import {
   deriveTitleFromContent,
@@ -60,13 +59,11 @@ export const QUICKBAR_SEARCH_DEBOUNCE_MS = 80;
 export interface ExplicitQuickBarTarget {
   relPath: string;
   title: string;
-  workspaceKey: string | null;
 }
 
 export interface QuickBarDraftStorage {
   mode: CaptureMode;
   targetRelPath: string | null;
-  selectedWorkspaceKey: string | null;
   text: string;
   updatedAt: number;
 }
@@ -203,8 +200,6 @@ function mapQuickOpenResultToQuickBarItem(
 
 function createFallbackUiState(): UiState {
   return {
-    selectedWorkspaceKey: null,
-    workspaceModes: {},
     filters: {
       activeTab: 'recent',
       selectedDir: null,
@@ -247,14 +242,11 @@ function createFallbackUiState(): UiState {
 
 function createFallbackResolvedTarget(): ResolvedTarget {
   return {
-    scenario: 'S8',
+    scenario: 'S4',
     kind: 'inbox',
     targetRelPath: 'inbox.md',
     targetTitle: '收件箱',
     sectionHint: null,
-    workspaceKey: null,
-    workspaceName: null,
-    isCrossWorkspaceFallback: false,
     recommendedMode: 'list',
     chipLabel: '收件箱 · inbox.md',
   };
@@ -295,8 +287,6 @@ function readDraftStorage(): QuickBarDraftStorage | null {
     return {
       mode: isCaptureMode(candidate.mode) ? candidate.mode : 'list',
       targetRelPath: typeof candidate.targetRelPath === 'string' ? candidate.targetRelPath : null,
-      selectedWorkspaceKey:
-        typeof candidate.selectedWorkspaceKey === 'string' ? candidate.selectedWorkspaceKey : null,
       text: candidate.text,
       updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now(),
     };
@@ -357,7 +347,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
   const resolvedTarget = ref<ResolvedTarget | null>(null);
   const explicitTarget = ref<ExplicitQuickBarTarget | null>(null);
   const explicitTargetSource = ref<ExplicitTargetSource>(null);
-  const selectedWorkspaceKey = ref<string | null>(null);
   const modeTouchedInSession = ref<boolean>(false);
 
   const relatedNotes = ref<SearchResultItem[]>([]);
@@ -376,7 +365,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
   const pickerNotes = ref<NoteSummary[]>([]);
   const pickerSearchItems = ref<SearchResultItem[] | null>(null);
   const pickerTags = ref<TagNode[]>([]);
-  const pickerWorkspaces = ref<WorkspaceSummary[]>([]);
 
   function buildQuickBarActionContext(): ActionContext {
     return {
@@ -475,13 +463,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
 
   const isInboxTarget = computed<boolean>(() => effectiveTargetRelPath.value === 'inbox.md');
 
-  const activeWorkspaceKey = computed<string | null>(
-    () =>
-      explicitTarget.value?.workspaceKey ??
-      resolvedTarget.value?.workspaceKey ??
-      selectedWorkspaceKey.value,
-  );
-
   const targetChipLabel = computed<string>(() => {
     if (isUnconfigured.value) {
       return '未选库 · S1';
@@ -490,9 +471,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
       return `${explicitTarget.value.title} › ${getCaptureModeSectionLabel(captureMode.value)}`;
     }
     if (resolvedTarget.value) {
-      if (resolvedTarget.value.isCrossWorkspaceFallback) {
-        return '收件箱 · 跨工作区';
-      }
       return resolvedTarget.value.chipLabel;
     }
     return '收件箱 · inbox.md';
@@ -505,9 +483,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     if (explicitTarget.value) {
       return 'accent';
     }
-    if (resolvedTarget.value?.isCrossWorkspaceFallback) {
-      return 'warning';
-    }
     return 'neutral';
   });
 
@@ -516,19 +491,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
       return null;
     }
     return resolvedTarget.value?.sectionHint ?? null;
-  });
-
-  const availableWorkspaces = computed<WorkspaceSummary[]>(() => {
-    if (pickerWorkspaces.value.length > 0) {
-      return pickerWorkspaces.value;
-    }
-    const configured = settingsSnapshot.value?.settings.workspaces ?? {};
-    return Object.entries(configured).map(([key, item]) => ({
-      key,
-      name: item.name,
-      root: item.root,
-      openDir: item.openDir,
-    }));
   });
 
   const activeOpenDirectoryScope = quickOpen.activeDirectoryScope;
@@ -669,7 +631,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     writeDraftStorage({
       mode: captureMode.value,
       targetRelPath: explicitTarget.value?.relPath ?? null,
-      selectedWorkspaceKey: selectedWorkspaceKey.value,
       text: draft.value,
       updatedAt: Date.now(),
     });
@@ -696,8 +657,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     const input = {
       mainVisible: currentUiState.windows?.main?.isOpen ?? false,
       activeDocKey: currentUiState.tabs?.activeKey ?? null,
-      selectedWorkspaceKey: currentUiState.selectedWorkspaceKey ?? null,
-      isInboxView: currentUiState.filters?.activeTab === 'inbox',
     };
 
     try {
@@ -728,7 +687,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
       externalBookmarks.value = snapshot.settings.externalBookmarks ?? [];
       const normalizedUi = fetchedUiState ?? createFallbackUiState();
       uiState.value = normalizedUi;
-      selectedWorkspaceKey.value = normalizedUi.selectedWorkspaceKey ?? null;
       if (!hasLiveMainWindowState) {
         mainWindowMode.value = normalizedUi.windows?.main?.mode ?? 'standard';
         mainWindowVisible.value = normalizedUi.windows?.main?.isOpen ?? false;
@@ -803,21 +761,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     captureMode.value = nextMode;
     modeTouchedInSession.value = true;
     persistDraftNow();
-
-    const wsKey = activeWorkspaceKey.value;
-    if (wsKey && !isInboxTarget.value) {
-      const nextWorkspaceModes: Record<string, CaptureMode> = {
-        ...uiState.value.workspaceModes,
-        [wsKey]: nextMode,
-      };
-      uiState.value = {
-        ...uiState.value,
-        workspaceModes: nextWorkspaceModes,
-      };
-      void Promise.resolve(patchQuickBarUiState('workspaceModes', nextWorkspaceModes)).catch(
-        () => undefined,
-      );
-    }
   }
 
   function selectRelatedNote(index: number): void {
@@ -838,7 +781,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     explicitTarget.value = {
       relPath: item.relPath ?? item.key,
       title: item.title,
-      workspaceKey: null,
     };
     explicitTargetSource.value = 'related';
     persistDraftNow();
@@ -872,7 +814,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
             tab: 'recent',
             dirRelPath: null,
             tags: pickerSelectedTag.value ? [pickerSelectedTag.value] : [],
-            workspaceKey: null,
             filterText: null,
           }),
         ).catch(() => [] as NoteSummary[]),
@@ -880,7 +821,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
       if (tree) {
         const snapshot: NavTreeSnapshot = tree;
         pickerTags.value = snapshot.tags;
-        pickerWorkspaces.value = snapshot.workspaces;
       }
       pickerNotes.value = notes;
     } finally {
@@ -951,30 +891,11 @@ export const useQuickBarStore = defineStore('quickbar', () => {
         tab: 'recent',
         dirRelPath: null,
         tags: pickerSelectedTag.value ? [pickerSelectedTag.value] : [],
-        workspaceKey: null,
         filterText: null,
       });
     } catch {
       // 容错
     }
-  }
-
-  async function selectWorkspaceLock(workspaceKey: string | null): Promise<void> {
-    selectedWorkspaceKey.value = workspaceKey;
-    explicitTarget.value = null;
-    explicitTargetSource.value = null;
-    selectedRelatedIndex.value = -1;
-
-    const updatedUi = await Promise.resolve(
-      patchQuickBarUiState('selectedWorkspace', workspaceKey),
-    ).catch(() => null);
-    const nextUiState: UiState = updatedUi ?? {
-      ...uiState.value,
-      selectedWorkspaceKey: workspaceKey,
-    };
-    uiState.value = nextUiState;
-    persistDraftNow();
-    await resolveCurrentTarget(nextUiState);
   }
 
   function selectExplicitDoc(target: ExplicitQuickBarTarget): void {
@@ -1022,7 +943,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
         targetRelPath: effectiveTargetRelPath.value,
         content: draft.value,
         mode: captureMode.value,
-        workspaceKey: activeWorkspaceKey.value,
       });
 
       clearRelatedTimer();
@@ -1152,7 +1072,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
       await Promise.resolve(
         patchQuickBarUiState('lastActiveDoc', {
           relPath: doc.relPath ?? doc.absPath,
-          workspaceKey: doc.meta.project ?? null,
           touchedAtMs: Date.now(),
         }),
       ).catch(() => undefined);
@@ -1292,7 +1211,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     isAuxiliarySidebarActive,
     resolvedTarget,
     explicitTarget,
-    selectedWorkspaceKey,
     relatedNotes,
     selectedRelatedIndex,
     targetPickerOpen,
@@ -1308,7 +1226,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     pickerNotes,
     pickerSearchItems,
     pickerTags,
-    availableWorkspaces,
     externalBookmarks,
     openQuery,
     openLoading,
@@ -1324,7 +1241,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     settingsStatus,
     effectiveTargetRelPath,
     isInboxTarget,
-    activeWorkspaceKey,
     targetChipLabel,
     targetChipTone,
     sectionHintText,
@@ -1354,7 +1270,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     toggleTargetPicker,
     setPickerSearchQuery,
     selectPickerTag,
-    selectWorkspaceLock,
     selectExplicitDoc,
     clearExplicitTarget,
     clearDraft,

@@ -148,9 +148,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
       selectedTags: [],
       listScrollTop: 0,
     },
-    selectedWorkspaceKey: overrides.selectedWorkspaceKey ?? null,
     lastActiveDoc: overrides.lastActiveDoc ?? null,
-    workspaceModes: overrides.workspaceModes ?? {},
     hotkey: overrides.hotkey ?? {
       combo: 'ctrl+alt+space',
       backupCombo: 'ctrl+alt+cmd+space',
@@ -202,7 +200,6 @@ function makeSettingsSnapshot(bloatThresholdLines = 500): SettingsSnapshot {
         sublime: { name: 'Sublime Text', bundleId: 'com.sublimetext.4' },
       },
       searchRoots: [],
-      workspaces: {},
     },
     status: {
       valid: true,
@@ -238,7 +235,6 @@ describe('M1-04a 导航树、笔记列表与多标签状态机', () => {
           children: [{ tag: 'dev/quicknote', count: 1, children: [] }],
         },
       ],
-      workspaces: [{ key: 'qn', name: 'QuickNote', root: '/repo/qn', openDir: '/repo/qn' }],
     };
 
     mockNotesGetTreeAndTags.mockResolvedValue(defaultTree);
@@ -272,7 +268,6 @@ describe('M1-04a 导航树、笔记列表与多标签状态机', () => {
       tab: 'projects',
       dirRelPath: 'projects',
       tags: [],
-      workspaceKey: null,
       filterText: null,
     });
 
@@ -283,33 +278,17 @@ describe('M1-04a 导航树、笔记列表与多标签状态机', () => {
       tab: 'tags',
       dirRelPath: null,
       tags: ['dev', 'dev/quicknote'],
-      workspaceKey: null,
       filterText: null,
     });
 
     await notesStore.clearTags();
     expect(notesStore.selectedTags).toEqual([]);
 
-    await notesStore.setActiveTab('workspaces');
-    await notesStore.selectWorkspace('qn');
-    expect(mockUiStateSet).toHaveBeenCalledWith({
-      key: 'selectedWorkspace',
-      value: 'qn',
-    });
-    expect(mockNotesList).toHaveBeenLastCalledWith({
-      tab: 'workspaces',
-      dirRelPath: null,
-      tags: [],
-      workspaceKey: 'qn',
-      filterText: null,
-    });
-
     await notesStore.setActiveTab('recent');
     expect(mockNotesList).toHaveBeenLastCalledWith({
       tab: 'recent',
       dirRelPath: null,
       tags: [],
-      workspaceKey: null,
       filterText: null,
     });
 
@@ -627,7 +606,6 @@ describe('M1-04a 导航树、笔记列表与多标签状态机', () => {
     mockNotesGetTreeAndTags.mockResolvedValue({
       dirs: [],
       tags: [{ tag: 'x', count: 1, children: [] }],
-      workspaces: [],
     });
 
     await editorTabsStore.updateActiveMeta({ tags: ['x'] });
@@ -656,7 +634,6 @@ describe('M1-04a 导航树、笔记列表与多标签状态机', () => {
     notesStore.navTree = {
       dirs: [{ relPath: 'alpha', name: 'alpha', count: 1, children: [] }],
       tags: [{ tag: 'dev', count: 2, children: [] }],
-      workspaces: [],
     };
     notesStore.notes = [makeSummary({ relPath: 'inbox.md', isInbox: true, title: 'Inbox' })];
 
@@ -691,7 +668,6 @@ describe('M1-04a 导航树、笔记列表与多标签状态机', () => {
           children: [{ tag: 'dev/rust', count: 1, children: [] }],
         },
       ],
-      workspaces: [],
     };
     await notesStore.setActiveTab('tags');
 
@@ -708,7 +684,6 @@ describe('M1-04a 导航树、笔记列表与多标签状态机', () => {
       tab: 'tags',
       dirRelPath: null,
       tags: ['dev'],
-      workspaceKey: null,
       filterText: null,
     });
   });

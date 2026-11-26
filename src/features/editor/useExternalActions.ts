@@ -189,7 +189,6 @@ export const useExternalActions = defineStore('externalActions', () => {
     try {
       const nextStates = await resolveExternalActions({
         absPath: doc.absPath,
-        workspaceKey: doc.meta.project ?? null,
         commandId: null,
       });
       if (reqSeq !== resolveSeq) {
@@ -214,14 +213,12 @@ export const useExternalActions = defineStore('externalActions', () => {
 
   async function resolveForTarget(target: {
     absPath: string | null;
-    workspaceKey: string | null;
   }): Promise<ExternalActionState[]> {
     if (!target.absPath) {
       return [];
     }
     return resolveExternalActions({
       absPath: target.absPath,
-      workspaceKey: target.workspaceKey,
       commandId: null,
     });
   }

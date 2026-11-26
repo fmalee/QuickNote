@@ -111,8 +111,6 @@ function makeDoc(overrides: Partial<NoteDoc> = {}): NoteDoc {
 
 function makeUiState(): UiState {
   return {
-    selectedWorkspaceKey: null,
-    workspaceModes: {},
     filters: {
       activeTab: 'inbox',
       selectedDir: null,
@@ -175,7 +173,6 @@ describe('template utils & Quick Bar save-as-note (M2-04)', () => {
         terminal: {
           idleRecycleMinutes: 30,
         },
-        workspaces: {},
       },
     } as unknown as SettingsSnapshot);
     mockUiStateGet.mockResolvedValue(makeUiState());
@@ -186,9 +183,6 @@ describe('template utils & Quick Bar save-as-note (M2-04)', () => {
       targetRelPath: 'inbox.md',
       targetTitle: '收件箱',
       sectionHint: null,
-      workspaceKey: null,
-      workspaceName: null,
-      isCrossWorkspaceFallback: false,
       recommendedMode: 'list',
       chipLabel: '收件箱 · inbox.md',
     } satisfies ResolvedTarget);
@@ -203,7 +197,6 @@ describe('template utils & Quick Bar save-as-note (M2-04)', () => {
         { relPath: 'commands', name: 'commands', count: 1, children: [] },
       ],
       tags: [],
-      workspaces: [],
     } satisfies NavTreeSnapshot);
     mockNotesList.mockResolvedValue([
       {
@@ -288,7 +281,6 @@ describe('template utils & Quick Bar save-as-note (M2-04)', () => {
       key: 'lastActiveDoc',
       value: {
         relPath: createdDoc.relPath,
-        workspaceKey: 'quicknote',
         touchedAtMs: expect.any(Number),
       },
     });

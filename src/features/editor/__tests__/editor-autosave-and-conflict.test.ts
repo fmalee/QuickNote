@@ -92,9 +92,7 @@ function makeUiState(): UiState {
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
     filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },
-    selectedWorkspaceKey: null,
     lastActiveDoc: null,
-    workspaceModes: {},
     hotkey: { combo: 'ctrl+alt+space', backupCombo: 'ctrl+alt+cmd+space', selfCheck: 'ok' },
   };
 }
@@ -122,7 +120,6 @@ describe('editor autosave, ULID backfill and external change handling', () => {
     mockNotesGetTreeAndTags.mockResolvedValue({
       dirs: [],
       tags: [],
-      workspaces: [],
     } satisfies NavTreeSnapshot);
     mockOnIndexStatus.mockResolvedValue(() => {});
     mockOnFsExternalChange.mockImplementation(async (cb: (event: ExternalChangeEvent) => void) => {

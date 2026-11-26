@@ -61,7 +61,6 @@ export function listTemplateNotes(): Promise<NoteSummary[]> {
     tab: 'templates',
     dirRelPath: null,
     tags: [],
-    workspaceKey: null,
     filterText: null,
   });
 }

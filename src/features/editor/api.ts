@@ -103,7 +103,6 @@ export function listTemplates(): Promise<NoteSummary[]> {
     tab: 'templates',
     dirRelPath: null,
     tags: [],
-    workspaceKey: null,
     filterText: null,
   });
 }
@@ -113,7 +112,6 @@ export function listAllNotes(): Promise<NoteSummary[]> {
     tab: 'recent',
     dirRelPath: null,
     tags: [],
-    workspaceKey: null,
     filterText: null,
   });
 }

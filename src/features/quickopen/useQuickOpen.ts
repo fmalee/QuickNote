@@ -484,7 +484,6 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
             tab: 'tags',
             dirRelPath: null,
             tags: [exactTag.tag],
-            workspaceKey: null,
             filterText: null,
           });
           if (reqId !== activeRequestId) {

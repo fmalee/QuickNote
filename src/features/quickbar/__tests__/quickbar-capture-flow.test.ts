@@ -143,7 +143,6 @@ function makeSettingsSnapshot(): SettingsSnapshot {
         sublime: { name: 'Sublime Text', bundleId: 'com.sublimetext.4' },
       },
       searchRoots: [],
-      workspaces: {},
     },
     status: {
       valid: true,
@@ -157,8 +156,6 @@ function makeSettingsSnapshot(): SettingsSnapshot {
 
 function makeUiState(overrides: Partial<UiState> = {}): UiState {
   return {
-    selectedWorkspaceKey: null,
-    workspaceModes: {},
     filters: { activeTab: 'recent', selectedDir: null, selectedTags: [], listScrollTop: 0 },
     tabs: { items: [], activeKey: null, closedStack: [] },
     lastActiveDoc: null,
@@ -183,14 +180,11 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
 
 function makeResolvedTarget(overrides: Partial<ResolvedTarget> = {}): ResolvedTarget {
   return {
-    scenario: 'S4',
+    scenario: 'S3',
     kind: 'note',
     targetRelPath: 'work-a/plan.md',
     targetTitle: '项目规划',
     sectionHint: null,
-    workspaceKey: 'ws_a',
-    workspaceName: '工作区 A',
-    isCrossWorkspaceFallback: false,
     recommendedMode: 'list',
     chipLabel: '项目规划 · work-a/plan.md',
     ...overrides,
@@ -207,15 +201,7 @@ describe('quickbar-capture-flow (M1-05)', () => {
     mockLibraryGetInfo.mockResolvedValue(makeLibraryInfo());
     mockSettingsGet.mockResolvedValue(makeSettingsSnapshot());
     mockUiStateGet.mockResolvedValue(makeUiState());
-    mockUiStateSet.mockImplementation(async ({ key, value }) => {
-      if (key === 'selectedWorkspace') {
-        return makeUiState({ selectedWorkspaceKey: value as string | null });
-      }
-      if (key === 'workspaceModes') {
-        return makeUiState({ workspaceModes: value as Record<string, 'list' | 'todo' | 'prose'> });
-      }
-      return makeUiState();
-    });
+    mockUiStateSet.mockImplementation(async () => makeUiState());
     mockCaptureResolveTarget.mockResolvedValue(makeResolvedTarget());
     mockOnWindowState.mockImplementation(async (handler: (state: WindowState) => void) => {
       windowStateListeners.push(handler);
@@ -241,13 +227,13 @@ describe('quickbar-capture-flow (M1-05)', () => {
     vi.useRealTimers();
   });
 
-  it('1. 渲染 S1-S8 目标 Chip、跨工作区 warning 与“将追加到文末”提示', async () => {
+  it('1. 渲染 S1-S4 目标 Chip、未选库 warning 与“将追加到文末”提示', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
 
     mockCaptureResolveTarget.mockResolvedValueOnce(
       makeResolvedTarget({
-        scenario: 'S4',
+        scenario: 'S3',
         targetRelPath: 'work-a/plan.md',
         targetTitle: '项目规划',
         sectionHint: '将追加到文末',
@@ -264,38 +250,21 @@ describe('quickbar-capture-flow (M1-05)', () => {
     expect(html1).toContain('data-testid="quickbar-target-chip"');
     expect(html1).toContain('项目规划 · 列表');
     expect(html1).toContain('将追加到文末');
+    expect(store.targetChipTone).toBe('neutral');
 
-    mockCaptureResolveTarget.mockResolvedValueOnce(
-      makeResolvedTarget({
-        scenario: 'S6',
-        kind: 'inbox',
-        targetRelPath: 'inbox.md',
-        targetTitle: '收件箱',
-        sectionHint: null,
-        workspaceKey: 'ws_b',
-        workspaceName: '工作区 B',
-        isCrossWorkspaceFallback: true,
-        recommendedMode: 'list',
-        chipLabel: '收件箱 · inbox.md',
-      }),
-    );
-
+    mockLibraryGetInfo.mockResolvedValueOnce({ ...makeLibraryInfo(), root: null });
     await store.refreshState();
-    const app2 = createSSRApp(QuickBarView);
-    app2.use(pinia);
-    const html2 = await renderToString(app2);
-    expect(html2).toContain('收件箱 · 跨工作区');
+    expect(store.targetChipLabel).toBe('未选库 · S1');
     expect(store.targetChipTone).toBe('warning');
   });
 
-  it('2. ⌘1/⌘2/⌘3 模式切换更新状态并在有效工作区（非 inbox.md）持久化 workspaceModes', async () => {
+  it('2. ⌘1/⌘2/⌘3 模式切换更新状态并写入本地草稿（不再持久化 workspaceModes）', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
 
     mockCaptureResolveTarget.mockResolvedValueOnce(
       makeResolvedTarget({
         targetRelPath: 'work-a/note.md',
-        workspaceKey: 'ws_a',
         recommendedMode: 'list',
       }),
     );
@@ -305,18 +274,12 @@ describe('quickbar-capture-flow (M1-05)', () => {
 
     store.setCaptureMode('todo');
     expect(store.captureMode).toBe('todo');
-    expect(mockUiStateSet).toHaveBeenCalledWith({
-      key: 'workspaceModes',
-      value: { ws_a: 'todo' },
-    });
+    expect(mockUiStateSet).not.toHaveBeenCalled();
 
-    mockUiStateSet.mockClear();
-    store.selectExplicitDoc({ relPath: 'inbox.md', title: '收件箱', workspaceKey: 'ws_a' });
+    store.selectExplicitDoc({ relPath: 'inbox.md', title: '收件箱' });
     store.setCaptureMode('prose');
     expect(store.captureMode).toBe('prose');
-    expect(mockUiStateSet).not.toHaveBeenCalledWith(
-      expect.objectContaining({ key: 'workspaceModes' }),
-    );
+    expect(mockUiStateSet).not.toHaveBeenCalled();
   });
 
   it('3. 相关笔记 >= 2 字符 80ms 防抖、丢弃过期 requestId、⌘↑/⌘↓ 改投', async () => {
@@ -433,19 +396,14 @@ describe('quickbar-capture-flow (M1-05)', () => {
       targetRelPath: 'notes/new-plan.md',
       content: '设计方案',
       mode: 'list',
-      workspaceKey: 'ws_a',
     });
   });
 
-  it('4. ⌘T 目标选择器锁定工作区、显式选文档与 Esc 分层回退', async () => {
+  it('4. ⌘T 目标选择器显式选文档与 Esc 分层回退', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
 
     const navTree: NavTreeSnapshot = {
-      workspaces: [
-        { key: 'ws_a', name: '工作区 A', root: 'work-a', openDir: 'work-a' },
-        { key: 'ws_b', name: '工作区 B', root: 'work-b', openDir: 'work-b' },
-      ],
       dirs: [],
       tags: [{ tag: '架构', count: 2, children: [] }],
     };
@@ -480,20 +438,10 @@ describe('quickbar-capture-flow (M1-05)', () => {
     expect(store.targetPickerOpen).toBe(false);
     expect(mockWindowHideQuickBar).not.toHaveBeenCalled();
 
-    // 切换工作区锁定 -> 调用 uiStateSet('selectedWorkspace') 并重跑 captureResolveTarget
-    mockCaptureResolveTarget.mockClear();
-    await store.selectWorkspaceLock('ws_b');
-    expect(mockUiStateSet).toHaveBeenCalledWith({
-      key: 'selectedWorkspace',
-      value: 'ws_b',
-    });
-    expect(mockCaptureResolveTarget).toHaveBeenCalledTimes(1);
-
     // 显式选文档
     store.selectExplicitDoc({
       relPath: 'work-b/spec.md',
       title: 'B 区规格',
-      workspaceKey: 'ws_b',
     });
     expect(store.effectiveTargetRelPath).toBe('work-b/spec.md');
     expect(store.targetChipLabel).toContain('B 区规格');

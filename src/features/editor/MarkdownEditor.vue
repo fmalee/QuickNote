@@ -908,7 +908,6 @@ async function handleContextMenu(event: MouseEvent): Promise<void> {
       try {
         states = await externalActions.resolveForTarget({
           absPath: doc.absPath,
-          workspaceKey: doc.meta.project ?? null,
         });
       } catch {
         states = [];

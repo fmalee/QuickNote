@@ -115,7 +115,6 @@ describe('quick-open-engine (M3-03 / v5 Refactor)', () => {
     mockNotesGetTreeAndTags.mockResolvedValue({
       dirs: [],
       tags: [{ tag: 'work', count: 2, children: [] }],
-      workspaces: [],
     } satisfies NavTreeSnapshot);
     mockNotesList.mockResolvedValue([]);
     mockExternalActionRun.mockResolvedValue(undefined);
@@ -571,7 +570,6 @@ describe('quick-open-engine (M3-03 / v5 Refactor)', () => {
           children: [{ tag: '测试/子标签', count: 1, children: [] }],
         },
       ],
-      workspaces: [],
     } satisfies NavTreeSnapshot);
     mockNotesList.mockResolvedValueOnce([
       {

@@ -2,12 +2,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { createSSRApp } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  NoteDoc,
-  TerminalExitPayload,
-  TerminalSessionInfo,
-  WorkspaceConfig,
-} from '@/bindings/types';
+import type { NoteDoc, TerminalExitPayload, TerminalSessionInfo } from '@/bindings/types';
 
 const {
   mockExternalActionRun,
@@ -108,20 +103,6 @@ function makeDoc(
   };
 }
 
-function makeWorkspace(overrides?: Partial<WorkspaceConfig>): WorkspaceConfig {
-  return {
-    key: 'quicknote',
-    name: 'QuickNote',
-    root: '/repos/quicknote',
-    openDir: '/repos/quicknote/src',
-    codeWorkspace: null,
-    terminalDir: '/repos/quicknote/scripts',
-    defaultEditor: 'vscode',
-    defaultEntryDoc: null,
-    ...overrides,
-  };
-}
-
 async function renderTerminalPanelHtml(): Promise<string> {
   const app = createSSRApp(TerminalPanel);
   return renderToString(app);
@@ -154,25 +135,12 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
     vi.useRealTimers();
   });
 
-  it('1. 按优先级解析工作区 cwd（terminalDir > openDir > 工作区配置 > 库外父目录 > 库根）', () => {
-    const workspaces: Record<string, WorkspaceConfig> = {
-      quicknote: makeWorkspace(),
-      other: makeWorkspace({
-        key: 'other',
-        name: 'Other',
-        root: '/repos/other',
-        openDir: '/repos/other/app',
-        terminalDir: null,
-      }),
-    };
-
+  it('1. 按优先级解析工作区 cwd（terminalDir > openDir > 文档父目录 > 库根）', () => {
     // 1. 文档 frontmatter terminalDir 最高优先
     const docWithTermDir = makeDoc({
       meta: { terminalDir: '/custom/term', openDir: '/custom/open', project: 'quicknote' },
     });
-    expect(
-      resolveTerminalLaunchContext(docWithTermDir, workspaces, 'other', '/vault'),
-    ).toMatchObject({
+    expect(resolveTerminalLaunchContext(docWithTermDir, '/vault')).toMatchObject({
       workspaceKey: 'quicknote',
       cwd: '/custom/term',
       source: 'doc-terminal-dir',
@@ -182,29 +150,18 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
     const docWithOpenDir = makeDoc({
       meta: { terminalDir: null, openDir: '/custom/open', project: 'quicknote' },
     });
-    expect(
-      resolveTerminalLaunchContext(docWithOpenDir, workspaces, 'other', '/vault'),
-    ).toMatchObject({
+    expect(resolveTerminalLaunchContext(docWithOpenDir, '/vault')).toMatchObject({
       workspaceKey: 'quicknote',
       cwd: '/custom/open',
       source: 'doc-open-dir',
     });
 
-    // 3. 关联工作区的 terminalDir / openDir / root
+    // 3. 库内文档无显式目录时回退到文档父目录，并保留 project 作为会话分组键
     const docOnlyProject = makeDoc({ meta: { project: 'quicknote' } });
-    expect(resolveTerminalLaunchContext(docOnlyProject, workspaces, null, '/vault')).toMatchObject({
+    expect(resolveTerminalLaunchContext(docOnlyProject, '/vault')).toMatchObject({
       workspaceKey: 'quicknote',
-      cwd: '/repos/quicknote/scripts',
-      source: 'workspace-terminal-dir',
-    });
-
-    const docSelectedOther = makeDoc({ meta: { project: null } });
-    expect(
-      resolveTerminalLaunchContext(docSelectedOther, workspaces, 'other', '/vault'),
-    ).toMatchObject({
-      workspaceKey: 'other',
-      cwd: '/repos/other/app',
-      source: 'workspace-open-dir',
+      cwd: '/vault/notes',
+      source: 'doc-parent-dir',
     });
 
     // 4. 库外文件父目录
@@ -214,14 +171,14 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
       absPath: '/Users/dev/notes/external-readme.md',
       meta: { project: null },
     });
-    expect(resolveTerminalLaunchContext(externalDoc, workspaces, null, '/vault')).toMatchObject({
+    expect(resolveTerminalLaunchContext(externalDoc, '/vault')).toMatchObject({
       workspaceKey: 'default',
       cwd: '/Users/dev/notes',
       source: 'doc-parent-dir',
     });
 
     // 5. 回退到库根
-    expect(resolveTerminalLaunchContext(null, workspaces, null, '/vault')).toMatchObject({
+    expect(resolveTerminalLaunchContext(null, '/vault')).toMatchObject({
       workspaceKey: 'default',
       cwd: '/vault',
       source: 'library-root',
@@ -236,7 +193,7 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
       workspaceKey: 'quicknote',
       workspaceLabel: 'QuickNote',
       cwd: '/repos/quicknote',
-      source: 'workspace-root',
+      source: 'doc-open-dir',
     });
     expect(session?.sessionId).toBe('term-1-1');
     expect(mockTerminalSpawn).toHaveBeenCalledTimes(1);
@@ -246,7 +203,7 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
       workspaceKey: 'quicknote',
       workspaceLabel: 'QuickNote',
       cwd: '/repos/quicknote',
-      source: 'workspace-root',
+      source: 'doc-open-dir',
     });
     expect(reused?.sessionId).toBe('term-1-1');
     expect(mockTerminalSpawn).toHaveBeenCalledTimes(1);
@@ -276,7 +233,7 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
       workspaceKey: 'quicknote',
       workspaceLabel: 'QuickNote',
       cwd: '/repos/quicknote',
-      source: 'workspace-root',
+      source: 'doc-open-dir',
     });
 
     expect(store.hasAnyActiveForegroundChild).toBe(false);
@@ -302,7 +259,7 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
       workspaceKey: 'quicknote',
       workspaceLabel: 'QuickNote',
       cwd: '/repos/quicknote',
-      source: 'workspace-root',
+      source: 'doc-open-dir',
     });
 
     const clearSpy = vi.fn();
@@ -345,7 +302,7 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
       workspaceKey: 'quicknote',
       workspaceLabel: 'QuickNote',
       cwd: '/repos/quicknote',
-      source: 'workspace-root',
+      source: 'doc-open-dir',
     });
 
     expect(store.hasAnySession).toBe(true);
@@ -524,7 +481,7 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
       workspaceKey: 'ws-a',
       workspaceLabel: 'ws-a',
       cwd: '/tmp/ws-a',
-      source: 'workspace-root',
+      source: 'doc-open-dir',
     });
     expect(store.activeSessionId).toBe('term-ws-a');
     expect(mockTerminalSetVisibility).not.toHaveBeenCalled();
@@ -533,7 +490,7 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
       workspaceKey: 'ws-b',
       workspaceLabel: 'ws-b',
       cwd: '/tmp/ws-b',
-      source: 'workspace-root',
+      source: 'doc-open-dir',
     });
     expect(store.activeSessionId).toBe('term-ws-b');
     expect(mockTerminalSetVisibility).toHaveBeenCalledWith({
@@ -590,7 +547,7 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
       workspaceKey: 'quicknote',
       workspaceLabel: 'QuickNote',
       cwd: '/repos/quicknote/scripts',
-      source: 'workspace-terminal-dir',
+      source: 'doc-terminal-dir',
     });
 
     const ok = await store.openExternalTerminalForActiveSession();

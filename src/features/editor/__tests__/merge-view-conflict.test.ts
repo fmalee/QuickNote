@@ -177,9 +177,7 @@ function makeUiState(): UiState {
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
     filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },
-    selectedWorkspaceKey: null,
     lastActiveDoc: null,
-    workspaceModes: {},
     hotkey: { combo: 'ctrl+alt+space', backupCombo: 'ctrl+alt+cmd+space', selfCheck: 'ok' },
   };
 }
@@ -282,7 +280,6 @@ describe('CM6 MergeView conflict resolution', () => {
     mockNotesGetTreeAndTags.mockResolvedValue({
       dirs: [],
       tags: [],
-      workspaces: [],
     } satisfies NavTreeSnapshot);
     mockOnFsExternalChange.mockImplementation((cb: (event: ExternalChangeEvent) => void) => {
       externalChangeHandler = cb;

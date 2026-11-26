@@ -90,8 +90,6 @@ function makeDoc(overrides: Partial<NoteDoc> = {}): NoteDoc {
 
 function makeUiState(): UiState {
   return {
-    selectedWorkspaceKey: null,
-    workspaceModes: {},
     filters: {
       activeTab: 'inbox',
       selectedDir: null,
@@ -133,7 +131,6 @@ describe('doc meta editing, external frontmatter guard & inbox extract (M2-04)',
     mockNotesGetTreeAndTags.mockResolvedValue({
       dirs: [],
       tags: [],
-      workspaces: [],
     } satisfies NavTreeSnapshot);
     mockOnFsExternalChange.mockResolvedValue(() => undefined);
     mockOnIndexStatus.mockResolvedValue(() => undefined);

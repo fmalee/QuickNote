@@ -87,7 +87,6 @@ function makeSettingsSnapshot(libraryRoot: string | null): SettingsSnapshot {
         sublime: { name: 'Sublime Text', bundleId: 'com.sublimetext.4' },
       },
       searchRoots: [],
-      workspaces: {},
     },
     status: {
       valid: true,

@@ -111,8 +111,6 @@ function createMemoryStorage() {
 
 function createSampleUiState(): UiState {
   return {
-    selectedWorkspaceKey: 'quicknote',
-    workspaceModes: {},
     filters: {
       activeTab: 'recent',
       selectedDir: null,
@@ -122,7 +120,6 @@ function createSampleUiState(): UiState {
     tabs: { items: [], activeKey: null, closedStack: [] },
     lastActiveDoc: {
       relPath: 'projects/quicknote.md',
-      workspaceKey: 'quicknote',
       touchedAtMs: 1700000000000,
     },
     windows: {
@@ -179,7 +176,6 @@ describe('quickbar-command-mode', () => {
       sectionHint: null,
       workspaceKey: 'quicknote',
       workspaceName: 'QuickNote',
-      isCrossWorkspaceFallback: false,
       recommendedMode: 'list',
       chipLabel: 'QuickNote · projects/quicknote.md',
     } as ResolvedTarget);
@@ -188,7 +184,6 @@ describe('quickbar-command-mode', () => {
     mockNotesGetTreeAndTags.mockResolvedValue({
       tree: [],
       tags: [],
-      workspaces: [],
     } as unknown as NavTreeSnapshot);
     mockCommandsSearch.mockResolvedValue([createSampleCommand()]);
     mockExternalActionsResolve.mockResolvedValue([

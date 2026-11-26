@@ -161,7 +161,6 @@ function openMainQuickOpen(): void {
 const mainCommandPaletteEngine = useCommandPalette({
   getContext: () => ({
     absPath: editorTabsStore.activeTab?.absPath ?? null,
-    workspaceKey: editorTabsStore.activeTab?.doc?.meta.project ?? null,
   }),
   onOpenSource: async (absPath, line) => {
     commandBookModalOpen.value = false;

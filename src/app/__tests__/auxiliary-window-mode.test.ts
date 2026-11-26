@@ -198,7 +198,6 @@ function makeSnapshot(overrides?: Partial<SettingsSnapshot['settings']>): Settin
         sublime: { name: 'Sublime Text', bundleId: 'com.sublimetext.4' },
       },
       searchRoots: [],
-      workspaces: {},
       ...overrides,
     },
     status: {
@@ -218,10 +217,8 @@ function makeUiState(mode: 'standard' | 'auxiliary' | 'fullscreen' = 'standard')
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
     filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },
-    selectedWorkspaceKey: null,
     hotkey: { combo: 'ctrl+alt+space', backupCombo: 'ctrl+alt+cmd+space', selfCheck: 'ok' },
     lastActiveDoc: null,
-    workspaceModes: {},
   };
 }
 

@@ -71,7 +71,6 @@ export function listQuickBarTemplates(): Promise<NoteSummary[]> {
     tab: 'templates',
     dirRelPath: null,
     tags: [],
-    workspaceKey: null,
     filterText: null,
   });
 }

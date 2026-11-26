@@ -127,7 +127,8 @@ fn capture_target_truth_table_s1_through_s4() {
         },
         // S3: mainVisible && activeDoc == None && lastActiveDoc expired -> inbox.md
         TruthCase {
-            name: "S3: main visible without active doc falls back to inbox when lastActiveDoc expired",
+            name:
+                "S3: main visible without active doc falls back to inbox when lastActiveDoc expired",
             library_configured: true,
             input: TargetResolveInput {
                 main_visible: true,

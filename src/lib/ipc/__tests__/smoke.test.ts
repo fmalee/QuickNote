@@ -130,9 +130,9 @@ describe('IPC smoke wrapper', () => {
     });
 
     mockInvoke.mockResolvedValueOnce([]);
-    await externalActionsResolve({ absPath: '/tmp/a.txt', workspaceKey: null, commandId: null });
+    await externalActionsResolve({ absPath: '/tmp/a.txt', commandId: null });
     expect(mockInvoke).toHaveBeenCalledWith('external_actions_resolve', {
-      args: { absPath: '/tmp/a.txt', workspaceKey: null, commandId: null },
+      args: { absPath: '/tmp/a.txt', commandId: null },
     });
 
     mockInvoke.mockResolvedValueOnce(undefined);

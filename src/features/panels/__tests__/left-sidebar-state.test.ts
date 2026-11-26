@@ -32,9 +32,7 @@ function makeDefaultUiState(): UiState {
     leftSidebar: { width: 300, activeView: 'workspace', collapsed: false },
     terminalPanel: { visible: false, height: 240, collapsed: false },
     filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },
-    selectedWorkspaceKey: null,
     lastActiveDoc: null,
-    workspaceModes: {},
     hotkey: { combo: 'ctrl+alt+space', backupCombo: 'ctrl+alt+cmd+space', selfCheck: 'ok' },
   };
 }

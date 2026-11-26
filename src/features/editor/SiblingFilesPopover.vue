@@ -127,9 +127,6 @@ async function openEntryContextMenu(
   contextEntry.value = entry;
   contextMenuPos.value = { x: event.clientX, y: event.clientY };
 
-  const activeDoc = editorTabsStore.activeDoc;
-  const workspaceKey = entry.path === activeDoc?.absPath ? (activeDoc.meta.project ?? null) : null;
-
   if (entry.path === externalActions.resolvedAbsPath && externalActions.states.length > 0) {
     contextEntryStates.value = externalActions.states;
     contextMenuOpen.value = true;
@@ -141,7 +138,6 @@ async function openEntryContextMenu(
   try {
     const resolved = await externalActions.resolveForTarget({
       absPath: entry.path,
-      workspaceKey,
     });
     if (reqSeq === entryMenuSeq) {
       contextEntryStates.value = resolved;
