@@ -23,6 +23,7 @@ import {
   patchUiState,
   renameNote,
   revealExternalFileByPath,
+  subscribeFsExternalChange,
   subscribeIndexStatus,
   togglePinExternalFileByPath,
 } from './api';
@@ -31,6 +32,7 @@ export type NavTab = 'projects' | 'tags' | 'recent';
 
 export const FILTER_DEBOUNCE_MS = 80;
 const FILTERS_PERSIST_DEBOUNCE_MS = 250;
+const EXTERNAL_REFRESH_DEBOUNCE_MS = 120;
 
 export function normalizeNavTab(tab: string | undefined): NavTab {
   if (tab === 'projects' || tab === 'tags' || tab === 'recent') {
@@ -77,7 +79,19 @@ export const useNotesStore = defineStore('notes', () => {
   let pinnedExternalSeq = 0;
   let filterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let filtersPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  let externalRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   let unlistenIndexStatus: UnlistenFn | null = null;
+  let unlistenExternalChange: UnlistenFn | null = null;
+
+  function scheduleExternalRefresh(): void {
+    if (externalRefreshTimer !== null) {
+      clearTimeout(externalRefreshTimer);
+    }
+    externalRefreshTimer = setTimeout(() => {
+      externalRefreshTimer = null;
+      void Promise.all([loadTreeAndTags(), loadNotesList()]);
+    }, EXTERNAL_REFRESH_DEBOUNCE_MS);
+  }
 
   function buildFilterArgs(): NotesFilterArgs {
     const trimmedFilter = filterText.value.trim();
@@ -399,6 +413,16 @@ export const useNotesStore = defineStore('notes', () => {
       }
     }
 
+    if (!unlistenExternalChange) {
+      try {
+        unlistenExternalChange = await subscribeFsExternalChange(() => {
+          scheduleExternalRefresh();
+        });
+      } catch {
+        // 非 Tauri 测试环境忽略
+      }
+    }
+
     await Promise.all([loadTreeAndTags(), loadNotesList(), loadPinnedExternalFiles()]);
   }
 
@@ -411,9 +435,17 @@ export const useNotesStore = defineStore('notes', () => {
       clearTimeout(filtersPersistTimer);
       filtersPersistTimer = null;
     }
+    if (externalRefreshTimer !== null) {
+      clearTimeout(externalRefreshTimer);
+      externalRefreshTimer = null;
+    }
     if (unlistenIndexStatus) {
       unlistenIndexStatus();
       unlistenIndexStatus = null;
+    }
+    if (unlistenExternalChange) {
+      unlistenExternalChange();
+      unlistenExternalChange = null;
     }
   }
 

@@ -14,6 +14,13 @@ const showModifiedBanner = computed(
     !activeTab.value.conflictState.mergeMode,
 );
 
+const showDismissedConflictNotice = computed(
+  () =>
+    activeTab.value?.conflictState?.kind === 'modified' &&
+    Boolean(activeTab.value.conflictState.bannerDismissed) &&
+    !activeTab.value.conflictState.mergeMode,
+);
+
 const showDeletedBanner = computed(() => activeTab.value?.conflictState?.kind === 'deleted');
 </script>
 
@@ -53,6 +60,26 @@ const showDeletedBanner = computed(() => activeTab.value?.conflictState?.kind ==
           @click="editorTabsStore.dismissConflictBanner(activeTab.key)"
         >
           暂缓处理
+        </QnButton>
+      </template>
+    </QnBanner>
+  </div>
+
+  <div v-else-if="showDismissedConflictNotice && activeTab" class="qn-conflict-banner-wrap">
+    <QnBanner
+      tone="warning"
+      title="自动保存已暂停（存在未处理冲突）"
+      data-testid="editor-conflict-paused-banner"
+    >
+      磁盘冲突解决前，当前编辑内容不会自动写入磁盘。
+      <template #actions>
+        <QnButton
+          size="sm"
+          variant="primary"
+          data-testid="conflict-reopen-btn"
+          @click="editorTabsStore.reopenConflictBanner(activeTab.key)"
+        >
+          展开处理冲突
         </QnButton>
       </template>
     </QnBanner>

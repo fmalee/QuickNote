@@ -444,3 +444,87 @@ fn note_write_registers_self_write_before_watch_can_observe_it(
     assert!(process_external_fs_path(&pm, Path::new(&doc.abs_path))?.is_none());
     Ok(())
 }
+
+#[test]
+fn set_library_root_switches_to_vault_isolated_db_for_restart(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let app_dir = TempDir::new()?;
+    let vault_dir = TempDir::new()?;
+    let projects_dir = vault_dir.path().join("Projects");
+    fs::create_dir_all(&projects_dir)?;
+    fs::write(
+        projects_dir.join("QuickNote.md"),
+        "---\ntitle: QuickNote 改进列表\ntags:\n  - dev\n---\n\n# QuickNote\n",
+    )?;
+
+    // 首次启动：未配置 library_root，PersistenceManager 默认打开 cache/index.db。
+    {
+        let pm = PersistenceManager::open(app_dir.path().to_path_buf())?;
+        let info = set_library_root(
+            &pm,
+            SetRootArgs {
+                root: vault_dir.path().to_string_lossy().to_string(),
+                create_if_missing: true,
+            },
+        )?;
+        assert!(info.note_count >= 1);
+    }
+
+    // 模拟重启：PersistenceManager 读到 settings.yaml 中的 library_root，直接连向 cache/vaults/<hash>.db。
+    let reopened = PersistenceManager::open(app_dir.path().to_path_buf())?;
+    assert!(
+        reopened
+            .with_db(|conn| get_note_key_by_rel_path(conn, "Projects/QuickNote.md"))?
+            .is_some(),
+        "Reopened PersistenceManager must read indexed notes from vault-isolated cache DB"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn self_write_guard_suppresses_rapid_consecutive_autosaves() {
+    let mut guard = SelfWriteGuard::new();
+    let path = "/vault/Projects/QuickNote.md";
+    guard.record_write(path, "hash-v1", 1_000);
+    guard.record_write(path, "hash-v2", 1_600);
+
+    // 延迟到达的 V1 回声与 V2 回声在各自窗口内都必须被抑制，而真实外部写入 V3 不应被抑制。
+    assert!(guard.should_suppress_modify(path, "hash-v1", 2_000));
+    assert!(guard.should_suppress_modify(path, "hash-v2", 2_200));
+    assert!(!guard.should_suppress_modify(path, "hash-external-v3", 2_300));
+}
+
+#[test]
+fn handle_vault_watch_path_reconciles_directory_moves_and_deletes(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use quicknote_lib::application::watch::{handle_vault_watch_path, VaultWatchOutcome};
+
+    let (_app_dir, vault_dir, pm) = setup_pm_with_library()?;
+    let old_dir = vault_dir.path().join("Projects").join("Sub");
+    fs::create_dir_all(&old_dir)?;
+    let old_file = old_dir.join("Moved.md");
+    fs::write(&old_file, "# 移动测试\n\n正文内容。\n")?;
+
+    // 先触发单文件监听收录旧路径。
+    let created = handle_vault_watch_path(&pm, &old_file)?;
+    assert!(matches!(created, VaultWatchOutcome::ExternalChange(_)));
+    assert!(pm
+        .with_db(|conn| get_note_key_by_rel_path(conn, "Projects/Sub/Moved.md"))?
+        .is_some());
+
+    // 模拟 Finder 将整个目录移到新位置（FSEvents 常只上报目录路径）。
+    let new_dir = vault_dir.path().join("Projects").join("RenamedSub");
+    fs::rename(&old_dir, &new_dir)?;
+
+    let outcome = handle_vault_watch_path(&pm, &old_dir)?;
+    assert_eq!(outcome, VaultWatchOutcome::ReconciledVault);
+    assert!(pm
+        .with_db(|conn| get_note_key_by_rel_path(conn, "Projects/Sub/Moved.md"))?
+        .is_none());
+    assert!(pm
+        .with_db(|conn| get_note_key_by_rel_path(conn, "Projects/RenamedSub/Moved.md"))?
+        .is_some());
+
+    Ok(())
+}

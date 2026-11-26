@@ -233,7 +233,9 @@ function bindMainWindowActions(): void {
     actionRegistry.bindHandler('window.commandBook', () => {
       openMainCommandBook();
     }),
-    actionRegistry.bindHandler('window.save', () => editorTabsStore.flushSave()),
+    actionRegistry.bindHandler('window.save', () =>
+      editorTabsStore.flushSave(undefined, { manual: true }),
+    ),
     actionRegistry.bindHandler('window.newNote', () => notesStore.openNewNoteModal()),
     actionRegistry.bindHandler(
       'editor.moveSelectionToNewNote',

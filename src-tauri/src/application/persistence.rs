@@ -244,7 +244,16 @@ impl PersistenceManager {
     }
 
     /// Switches the active SQLite connection to the Vault-isolated cache DB inside `cache_dir`.
+    /// Also records `library_root` in the fallback `cache/index.db` metadata table so cold-start
+    /// recovery can still locate the active vault if `settings.yaml` becomes malformed (`D-0008`).
     pub fn switch_vault_db(&self, vault_root: &Path) -> Result<PathBuf, AppError> {
+        let resolved = vault_root.to_string_lossy().to_string();
+        let fallback_db_path = self.cache_dir.join("index.db");
+        if let Ok(fallback_conn) = init_sqlite(&fallback_db_path) {
+            let _ =
+                crate::infra::sqlite::set_library_meta(&fallback_conn, "library_root", &resolved);
+        }
+
         let db_path = self.vault_db_path(vault_root);
         let conn = init_sqlite(&db_path)?;
         let mut guard = self

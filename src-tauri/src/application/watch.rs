@@ -4,11 +4,84 @@ use std::time::UNIX_EPOCH;
 
 use crate::application::index::index_single_note;
 use crate::application::persistence::{canonicalize_watch_path, PersistenceManager};
+use crate::application::reconciler::{
+    reconcile_vault, reconcile_watched_path, ReconcilePathOutcome,
+};
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::note::{compute_body_hash, parse_note};
 use crate::domain::watch::{ExternalChangeEvent, ExternalChangeKind};
+use crate::domain::workspace_context::DIRECTORY_CONFIG_FILENAME;
 use crate::infra::fs::map_io_error;
 use crate::infra::sqlite::{delete_note_index_by_rel_path, get_note_key_by_rel_path};
+
+/// Outcome of handling a filesystem watch event under `library_root`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VaultWatchOutcome {
+    Noop,
+    ExternalChange(Box<ExternalChangeEvent>),
+    ReconciledVault,
+}
+
+/// Handles any watched vault path (`.md`, `.quicknote.yaml`, or directory move/delete) and
+/// converges disk state into SQLite cache (`C6.1`, `C8.5`).
+pub fn handle_vault_watch_path(
+    pm: &PersistenceManager,
+    path: &Path,
+) -> Result<VaultWatchOutcome, AppError> {
+    if is_markdown_path(path) {
+        return match process_external_fs_path(pm, path)? {
+            Some(event) => Ok(VaultWatchOutcome::ExternalChange(Box::new(event))),
+            None => Ok(VaultWatchOutcome::Noop),
+        };
+    }
+
+    let Some(root_str) = pm.current_library_root()? else {
+        return Ok(VaultWatchOutcome::Noop);
+    };
+    let root = PathBuf::from(&root_str);
+    if !root.is_dir() {
+        return Ok(VaultWatchOutcome::Noop);
+    }
+
+    let canonical_root = PathBuf::from(canonicalize_watch_path(&root));
+    let canonical_path = PathBuf::from(canonicalize_watch_path(path));
+    let Ok(rel) = canonical_path.strip_prefix(&canonical_root) else {
+        return Ok(VaultWatchOutcome::Noop);
+    };
+
+    if is_directory_config_path(path) {
+        let outcome = reconcile_watched_path(pm, &root, path)?;
+        return match outcome {
+            ReconcilePathOutcome::ConfigUpserted
+            | ReconcilePathOutcome::ConfigPruned
+            | ReconcilePathOutcome::ConfigParseError(_) => Ok(VaultWatchOutcome::ReconciledVault),
+            _ => Ok(VaultWatchOutcome::Noop),
+        };
+    }
+
+    if is_ignored_rel_path(rel) {
+        return Ok(VaultWatchOutcome::Noop);
+    }
+
+    if canonical_path.is_dir() || (!canonical_path.exists() && path.extension().is_none()) {
+        let report = pm.with_db(|conn| reconcile_vault(&root, conn))?;
+        if report.notes_upserted > 0
+            || report.notes_pruned > 0
+            || report.configs_upserted > 0
+            || report.configs_pruned > 0
+        {
+            return Ok(VaultWatchOutcome::ReconciledVault);
+        }
+    }
+
+    Ok(VaultWatchOutcome::Noop)
+}
+
+fn is_directory_config_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n == DIRECTORY_CONFIG_FILENAME)
+}
 
 /// Processes a filesystem change path under `library_root` with `SelfWriteGuard` suppression (`C8.5`).
 pub fn process_external_fs_path(

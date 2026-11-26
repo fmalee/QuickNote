@@ -107,6 +107,7 @@ let lastFallbackMode: 'plain' | 'diag-off' | 'full' = 'full';
 
 let view: EditorView | null = null;
 let currentTabKey: string | null = null;
+let currentTabAbsPath: string | null = null;
 let suppressUpdate = false;
 let isUnmounted = false;
 let unlistenFileDrop: UnlistenFn | null = null;
@@ -772,11 +773,30 @@ function switchToTab(tab: EditorTab | null): void {
   if (!view) {
     return;
   }
+
+  // 当无 id 文档首次保存补写 ULID 导致 tab.key 从 path:... 升级为 ULID 时，
+  // 同一文档的 key 迁移应原地继承当前活跃的 view.state，绝不从池中取回旧快照覆盖正文。
+  if (
+    tab &&
+    !tab.evicted &&
+    currentTabKey &&
+    currentTabKey !== tab.key &&
+    currentTabAbsPath !== null &&
+    currentTabAbsPath === tab.absPath &&
+    !editorTabsStore.tabs.some((item) => item.key === currentTabKey)
+  ) {
+    currentTabKey = tab.key;
+    currentTabAbsPath = tab.absPath;
+    editorTabsStore.setPooledEditorState(tab.key, view.state, tab.syncSeq);
+    return;
+  }
+
   if (currentTabKey && currentTabKey !== tab?.key) {
     saveCurrentViewSnapshot();
   }
   if (!tab || tab.evicted) {
     currentTabKey = null;
+    currentTabAbsPath = null;
     editorTabsStore.setEditorStatus({
       docKindLabel: '',
       indentLabel: '',
@@ -787,7 +807,11 @@ function switchToTab(tab: EditorTab | null): void {
 
   const pooled = editorTabsStore.getPooledEditorState(tab.key);
   let nextState: EditorState;
-  if (!pooled || pooled.syncedSeq !== tab.syncSeq) {
+  const pooledMatchesDraft =
+    pooled !== null &&
+    pooled.syncedSeq === tab.syncSeq &&
+    pooled.state.doc.toString() === tab.draftBody;
+  if (!pooledMatchesDraft) {
     nextState = createEditorState(tab);
     editorTabsStore.setPooledEditorState(tab.key, nextState, tab.syncSeq);
   } else {
@@ -795,6 +819,7 @@ function switchToTab(tab: EditorTab | null): void {
   }
 
   currentTabKey = tab.key;
+  currentTabAbsPath = tab.absPath;
   suppressUpdate = true;
   try {
     view.setState(nextState);
@@ -821,7 +846,20 @@ function handleWindowBlur(): void {
   if (currentTabKey) {
     saveCurrentViewSnapshot();
   }
-  void editorTabsStore.flushSave();
+  void editorTabsStore.flushAllDirtyTabs();
+}
+
+function handlePageHideOrUnload(): void {
+  if (currentTabKey) {
+    saveCurrentViewSnapshot();
+  }
+  void editorTabsStore.flushAllDirtyTabs();
+}
+
+function handleVisibilityChange(): void {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    handlePageHideOrUnload();
+  }
 }
 
 function handleKeyDown(event: KeyboardEvent): void {
@@ -937,13 +975,18 @@ watch(
       return;
     }
     const pooled = editorTabsStore.getPooledEditorState(tab.key);
-    if (pooled && pooled.syncedSeq === tab.syncSeq) {
+    if (
+      pooled &&
+      pooled.syncedSeq === tab.syncSeq &&
+      pooled.state.doc.toString() === tab.draftBody
+    ) {
       return;
     }
     const savedScrollTop = currentTabKey === tab.key ? view.scrollDOM.scrollTop : tab.scrollTop;
     const nextState = createEditorState(tab);
     editorTabsStore.setPooledEditorState(tab.key, nextState, tab.syncSeq);
     currentTabKey = tab.key;
+    currentTabAbsPath = tab.absPath;
     suppressUpdate = true;
     try {
       view.setState(nextState);
@@ -990,6 +1033,7 @@ onMounted(() => {
       : EditorState.create({ doc: '' });
     if (canMountInitial) {
       currentTabKey = initialTab.key;
+      currentTabAbsPath = initialTab.absPath;
       editorTabsStore.setPooledEditorState(initialTab.key, initialState, initialTab.syncSeq);
     }
     view = new EditorView({
@@ -1029,8 +1073,13 @@ onMounted(() => {
   );
   if (typeof window !== 'undefined') {
     window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('pagehide', handlePageHideOrUnload);
+    window.addEventListener('beforeunload', handlePageHideOrUnload);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
   }
   void onWindowFileDrop((payload) => {
     void processDroppedImagePaths(payload);
@@ -1063,8 +1112,13 @@ onUnmounted(() => {
   }
   if (typeof window !== 'undefined') {
     window.removeEventListener('blur', handleWindowBlur);
+    window.removeEventListener('pagehide', handlePageHideOrUnload);
+    window.removeEventListener('beforeunload', handlePageHideOrUnload);
     window.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('keyup', handleKeyUp);
+  }
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
   }
   if (externalImageConfirmResolver) {
     externalImageConfirmResolver(false);
@@ -1075,6 +1129,7 @@ onUnmounted(() => {
     view = null;
   }
   currentTabKey = null;
+  currentTabAbsPath = null;
   editorTabsStore.setEditorStatus({
     docKindLabel: '',
     indentLabel: '',

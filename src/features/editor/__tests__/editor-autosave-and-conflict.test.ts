@@ -491,4 +491,94 @@ describe('editor autosave, ULID backfill and external change handling', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(mockNoteWrite).toHaveBeenCalledTimes(1);
   });
+
+  it('无 id 文档首次保存补写 ULID 时，不保留内容过时的旧 EditorState 缓存', async () => {
+    const { EditorState } = await import('@codemirror/state');
+    const doc = makeDoc({
+      key: 'path:Projects/QuickNote.md',
+      relPath: 'Projects/QuickNote.md',
+      absPath: '/vault/Projects/QuickNote.md',
+      body: '旧版本正文（含已删旧需求）',
+      bodyHash: 'hash-old',
+      meta: makeMeta({ id: null, title: 'QuickNote' }),
+    });
+    mockNoteRead.mockResolvedValue(doc);
+    mockNoteWrite.mockResolvedValue({
+      bodyHash: 'hash-new',
+      mtimeMs: 3000,
+      updatedMeta: makeMeta({ id: '01JNEWULID0000000000000001', title: 'QuickNote' }),
+    });
+
+    const store = useEditorTabsStore();
+    await store.openNote(doc.relPath!, { preview: false, absPath: doc.absPath });
+
+    // 模拟挂载时池子里存入了打开时的旧 EditorState
+    store.setPooledEditorState(doc.key, EditorState.create({ doc: doc.body }), 0);
+
+    // 用户持续编辑删除旧条目并新增新需求
+    store.updateTabBody(doc.key, '新版本正文（已删旧需求并新增改进项）');
+    await store.flushSave(doc.key);
+
+    expect(store.activeKey).toBe('01JNEWULID0000000000000001');
+    expect(store.activeTab?.draftBody).toBe('新版本正文（已删旧需求并新增改进项）');
+    // 迁移后绝不能命中包含旧版本正文的 EditorState
+    const pooledAfterMigrate = store.getPooledEditorState('01JNEWULID0000000000000001');
+    expect(pooledAfterMigrate).toBeNull();
+  });
+
+  it('冲突暂缓处理后，手动保存会重新展开冲突横幅；flushAllDirtyTabs 会保存所有非冲突脏标签', async () => {
+    const docA = makeDoc({
+      key: 'KEY_A',
+      relPath: 'notes/a.md',
+      absPath: '/vault/notes/a.md',
+      body: 'A 初始',
+      bodyHash: 'hash-a-1',
+    });
+    const docB = makeDoc({
+      key: 'KEY_B',
+      relPath: 'notes/b.md',
+      absPath: '/vault/notes/b.md',
+      body: 'B 初始',
+      bodyHash: 'hash-b-1',
+    });
+    mockNoteRead.mockResolvedValueOnce(docA).mockResolvedValueOnce(docB);
+    mockNoteWrite.mockResolvedValue({ bodyHash: 'hash-b-2', mtimeMs: 4000, updatedMeta: null });
+
+    const store = useEditorTabsStore();
+    await store.ensureExternalChangeListener();
+    await store.openNote(docA.relPath!, { preview: false, absPath: docA.absPath });
+    await store.openNote(docB.relPath!, { preview: false, absPath: docB.absPath });
+
+    // docA 进入冲突并点暂缓处理
+    store.updateTabBody(docA.key, 'A 本地修改');
+    externalChangeHandler!({
+      absPath: docA.absPath,
+      kind: 'modified',
+      newBody: 'A 外部修改',
+      newBodyHash: 'hash-a-ext',
+      newMeta: makeMeta(),
+    });
+    store.dismissConflictBanner(docA.key);
+    expect(
+      store.tabs.find((t) => t.key === docA.key)?.conflictState?.kind === 'modified' &&
+        store.tabs.find((t) => t.key === docA.key)?.conflictState?.kind === 'modified' &&
+        (store.tabs.find((t) => t.key === docA.key)?.conflictState as { bannerDismissed?: boolean })
+          .bannerDismissed,
+    ).toBe(true);
+
+    // 手动触发 flushSave(docA.key, { manual: true }) 必须重新展开冲突横幅
+    await store.flushSave(docA.key, { manual: true });
+    expect(
+      (store.tabs.find((t) => t.key === docA.key)?.conflictState as { bannerDismissed?: boolean })
+        .bannerDismissed,
+    ).toBe(false);
+
+    // docB 正常脏态，flushAllDirtyTabs 只落盘 docB，不误覆写冲突态 docA
+    store.updateTabBody(docB.key, 'B 本地修改');
+    await store.flushAllDirtyTabs();
+    expect(mockNoteWrite).toHaveBeenCalledTimes(1);
+    expect(mockNoteWrite).toHaveBeenCalledWith(
+      expect.objectContaining({ absPath: docB.absPath, body: 'B 本地修改' }),
+    );
+  });
 });

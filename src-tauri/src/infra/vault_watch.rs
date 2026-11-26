@@ -196,8 +196,10 @@ fn is_watchable_vault_path(watched_root: Option<&WatchedRoot>, path: &Path) -> b
             .extension()
             .and_then(|e| e.to_str())
             .is_some_and(|e| e.eq_ignore_ascii_case("md"));
+    let is_dir_candidate = !file_name.starts_with('.')
+        && (path.is_dir() || (!path.exists() && path.extension().is_none()));
 
-    if !is_config && !is_md {
+    if !is_config && !is_md && !is_dir_candidate {
         return false;
     }
 

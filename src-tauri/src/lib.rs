@@ -750,20 +750,41 @@ pub fn run() -> Result<(), tauri::Error> {
                 .ok()
                 .flatten()
                 .map(std::path::PathBuf::from);
+            if let Some(ref root) = initial_root {
+                if root.is_dir() {
+                    if let Err(err) = crate::application::index::index_rebuild(&pm, None) {
+                        eprintln!(
+                            "[startup] initial vault reconcile failed: code={:?}",
+                            err.code
+                        );
+                    }
+                }
+            }
             let handle_for_vault = app.handle().clone();
             let pm_for_vault = Arc::clone(&pm);
             let vault_watcher = Arc::new(
                 VaultWatcher::start(initial_root.as_deref(), move |path| {
-                    match crate::application::watch::process_external_fs_path(&pm_for_vault, path) {
-                        Ok(Some(event)) => {
-                            if let Err(err) = handle_for_vault.emit("fs:external-change", &event) {
+                    match crate::application::watch::handle_vault_watch_path(&pm_for_vault, path) {
+                        Ok(crate::application::watch::VaultWatchOutcome::ExternalChange(event)) => {
+                            if let Err(err) =
+                                handle_for_vault.emit("fs:external-change", event.as_ref())
+                            {
                                 eprintln!("[vault-watch] emit fs:external-change failed: {err}");
                             }
                         }
-                        Ok(None) => {}
+                        Ok(crate::application::watch::VaultWatchOutcome::ReconciledVault) => {
+                            if let Ok(status) =
+                                crate::application::index::index_get_status(&pm_for_vault)
+                            {
+                                if let Err(err) = handle_for_vault.emit("index:status", &status) {
+                                    eprintln!("[vault-watch] emit index:status failed: {err}");
+                                }
+                            }
+                        }
+                        Ok(crate::application::watch::VaultWatchOutcome::Noop) => {}
                         Err(err) => {
                             eprintln!(
-                                "[vault-watch] process_external_fs_path failed: code={:?}",
+                                "[vault-watch] handle_vault_watch_path failed: code={:?}",
                                 err.code
                             );
                         }

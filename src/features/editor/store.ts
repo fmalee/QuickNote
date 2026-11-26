@@ -350,7 +350,13 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     const existing = editorStatePool.get(oldKey);
     editorStatePool.delete(oldKey);
     if (existing) {
-      editorStatePool.set(newKey, existing);
+      const stateStale =
+        existing.state !== null && existing.state.doc.toString() !== existing.draftBody;
+      editorStatePool.set(newKey, {
+        ...existing,
+        state: stateStale ? null : existing.state,
+        syncedSeq: stateStale ? -1 : existing.syncedSeq,
+      });
     }
   }
 
@@ -931,13 +937,24 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     return savePromise;
   }
 
-  async function flushSave(key?: string): Promise<void> {
+  async function flushSave(key?: string, options: { manual?: boolean } = {}): Promise<void> {
     const targetKey = key ?? activeKey.value;
     if (!targetKey) {
       return;
     }
     const tab = tabs.value.find((item) => item.key === targetKey);
     if (!tab) {
+      return;
+    }
+    if (
+      options.manual &&
+      tab.conflictState?.kind === 'modified' &&
+      tab.conflictState.bannerDismissed
+    ) {
+      tab.conflictState = {
+        ...tab.conflictState,
+        bannerDismissed: false,
+      };
       return;
     }
     const inFlight = inFlightSaveMap.get(tab.key) ?? inFlightSaveMap.get(targetKey);
@@ -953,6 +970,13 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       return;
     }
     await saveTab(tab.key);
+  }
+
+  async function flushAllDirtyTabs(): Promise<void> {
+    const dirtyKeys = tabs.value
+      .filter((tab) => tab.isDirty && tab.conflictState === null && !tab.isMissing)
+      .map((tab) => tab.key);
+    await Promise.all(dirtyKeys.map((key) => flushSave(key)));
   }
 
   function handleExternalChange(event: ExternalChangeEvent): void {
@@ -1069,6 +1093,17 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     tab.conflictState = {
       ...tab.conflictState,
       bannerDismissed: true,
+    };
+  }
+
+  function reopenConflictBanner(key: string): void {
+    const tab = tabs.value.find((item) => item.key === key);
+    if (!tab || tab.conflictState?.kind !== 'modified') {
+      return;
+    }
+    tab.conflictState = {
+      ...tab.conflictState,
+      bannerDismissed: false,
     };
   }
 
@@ -1760,10 +1795,12 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     requestScrollToLine,
     saveTab,
     flushSave,
+    flushAllDirtyTabs,
     handleExternalChange,
     resolveConflictReload,
     resolveConflictOverwrite,
     dismissConflictBanner,
+    reopenConflictBanner,
     enterConflictMerge,
     cancelConflictMerge,
     updateMergeDraftBody,

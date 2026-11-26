@@ -2,6 +2,7 @@ import type {
   CreateNoteArgs,
   DirectoryWorkspaceConfig,
   DirectoryWorkspaceConfigEntry,
+  ExternalChangeEvent,
   IndexStatus,
   NavTreeSnapshot,
   NoteDoc,
@@ -29,7 +30,7 @@ import {
   uiStateGet,
   uiStateSet,
 } from '@/lib/ipc/commands';
-import { onIndexStatus, type UnlistenFn } from '@/lib/ipc/events';
+import { onFsExternalChange, onIndexStatus, type UnlistenFn } from '@/lib/ipc/events';
 
 export function fetchNavTreeAndTags(): Promise<NavTreeSnapshot> {
   return notesGetTreeAndTags();
@@ -74,6 +75,12 @@ export function patchUiState(key: UiStatePatchKey, value: unknown): Promise<UiSt
 
 export function subscribeIndexStatus(handler: (status: IndexStatus) => void): Promise<UnlistenFn> {
   return onIndexStatus(handler);
+}
+
+export function subscribeFsExternalChange(
+  handler: (event: ExternalChangeEvent) => void,
+): Promise<UnlistenFn> {
+  return onFsExternalChange(handler);
 }
 
 export async function fetchPinnedExternalFiles(): Promise<SearchResultItem[]> {

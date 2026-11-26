@@ -58,10 +58,15 @@ pub struct SelfWriteRecord {
     pub expires_at_ms: i64,
 }
 
+/// Maximum recent self-write hashes retained per path within the suppression window (`C8.5`).
+const MAX_SELF_WRITE_HISTORY_PER_PATH: usize = 8;
+
 /// Pure state machine that suppresses `notify` callbacks triggered by QuickNote's own writes (`C8.5`).
+/// Keeps a bounded per-path history within [`SELF_WRITE_SUPPRESS_MS`] so rapid consecutive autosaves
+/// do not evict earlier in-flight FSEvents hashes and cause false conflict alerts.
 #[derive(Debug, Default)]
 pub struct SelfWriteGuard {
-    records: HashMap<String, SelfWriteRecord>,
+    records: HashMap<String, Vec<SelfWriteRecord>>,
 }
 
 impl SelfWriteGuard {
@@ -69,31 +74,48 @@ impl SelfWriteGuard {
         Self::default()
     }
 
-    /// Records a completed internal write and prunes expired entries.
-    pub fn record_write(&mut self, canonical_abs_path: &str, body_hash: &str, now_ms: i64) {
-        self.records.retain(|_, rec| rec.expires_at_ms > now_ms);
-        self.records.insert(
-            canonical_abs_path.to_string(),
-            SelfWriteRecord {
-                body_hash: body_hash.to_string(),
-                expires_at_ms: now_ms + SELF_WRITE_SUPPRESS_MS,
-            },
-        );
+    fn prune_expired(&mut self, now_ms: i64) {
+        self.records.retain(|_, entries| {
+            entries.retain(|rec| now_ms <= rec.expires_at_ms);
+            !entries.is_empty()
+        });
     }
 
-    /// Returns `true` when an observed disk state matches our own recent write (`C8.5`).
+    /// Records a completed internal write and prunes expired entries.
+    pub fn record_write(&mut self, canonical_abs_path: &str, body_hash: &str, now_ms: i64) {
+        self.prune_expired(now_ms);
+        let expires_at_ms = now_ms + SELF_WRITE_SUPPRESS_MS;
+        let entries = self
+            .records
+            .entry(canonical_abs_path.to_string())
+            .or_default();
+        if let Some(existing) = entries.iter_mut().find(|rec| rec.body_hash == body_hash) {
+            existing.expires_at_ms = expires_at_ms;
+        } else {
+            entries.push(SelfWriteRecord {
+                body_hash: body_hash.to_string(),
+                expires_at_ms,
+            });
+            if entries.len() > MAX_SELF_WRITE_HISTORY_PER_PATH {
+                let overflow = entries.len() - MAX_SELF_WRITE_HISTORY_PER_PATH;
+                entries.drain(0..overflow);
+            }
+        }
+    }
+
+    /// Returns `true` when an observed disk state matches any of our own recent writes (`C8.5`).
     pub fn should_suppress_modify(
         &mut self,
         canonical_abs_path: &str,
         disk_body_hash: &str,
         now_ms: i64,
     ) -> bool {
-        self.records.retain(|_, rec| now_ms <= rec.expires_at_ms);
-        let Some(record) = self.records.get(canonical_abs_path) else {
+        self.prune_expired(now_ms);
+        let Some(entries) = self.records.get(canonical_abs_path) else {
             return false;
         };
 
-        if disk_body_hash == record.body_hash {
+        if entries.iter().any(|rec| rec.body_hash == disk_body_hash) {
             return true;
         }
 

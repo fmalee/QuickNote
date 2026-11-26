@@ -56,6 +56,7 @@ pub fn set_library_root(
 
     let canonical = std::fs::canonicalize(&expanded).unwrap_or(expanded);
     let resolved = canonical.to_string_lossy().to_string();
+    pm.switch_vault_db(&canonical)?;
     pm.with_db(|conn| set_library_meta(conn, "library_root", &resolved))?;
     pm.update_library_root_in_settings(&resolved)?;
 
