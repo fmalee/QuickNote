@@ -43,7 +43,7 @@ src/
     │                        # templateUtils.ts, store.ts, api.ts
     ├── onboarding/          # OnboardingView.vue, store.ts, api.ts
     ├── panels/              # OutlinePanel.vue, RelatedNotesPanel.vue, outlineExtractor.ts, registry.ts, store.ts, api.ts
-    ├── quickbar/            # QuickBarView.vue, QuickBarTargetPicker.vue, store.ts, api.ts
+    ├── quickbar/            # QuickBarView.vue, QuickBarTargetPicker.vue, helpers.ts, store.ts, api.ts
     ├── quickopen/           # QuickOpenPalette.vue, useQuickOpen.ts, queryParser.ts, api.ts
     ├── settings/            # SettingsView.vue, SettingsLibraryPanel.vue, SettingsAppearancePanel.vue,
     │                        # SettingsExternalPanel.vue, SettingsShortcutsPanel.vue, SettingsWorkspacesPanel.vue,
@@ -59,7 +59,7 @@ src-tauri/
 │   │                        # hotkey, markdown, note, settings, template, terminal, tokenizer, ui_state,
 │   │                        # watch, window, workspace_context
 │   ├── infra/               # external_open, fs, fs_browser, macos/{bridge.m, mod.rs}, pty,
-│   │                        # settings_watch, sqlite, trash, vault_watch
+│   │                        # settings_watch, sqlite/{mod,schema,notes,workspace_configs}, trash, vault_watch
 │   ├── application/         # capture, external/{mod,browse,bookmarks,workspace,actions}, hotkey, index, library,
 │   │                        # notes/{mod,crud,nav,search,media,batch}, persistence, reconciler, terminal, watch, window
 │   └── commands/            # app, capture, external, index, library, notes, search, settings, terminal, window
@@ -91,7 +91,7 @@ src-tauri/
 
 | 功能域 | 前端核心文件 | Rust 后端核心文件 | 对应测试文件 |
 | --- | --- | --- | --- |
-| **Quick Bar 捕捉 / 打开 / 命令三模式** | `src/features/quickbar/` (`QuickBarView.vue`, `store.ts`, `QuickBarTargetPicker.vue`) | `domain/capture.rs`, `application/capture.rs`, `commands/capture.rs` | `src/features/quickbar/__tests__/*`, `src-tauri/tests/capture_truth_table_test.rs`, `append_and_undo_test.rs` |
+| **Quick Bar 捕捉 / 打开 / 命令三模式** | `src/features/quickbar/` (`QuickBarView.vue`, `helpers.ts`, `store.ts`, `QuickBarTargetPicker.vue`) | `domain/capture.rs`, `application/capture.rs`, `commands/capture.rs` | `src/features/quickbar/__tests__/*`, `src-tauri/tests/capture_truth_table_test.rs`, `append_and_undo_test.rs` |
 | **全局 5 秒非激活撤销 Toast** | `src/features/toast/` (`ToastView.vue`, `store.ts`) | `application/window.rs`, `commands/window.rs` (`window_dismiss_toast`), `infra/macos/bridge.m` (`QuickNoteToastPanel`) | `src/features/toast/__tests__/toast-view.test.ts` |
 | **主工作台壳、多标签、菜单同步与 45% 辅助窗** | `src/app/MainWorkbenchShell.vue`（含底部终端面板挂载）, `src/features/editor/EditorTabBar.vue` | `domain/window.rs`, `application/window.rs`, `commands/window.rs` (`window_toggle_auxiliary_sidebar`), `infra/macos/bridge.m`, `src-tauri/src/lib.rs` | `src/app/__tests__/auxiliary-window-mode.test.ts`, `src-tauri/tests/window_policy_test.rs`, `m4_export_and_auxiliary.rs` |
 | **左侧目录树、目录工作区绑定、标签云、固定外链、最近编辑、模板新建与批量重命名标签** | `src/features/notes/` (`NotesSidebar.vue`, `DirTreeSection.vue`, `TagCloudSection.vue`, `PinnedExternalFilesSection.vue`, `DirWorkspaceBindModal.vue`, `TagRenameModal.vue`, `useDirectoryWorkspaces.ts`, `store.ts`, `api.ts`, `NewNoteTemplateModal.vue`, `templateUtils.ts`), `src/lib/actions/catalog.ts` (`folder.*`) | `domain/note.rs`, `domain/template.rs`, `domain/workspace_context.rs`, `application/notes/` (`crud.rs`, `nav.rs`, `batch.rs`), `application/external/workspace.rs`, `application/reconciler.rs`, `application/index.rs`, `commands/notes.rs`, `commands/external.rs` (`list_directory_workspace_configs`, `set_directory_workspace_config`) | `src/features/notes/__tests__/*`, `src-tauri/tests/note_crud_and_index_test.rs`, `m3_commands_related_tags.rs` |
@@ -106,7 +106,7 @@ src-tauri/
 | **复制富文本 HTML 与离屏 `WKWebView` 导出 PDF** | `src/features/editor/export/markdownExport.ts`, `ExportPdfModal.vue` | `commands/notes.rs` (`note_export_pdf`), `infra/macos/bridge.m` (`qn_render_html_to_pdf`), `infra/macos/mod.rs` | `src/features/editor/__tests__/export-rich-text-and-pdf.test.ts`, `src-tauri/tests/m4_export_and_auxiliary.rs` |
 | **统一动作注册表、快捷键作用域分发与右键菜单** | `src/lib/actions/` (`catalog.ts`, `registry.ts`, `keymap.ts`, `types.ts`), `src/components/QnContextMenu.vue` | `commands/app.rs` (`app_set_menu_accelerators`), `src-tauri/src/lib.rs`（原生系统菜单） | `src/lib/actions/__tests__/action-registry.test.ts` |
 | **设置窗口、配置备份导入导出、`settings.yaml` 容错、批量补全 ULID 与首次选库** | `src/features/settings/` (`SettingsView.vue`, `SettingsLibraryPanel.vue`, `store.ts`, 各子面板), `src/lib/ipc/commands.ts` (`pickBackupSavePath` / `pickBackupOpenPath` / `notesBackfillMissingIds`), `src/features/onboarding/` | `domain/settings.rs`, `domain/ui_state.rs`, `application/persistence.rs`, `application/notes/batch.rs` (`notes_backfill_missing_ids`), `infra/settings_watch.rs`, `commands/settings.rs`, `commands/library.rs`, `commands/notes.rs`, `commands/window.rs` (`window_close_settings`) | `src/features/settings/__tests__/*`, `src-tauri/tests/persistence_test.rs`, `note_crud_and_index_test.rs`, `m4_export_and_auxiliary.rs` |
-| **SQLite FTS5 混合分词索引、只读对账与性能压测** | — | `domain/tokenizer.rs`, `infra/sqlite.rs`, `src-tauri/migrations/0001_init.sql`, `0002_directory_workspace_cache.sql`, `application/reconciler.rs`, `application/index.rs` | `src-tauri/tests/domain_note_and_tokenizer_test.rs`, `sqlite_migration_test.rs`, `m4_performance_budget.rs` |
+| **SQLite FTS5 混合分词索引、只读对账与性能压测** | — | `domain/tokenizer.rs`, `infra/sqlite/` (`schema.rs`, `notes.rs`, `workspace_configs.rs`), `src-tauri/migrations/0001_init.sql`, `0002_directory_workspace_cache.sql`, `application/reconciler.rs`, `application/index.rs` | `src-tauri/tests/domain_note_and_tokenizer_test.rs`, `sqlite_migration_test.rs`, `m4_performance_budget.rs` |
 | **设计 Token 与基础通用组件** | `src/styles/tokens.css`, `src/components/Qn*.vue` | — | `scripts/__tests__/check-architecture.test.ts` |
 
 ---
