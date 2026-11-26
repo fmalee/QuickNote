@@ -1,4 +1,4 @@
-//! Pure external action resolution rules and Spotlight path blacklist (`C1.2`, `C3.4`, `D-0008`).
+//! Pure external action resolution rules (`C1.2`, `C3.4`, `D-0008`).
 //!
 //! Zero `std::fs`, `std::process`, or `tauri` dependencies.
 
@@ -7,17 +7,6 @@ use specta::Type;
 
 /// Sentinel `absPath` allowing `SettingsErrorBanner` to open/reveal local `settings.yaml` safely (`D-0008`).
 pub const SETTINGS_FILE_SENTINEL: &str = "$SETTINGS_YAML";
-
-/// Directory/file path segments excluded from Spotlight search results (`v4` §5.3).
-pub const SPOTLIGHT_BLACKLIST: &[&str] = &[
-    ".git",
-    "node_modules",
-    "target",
-    "dist",
-    "build",
-    ".venv",
-    ".DS_Store",
-];
 
 /// Fixed action identifiers for external OS operations (`C3.4`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
@@ -66,12 +55,6 @@ pub struct RunExternalArgs {
     pub id: ExternalActionId,
     pub abs_path: Option<String>,
     pub dir_path: Option<String>,
-}
-
-/// Pure path-segment blacklist filter for Spotlight results (`v4` §5.3).
-pub fn is_spotlight_blacklisted(path: &str) -> bool {
-    path.split(['/', '\\'])
-        .any(|segment| !segment.is_empty() && SPOTLIGHT_BLACKLIST.contains(&segment))
 }
 
 /// Filesystem probe abstraction so `domain/external.rs` stays free of `std::fs` (`C1.2`).

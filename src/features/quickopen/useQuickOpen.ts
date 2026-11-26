@@ -27,7 +27,7 @@ export const QUICKOPEN_DEBOUNCE_MS = 80;
 export type QuickOpenOpenMode = 'open' | 'newTab';
 
 export type QuickOpenResultSource =
-  Exclude<SearchSource, 'spotlight'> | 'file_bookmark' | 'dir_bookmark' | 'action' | 'tag';
+  SearchSource | 'file_bookmark' | 'dir_bookmark' | 'action' | 'tag';
 
 export interface QuickOpenDirectoryScope {
   dirPath: string;
@@ -121,9 +121,6 @@ export function sortBookmarks(items: ExternalBookmark[]): ExternalBookmark[] {
 }
 
 function mapSearchResultItem(item: SearchResultItem): QuickOpenResultItem | null {
-  if (item.source === 'spotlight') {
-    return null;
-  }
   return {
     id: `${item.source}:${item.key}:${item.absPath}`,
     kind: item.kind,

@@ -999,16 +999,6 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
               score: 100,
               source: 'library',
             },
-            {
-              kind: 'file',
-              key: 'sp1',
-              title: 'legacy-spotlight.txt',
-              subtitle: '/tmp/legacy-spotlight.txt',
-              relPath: null,
-              absPath: '/tmp/legacy-spotlight.txt',
-              score: 50,
-              source: 'spotlight',
-            },
           ],
           truncated: false,
         }) satisfies SearchResponse,
@@ -1021,7 +1011,7 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
     store.setMode('open');
     await store.refreshOpenMode(true);
 
-    // Spotlight result must be excluded; three groups rendered in order
+    // Three groups rendered in order
     expect(store.openGroups.map((g) => g.id)).toEqual(['note', 'file_bookmark', 'dir_bookmark']);
     expect(store.openGroups[0]?.items[0]?.badgeLabel).toBe('笔记');
     expect(store.openGroups[1]?.items[0]?.badgeLabel).toBe('文件书签');

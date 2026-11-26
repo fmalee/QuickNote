@@ -12,7 +12,7 @@ export interface ParsedQuickOpenQuery {
  * - `#` 开头 -> `fulltext`（库内全文检索）
  * - `@` 开头 -> `tag`（标签与带标签笔记检索）
  * - `>` 开头 -> `action`（已注册动作面板）
- * - 其余 -> `all`（默认混合检索 + 异步 Spotlight）
+ * - 其余 -> `all`（默认混合检索）
  */
 export function parseQuickOpenQuery(rawInput: string): ParsedQuickOpenQuery {
   const trimmedStart = rawInput.trimStart();

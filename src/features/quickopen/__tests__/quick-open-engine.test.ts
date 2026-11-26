@@ -158,7 +158,7 @@ describe('quick-open-engine (M3-03 / v5 Refactor)', () => {
     });
   });
 
-  it('debounces 80ms, merges vault notes with external bookmarks, filters spotlight items, and discards stale responses', async () => {
+  it('debounces 80ms, merges vault notes with external bookmarks, and discards stale responses', async () => {
     let resolveOldSearch!: (res: SearchResponse) => void;
     const oldSearchPromise = new Promise<SearchResponse>((resolve) => {
       resolveOldSearch = resolve;
@@ -196,17 +196,6 @@ describe('quick-open-engine (M3-03 / v5 Refactor)', () => {
             absPath: `/vault/${args.query}.md`,
             score: 100,
             source: 'library',
-          },
-          // Spotlight legacy results must be ignored
-          {
-            kind: 'file',
-            key: 'spot:legacy',
-            title: 'legacy-spotlight.conf',
-            subtitle: '/etc/legacy-spotlight.conf',
-            relPath: null,
-            absPath: '/etc/legacy-spotlight.conf',
-            score: 80,
-            source: 'spotlight',
           },
         ]),
     );

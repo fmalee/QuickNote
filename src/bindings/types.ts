@@ -664,7 +664,7 @@ export type SearchResultItem = {
 };
 
 /**  Search result source (`C3.4`). */
-export type SearchSource = "library" | "recent" | "spotlight" | "path";
+export type SearchSource = "library" | "recent" | "path";
 
 /**  IPC arguments for `app_set_menu_accelerators` (`M2-QA`). */
 export type SetMenuAcceleratorsArgs = {

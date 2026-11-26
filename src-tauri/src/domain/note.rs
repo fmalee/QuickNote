@@ -300,7 +300,6 @@ pub enum SearchItemKind {
 pub enum SearchSource {
     Library,
     Recent,
-    Spotlight,
     Path,
 }
 
