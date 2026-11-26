@@ -457,7 +457,7 @@ const noteCtxMenuItems = computed<ContextMenuEntry[]>(() => {
     entries.push(
       { type: 'separator', id: 'note-sep' },
       { type: 'item', id: 'note.rename', title: '重命名…' },
-      { type: 'item', id: 'note.delete', title: '删除（移到废纸篓）', danger: true },
+      { type: 'item', id: 'note.delete', title: '删除', danger: true },
     );
   }
   return entries;

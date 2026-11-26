@@ -120,7 +120,7 @@ const contextMenuItems = computed<ContextMenuEntry[]>(() => [
   {
     type: 'item',
     id: 'tab.deleteFile',
-    title: '删除（移到废纸篓）',
+    title: '删除',
     danger: true,
     disabled: !canDeleteFile(contextTab.value),
   },
