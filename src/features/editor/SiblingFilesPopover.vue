@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import type { ExternalDirectoryEntry, ExternalDirectoryListing } from '@/bindings/types';
+import type {
+  ExternalActionState,
+  ExternalDirectoryEntry,
+  ExternalDirectoryListing,
+} from '@/bindings/types';
+import { type ContextMenuEntry, QnContextMenu } from '@/components';
 import { extractEditorErrorMessage, listCurrentDocSiblings } from './api';
 import { useEditorTabsStore } from './store';
+import {
+  appendExternalContextMenuItems,
+  isExternalActionId,
+  useExternalActions,
+} from './useExternalActions';
 
 const props = defineProps<{
   open: boolean;
@@ -16,6 +26,7 @@ const emit = defineEmits<{
 }>();
 
 const editorTabsStore = useEditorTabsStore();
+const externalActions = useExternalActions();
 
 const popoverRef = ref<HTMLDivElement | null>(null);
 const filterInputRef = ref<HTMLInputElement | null>(null);
@@ -23,8 +34,21 @@ const filterText = ref('');
 const loading = ref(false);
 const errorMessage = ref<string | null>(null);
 const listing = ref<ExternalDirectoryListing | null>(null);
+const contextMenuOpen = ref(false);
+const contextMenuPos = ref({ x: 0, y: 0 });
+const contextEntry = ref<ExternalDirectoryEntry | null>(null);
+const contextEntryStates = ref<ExternalActionState[]>([]);
 
 let loadSeq = 0;
+let entryMenuSeq = 0;
+
+const contextMenuItems = computed<ContextMenuEntry[]>(() => {
+  const baseEntries: ContextMenuEntry[] = [
+    { type: 'item', id: 'sibling.open', title: '打开' },
+    { type: 'item', id: 'sibling.openNewTab', title: '在新标签打开' },
+  ];
+  return appendExternalContextMenuItems(baseEntries, contextEntryStates.value, 'sibling-ext-sep');
+});
 
 const editableEntries = computed<ExternalDirectoryEntry[]>(() => {
   const entries = listing.value?.entries ?? [];
@@ -95,8 +119,67 @@ async function handleSelectEntry(entry: ExternalDirectoryEntry): Promise<void> {
   emit('close');
 }
 
+async function openEntryContextMenu(
+  event: MouseEvent,
+  entry: ExternalDirectoryEntry,
+): Promise<void> {
+  const reqSeq = ++entryMenuSeq;
+  contextEntry.value = entry;
+  contextMenuPos.value = { x: event.clientX, y: event.clientY };
+
+  const activeDoc = editorTabsStore.activeDoc;
+  const workspaceKey = entry.path === activeDoc?.absPath ? (activeDoc.meta.project ?? null) : null;
+
+  if (entry.path === externalActions.resolvedAbsPath && externalActions.states.length > 0) {
+    contextEntryStates.value = externalActions.states;
+    contextMenuOpen.value = true;
+    return;
+  }
+
+  contextEntryStates.value = [];
+  contextMenuOpen.value = true;
+  try {
+    const resolved = await externalActions.resolveForTarget({
+      absPath: entry.path,
+      workspaceKey,
+    });
+    if (reqSeq === entryMenuSeq) {
+      contextEntryStates.value = resolved;
+    }
+  } catch {
+    if (reqSeq === entryMenuSeq) {
+      contextEntryStates.value = [];
+    }
+  }
+}
+
+async function handleContextMenuSelect(id: string): Promise<void> {
+  const entry = contextEntry.value;
+  contextMenuOpen.value = false;
+  if (!entry) {
+    return;
+  }
+  if (id === 'sibling.open') {
+    await handleSelectEntry(entry);
+    return;
+  }
+  if (id === 'sibling.openNewTab') {
+    await editorTabsStore.openNoteByAbsPath(entry.path, { preview: false });
+    emit('select', entry.path);
+    emit('close');
+    return;
+  }
+  if (isExternalActionId(id)) {
+    const matchedTab = editorTabsStore.tabs.find((tab) => tab.absPath === entry.path);
+    await externalActions.executeAction(id, {
+      overrideStates: contextEntryStates.value,
+      pinned: matchedTab?.doc?.meta.pinned,
+    });
+  }
+}
+
 function handlePointerDownOutside(event: PointerEvent): void {
-  if (!props.open) {
+  if (!props.open || contextMenuOpen.value) {
     return;
   }
   const target = event.target as Node | null;
@@ -106,7 +189,7 @@ function handlePointerDownOutside(event: PointerEvent): void {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
-  if (!props.open) {
+  if (!props.open || contextMenuOpen.value) {
     return;
   }
   if (event.key === 'Escape') {
@@ -209,6 +292,7 @@ onUnmounted(() => {
             data-testid="sibling-files-item"
             :title="entry.path"
             @click="handleSelectEntry(entry)"
+            @contextmenu.prevent="openEntryContextMenu($event, entry)"
           >
             <span class="qn-sibling-files-popover__item-main">
               <span class="qn-sibling-files-popover__item-name">{{ entry.name }}</span>
@@ -219,6 +303,7 @@ onUnmounted(() => {
             <span
               v-if="entry.relPath && entry.relPath !== entry.name"
               class="qn-sibling-files-popover__item-rel"
+              :title="entry.relPath"
             >
               {{ entry.relPath }}
             </span>
@@ -235,6 +320,14 @@ onUnmounted(() => {
       目录条目较多，已展示前 {{ editableEntries.length }} 个文件，可输入关键字缩小范围
     </div>
   </div>
+  <QnContextMenu
+    :open="contextMenuOpen"
+    :x="contextMenuPos.x"
+    :y="contextMenuPos.y"
+    :items="contextMenuItems"
+    @select="handleContextMenuSelect"
+    @close="contextMenuOpen = false"
+  />
 </template>
 
 <style scoped>

@@ -40,6 +40,7 @@ import {
   useEditorTabsStore,
   useExternalActions,
 } from '@/features/editor';
+import { appendExternalContextMenuItems } from '../useExternalActions';
 import { useNotesStore } from '@/features/notes';
 
 function makeDoc(overrides: Partial<NoteDoc> = {}): NoteDoc {
@@ -422,5 +423,68 @@ describe('external-actions-integration', () => {
     expect(tabsStore.activeDoc?.meta.pinned).toBe(false);
     expect(externalActions.feedback?.message).toBe('已取消固定常用文件');
     expect(refreshSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolveForTarget returns enabled/disabled states and buildExternalContextMenuItems outputs all 8 actions with disabled flag', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+
+    const resolvedStates = makeStates({
+      'external.reveal': {
+        enabled: true,
+        disabledReason: null,
+        resolvedPath: '/Users/demo/Sites/App/notes.md',
+      },
+      'external.terminal': {
+        enabled: false,
+        disabledReason: '未配置工作区目录',
+        resolvedPath: null,
+      },
+    });
+    mockResolveExternalActions.mockResolvedValueOnce(resolvedStates);
+
+    const externalActions = useExternalActions();
+    const states = await externalActions.resolveForTarget({
+      absPath: '/Users/demo/Sites/App/notes.md',
+      workspaceKey: 'app',
+    });
+
+    expect(mockResolveExternalActions).toHaveBeenCalledWith({
+      absPath: '/Users/demo/Sites/App/notes.md',
+      workspaceKey: 'app',
+      commandId: null,
+    });
+
+    const items = buildExternalContextMenuItems(states);
+    expect(items).toHaveLength(8);
+    expect(items.map((item) => item.id)).toEqual(EXTERNAL_ACTION_SPECS.map((spec) => spec.id));
+
+    const revealItem = items.find(
+      (item): item is Extract<(typeof items)[number], { type: 'item' }> =>
+        item.type === 'item' && item.id === 'external.reveal',
+    );
+    expect(revealItem?.disabled).toBe(false);
+
+    const terminalItem = items.find(
+      (item): item is Extract<(typeof items)[number], { type: 'item' }> =>
+        item.type === 'item' && item.id === 'external.terminal',
+    );
+    expect(terminalItem?.disabled).toBe(true);
+    expect(terminalItem?.disabledReason).toBe('未配置工作区目录');
+  });
+
+  it('appendExternalContextMenuItems places all 8 external actions after separator when base entries exist', () => {
+    const baseEntries = [
+      { type: 'item' as const, id: 'editor.bold', title: '加粗' },
+      { type: 'item' as const, id: 'editor.copy', title: '复制' },
+    ];
+    const states = makeStates();
+
+    const merged = appendExternalContextMenuItems(baseEntries, states);
+    expect(merged).toHaveLength(baseEntries.length + 1 + 8);
+    expect(merged[2]).toEqual({ type: 'separator', id: 'ctx-ext-sep' });
+    expect(merged.slice(3).map((item) => item.id)).toEqual(
+      EXTERNAL_ACTION_SPECS.map((spec) => spec.id),
+    );
   });
 });

@@ -124,6 +124,21 @@ export function buildExternalContextMenuItems(
   });
 }
 
+export function appendExternalContextMenuItems(
+  baseEntries: readonly ContextMenuEntry[],
+  actionStates: readonly ExternalActionState[],
+  separatorId = 'ctx-ext-sep',
+): ContextMenuEntry[] {
+  const entries = [...baseEntries];
+  if (actionStates.length > 0) {
+    if (entries.length > 0) {
+      entries.push({ type: 'separator', id: separatorId });
+    }
+    entries.push(...buildExternalContextMenuItems(actionStates));
+  }
+  return entries;
+}
+
 export const useExternalActions = defineStore('externalActions', () => {
   const states = ref<ExternalActionState[]>([]);
   const resolvedAbsPath = ref<string | null>(null);
