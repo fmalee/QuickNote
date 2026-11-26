@@ -12,7 +12,6 @@ import {
 } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
-import type { ExternalActionState } from '@/bindings/types';
 import {
   type ContextMenuEntry,
   QnBanner,
@@ -67,11 +66,6 @@ import {
   todoEnterCommand,
 } from './extensions/markdownTodo';
 import { type EditorScrollTarget, type EditorTab, useEditorTabsStore } from './store';
-import {
-  appendExternalContextMenuItems,
-  isExternalActionId,
-  useExternalActions,
-} from './useExternalActions';
 
 interface EditorNotice {
   tone: 'info' | 'warning' | 'danger' | 'success';
@@ -84,7 +78,6 @@ const TEXT_FILE_EXT_RE = /\.(md|markdown|txt|ya?ml|json|ts|tsx|js|jsx|rs|css|htm
 
 const editorTabsStore = useEditorTabsStore();
 const settingsStore = useSettingsStore();
-const externalActions = useExternalActions();
 
 const containerRef = ref<HTMLDivElement | null>(null);
 
@@ -92,8 +85,6 @@ const contextMenuOpen = ref(false);
 const contextMenuX = ref(0);
 const contextMenuY = ref(0);
 const contextMenuItems = ref<ContextMenuEntry[]>([]);
-const contextExternalStates = ref<ExternalActionState[]>([]);
-let contextMenuSeq = 0;
 const contextLinkUrl = ref<string | null>(null);
 
 const isMetaPressed = ref(false);
@@ -845,12 +836,10 @@ function handleKeyUp(event: KeyboardEvent): void {
   }
 }
 
-async function handleContextMenu(event: MouseEvent): Promise<void> {
-  const reqSeq = ++contextMenuSeq;
+function handleContextMenu(event: MouseEvent): void {
   const ctx = buildEditorActionContext();
   const entries: ContextMenuEntry[] = [];
   contextLinkUrl.value = null;
-  contextExternalStates.value = [];
 
   if (view) {
     const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
@@ -894,44 +883,16 @@ async function handleContextMenu(event: MouseEvent): Promise<void> {
   }
   entries.push(...contextEntries);
 
-  const doc = editorTabsStore.activeDoc;
-  let finalEntries = entries;
-  if (doc) {
-    let states: ExternalActionState[] = [];
-    if (
-      doc.absPath &&
-      doc.absPath === externalActions.resolvedAbsPath &&
-      externalActions.states.length > 0
-    ) {
-      states = externalActions.states;
-    } else {
-      try {
-        states = await externalActions.resolveForTarget({
-          absPath: doc.absPath,
-        });
-      } catch {
-        states = [];
-      }
-      if (reqSeq !== contextMenuSeq) {
-        return;
-      }
-    }
-    contextExternalStates.value = states;
-    finalEntries = appendExternalContextMenuItems(entries, states);
-  }
-
-  contextMenuItems.value = finalEntries;
+  contextMenuItems.value = entries;
   contextMenuX.value = event.clientX;
   contextMenuY.value = event.clientY;
-  contextMenuOpen.value = finalEntries.length > 0;
+  contextMenuOpen.value = entries.length > 0;
 }
 
 function handleContextMenuSelect(id: string): void {
   contextMenuOpen.value = false;
   const linkUrl = contextLinkUrl.value;
   contextLinkUrl.value = null;
-  const externalStates = contextExternalStates.value;
-  contextExternalStates.value = [];
 
   if (id === CONTEXT_LINK_OPEN_ID && linkUrl) {
     void openLinkUrl(linkUrl);
@@ -940,16 +901,6 @@ function handleContextMenuSelect(id: string): void {
   }
   if (id === CONTEXT_LINK_COPY_ID && linkUrl) {
     void navigator.clipboard?.writeText(linkUrl);
-    view?.focus();
-    return;
-  }
-
-  if (isExternalActionId(id)) {
-    const doc = editorTabsStore.activeDoc;
-    void externalActions.executeAction(id, {
-      overrideStates: externalStates,
-      pinned: doc?.meta.pinned,
-    });
     view?.focus();
     return;
   }
