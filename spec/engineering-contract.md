@@ -558,7 +558,7 @@ interface ActionDef {
 - `global.*`：`global.toggleQuickBar`（`⌃⌥Space`）、`global.toggleMainWindow`
 - `quickbar.*`：`quickbar.mode.capture`（`⌘N`）、`quickbar.mode.open`（`⌘K`）、`quickbar.mode.command`（`⌘⇧K`）、`quickbar.captureMode.list`（`⌘1`）、`quickbar.captureMode.todo`（`⌘2`）、`quickbar.captureMode.prose`（`⌘3`）、`quickbar.selectTarget`（`⌘T`）、`quickbar.submitAppend`（`⌘↵`）、`quickbar.submitOpenMain`（`⇧⌘↵`）、`quickbar.saveAsNote`（`⌥⌘↵`）、`quickbar.openCommandSource`（`⌘O`）、`quickbar.togglePin`
 - `editor.*`：`editor.bold`（`⌘B`）、`editor.italic`（`⌘I`）、`editor.codeBlock`（`⌥⌘C`）、`editor.table`（`⌥⌘G`）、`editor.toggleTodo`（`⌥⌘X`）、`editor.link`（`⌥⌘K`）、`editor.image`（`⌥⌘I`）、`editor.bulletList`（`⌥⌘L`）、`editor.blockquote`（`⌥⌘Q`）、`editor.heading1`..`6`（`⌥⌘1..6`）、`editor.indent`（`Tab`）、`editor.outdent`（`⇧Tab`）、`editor.moveSelectionToNewNote`（`when: editor.hasSelection`）、`editor.find`（`⌘F`）、`editor.replace`（`⌥⌘F`）
-- `panel.*`：`panel.toggle.outline`（`⌃⌘O`，左侧栏「大纲」视图）、`panel.toggle.related`（`⌃⌘R`，左侧栏「相关文档」视图）、`panel.toggle.terminal`（`⌃⌘T`，编辑器底部终端）
+- `panel.*`：`panel.toggle.outline`（`⌃⌘O`，左侧栏「大纲」视图）、`panel.toggle.related`（`⌃⌘R`，左侧栏「相关」视图）、`panel.toggle.terminal`（`⌃⌘T`，编辑器底部终端）
 - `external.*`：同 `C3.4` `ExternalActionId`
 - `folder.*`：`folder.bindWorkspaceConfig`（绑定/编辑目录 `.quicknote.yaml`）、`folder.openWorkspaceInVscode`（以该目录绑定的工作区在 VS Code 中打开）
 - `window.*`：`window.nextTab`（`⌃⇥`）、`window.prevTab`（`⇧⌃⇥`）、`window.pinQuickBar`、`window.toggleAuxiliary`
@@ -572,7 +572,7 @@ interface ActionDef {
 
 ### C7.4 左侧栏视图注册表与底部终端面板
 
-- 左侧栏顶层视图顺序：`workspace`（笔记导航：目录 / 标签 / 最近）、`related`（相关文档）、`outline`（大纲）。
+- 左侧栏顶层视图顺序：`workspace`（笔记导航：目录 / 标签 / 最近）、`related`（相关）、`outline`（大纲）。
 - 左侧栏宽度：默认 `300px`，最小 `220px`，可拖动并持久化于 `ui-state.json` 的 `leftSidebar.width`；收起为 `36px` 图标条。
 - 底部终端面板：默认隐藏，高度默认 `240px`，范围 `120–600px`，可拖动并持久化于 `terminalPanel.height`；折叠时终端会话保活。
 - 响应式断点：`< 1000px` 左侧栏收为图标条；`< 900px`（含 45% 侧栏辅助窄窗口）左侧栏以覆盖式抽屉浮于编辑区之上，编辑区最小宽度 `480px`。

@@ -532,7 +532,7 @@ const navItems: { id: string; label: string }[] = [
   { id: 'projects', label: '目录' },
   { id: 'tags', label: '标签' },
   { id: 'recent', label: '最近' },
-  { id: 'related', label: '相关文档' },
+  { id: 'related', label: '相关' },
   { id: 'outline', label: '大纲' },
 ];
 
