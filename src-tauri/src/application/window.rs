@@ -608,6 +608,7 @@ impl WindowManager {
             let diag = self.bridge.hide_quick_bar_panel(ptr)?;
             let event_name = match reason {
                 HideReason::SpaceChanged => "space_changed",
+                HideReason::FocusLost => "focus_lost",
                 HideReason::Esc | HideReason::Hotkey => "panel_hide",
             };
             log_native_event(
@@ -621,6 +622,16 @@ impl WindowManager {
 
         let _ = app.emit("window:state", &win_state);
         Ok(win_state)
+    }
+
+    /// Called when the Quick Bar panel loses key-window focus (`D-0013`).
+    /// No-op when the panel is already hidden (programmatic hides also trigger resign-key).
+    pub fn on_quick_bar_lost_focus(&self, app: &AppHandle) -> Result<(), AppError> {
+        if !self.is_quick_bar_visible()? {
+            return Ok(());
+        }
+        self.hide_quick_bar(app, HideReason::FocusLost)?;
+        Ok(())
     }
 
     pub fn toggle_quick_bar(&self, app: &AppHandle) -> Result<WindowState, AppError> {

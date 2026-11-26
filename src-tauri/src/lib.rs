@@ -51,6 +51,15 @@ extern "C" fn on_quick_bar_esc() {
     }
 }
 
+extern "C" fn on_quick_bar_resign() {
+    if let Some(app) = GLOBAL_APP_HANDLE.get() {
+        let wm = app.state::<Arc<WindowManager>>();
+        if let Err(err) = wm.on_quick_bar_lost_focus(app) {
+            eprintln!("[quickbar] focus_lost hide failed: code={:?}", err.code);
+        }
+    }
+}
+
 extern "C" fn on_space_changed() {
     if let Some(app) = GLOBAL_APP_HANDLE.get() {
         let wm = app.state::<Arc<WindowManager>>();
@@ -596,6 +605,7 @@ pub fn run() -> Result<(), tauri::Error> {
                 .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
 
             bridge.register_quick_bar_esc_handler(on_quick_bar_esc);
+            bridge.register_quick_bar_resign_handler(on_quick_bar_resign);
             bridge
                 .register_space_observer(on_space_changed)
                 .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;

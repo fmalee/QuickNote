@@ -47,6 +47,7 @@ pub fn log_native_event(
         HideReason::Esc => "esc",
         HideReason::Hotkey => "hotkey",
         HideReason::SpaceChanged => "space_changed",
+        HideReason::FocusLost => "focus_lost",
     });
     let payload = serde_json::json!({
         "event": event,
@@ -69,6 +70,7 @@ pub trait NativeWindowBridge: Send + Sync {
     fn hide_toast_panel(&self, ns_window_ptr: usize) -> Result<PanelDiagnostics, AppError>;
     fn register_space_observer(&self, on_space_changed: extern "C" fn()) -> Result<(), AppError>;
     fn register_quick_bar_esc_handler(&self, on_esc: extern "C" fn());
+    fn register_quick_bar_resign_handler(&self, on_resign: extern "C" fn());
     fn register_global_hotkey(
         &self,
         hotkey: &ParsedHotkey,
@@ -144,6 +146,8 @@ impl NativeWindowBridge for NoopNativeBridge {
     }
 
     fn register_quick_bar_esc_handler(&self, _on_esc: extern "C" fn()) {}
+
+    fn register_quick_bar_resign_handler(&self, _on_resign: extern "C" fn()) {}
 
     fn register_global_hotkey(
         &self,
@@ -243,6 +247,7 @@ pub mod darwin {
         fn qn_show_toast_panel(ns_window_ptr: *mut c_void, out_diag: *mut QnPanelDiag);
         fn qn_hide_toast_panel(ns_window_ptr: *mut c_void, out_diag: *mut QnPanelDiag);
         fn qn_register_space_observer(on_space_changed: Option<extern "C" fn()>);
+        fn qn_register_quick_bar_resign_handler(on_resign: Option<extern "C" fn()>);
         fn qn_register_carbon_hotkey(
             key_code: u32,
             modifiers: u32,
@@ -353,6 +358,12 @@ pub mod darwin {
 
         fn register_quick_bar_esc_handler(&self, on_esc: extern "C" fn()) {
             ESC_CALLBACK_PTR.store(on_esc as usize, Ordering::SeqCst);
+        }
+
+        fn register_quick_bar_resign_handler(&self, on_resign: extern "C" fn()) {
+            unsafe {
+                qn_register_quick_bar_resign_handler(Some(on_resign));
+            }
         }
 
         fn register_global_hotkey(

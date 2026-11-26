@@ -13,8 +13,10 @@ typedef struct {
 } QnPanelDiag;
 
 static QnVoidCallback g_quickbar_esc_cb = NULL;
+static QnVoidCallback g_quickbar_resign_cb = NULL;
 static QnVoidCallback g_space_changed_cb = NULL;
 static QnVoidCallback g_hotkey_cb = NULL;
+static id g_quickbar_resign_observer = nil;
 static id g_space_observer = nil;
 static EventHotKeyRef g_hotkey_ref = NULL;
 static EventHandlerRef g_hotkey_handler_ref = NULL;
@@ -211,6 +213,17 @@ void qn_configure_quick_bar_panel(void *ns_window_ptr, QnVoidCallback on_esc, Qn
             }
             [taoWin orderOut:nil];
         }
+        if (g_quickbar_resign_observer == nil) {
+            g_quickbar_resign_observer = [[NSNotificationCenter defaultCenter]
+                addObserverForName:NSWindowDidResignKeyNotification
+                            object:g_quickbar_panel
+                             queue:[NSOperationQueue mainQueue]
+                        usingBlock:^(__unused NSNotification *note) {
+                if (g_quickbar_resign_cb != NULL) {
+                    g_quickbar_resign_cb();
+                }
+            }];
+        }
         diag = qn_read_diag(g_quickbar_panel);
     });
 
@@ -389,6 +402,10 @@ void qn_register_space_observer(QnVoidCallback on_space_changed) {
             g_space_changed_cb();
         }
     }];
+}
+
+void qn_register_quick_bar_resign_handler(QnVoidCallback on_resign) {
+    g_quickbar_resign_cb = on_resign;
 }
 
 static OSStatus qn_carbon_hotkey_handler(

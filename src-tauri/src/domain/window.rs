@@ -22,6 +22,8 @@ pub enum HideReason {
     Hotkey,
     #[serde(rename = "space_changed")]
     SpaceChanged,
+    #[serde(rename = "focus_lost")]
+    FocusLost,
 }
 
 /// Window visibility and mode state pushed via `window:state` and window IPC commands (`C3.4`, `C4.3`).

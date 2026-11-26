@@ -80,6 +80,18 @@ fn hide_reason_and_window_state_json_serialization() {
             .as_deref(),
         Some("\"space_changed\"")
     );
+    assert_eq!(
+        serde_json::to_string(&HideReason::FocusLost)
+            .ok()
+            .as_deref(),
+        Some("\"focus_lost\"")
+    );
+
+    let mut state = WindowPolicyState::default();
+    state.show_quick_bar(Some(QuickBarMode::Capture));
+    let qb_focus_lost = state.hide_quick_bar(HideReason::FocusLost);
+    assert!(!qb_focus_lost.visible);
+    assert_eq!(qb_focus_lost.reason, Some(HideReason::FocusLost));
 
     let ws = WindowState {
         window_id: "quickbar".to_string(),
@@ -175,6 +187,7 @@ impl NativeWindowBridge for RecordingHotkeyBridge {
         Ok(())
     }
     fn register_quick_bar_esc_handler(&self, _on_esc: extern "C" fn()) {}
+    fn register_quick_bar_resign_handler(&self, _on_resign: extern "C" fn()) {}
     fn register_global_hotkey(
         &self,
         hotkey: &ParsedHotkey,

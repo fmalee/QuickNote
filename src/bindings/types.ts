@@ -279,7 +279,7 @@ export type HideQuickBarArgs = {
 };
 
 /**  Reason why Quick Bar was hidden (`C3.4`, `D-0002`). */
-export type HideReason = "esc" | "hotkey" | "space_changed";
+export type HideReason = "esc" | "hotkey" | "space_changed" | "focus_lost";
 
 /**  Global hotkey self-check state (`C3.4`, `C6.3`, `D-0004`). */
 export type HotkeySelfCheck = "pending" | "ok" | "conflict";
