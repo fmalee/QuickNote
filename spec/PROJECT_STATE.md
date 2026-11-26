@@ -4,7 +4,7 @@
 
 ## 1. 当前精确进度
 
-- **当前状态**：**`M5 Completed`（M5 迭代收官，R35 暂缓单列，可选卡 `M5-06f` 未执行）**
+- **当前状态**：**`M5 Completed`（M5 迭代收官，R35 暂缓单列，可选卡 `M5-06f` 已完成）**
 - **本轮概述**：完成 M5 全量缺陷修复与体验升级——修复启动标签恢复、自写回声假冲突、标签列表同步、滚动橡皮筋与终端字距；接入系统废纸篓删除与备份原生文件选择框；重构主窗口单栏左侧栏（目录/标签/最近/相关文档/大纲）+ 底部终端布局与状态栏；补齐编辑器查找/替换与标签页交互；实现 Quick Bar 失焦关闭、图钉固定、`⌘N` 切换与混合打开引擎复用；彻底移除 Spotlight 死代码并完成四份记录类文档同步。
 - **阶段结论**：除 R35（45% 侧栏在全屏 Space 下顶部未贴边）因 AppKit 机制限制暂缓外，M5 其余全部卡片均已完成并过 `pnpm check:all` 全量门禁。
 
@@ -41,7 +41,7 @@
 | 27 | `M5-06e1-spotlight-removal.md` | Spotlight 死代码：命令与 Runner | [x] |
 | 28 | `M5-06e2-search-source-cleanup.md` | Spotlight 残留的来源变体 | [x] |
 | 29 | `M5-06d-docs-cleanup.md` | 文档记录类收尾 | [x] |
-| 30 | `M5-06f-workspaces-removal.md` | 废弃的全局工作区模型清理 | 未执行（可选） |
+| 30 | `M5-06f-workspaces-removal.md` | 废弃的全局工作区模型清理 | [x] |
 
 <details>
 <summary>历史阶段：v5 Architecture Refactor 任务清单（Task 00–22 全部完成）</summary>

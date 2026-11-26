@@ -166,6 +166,7 @@
 - 后果：笔记库目录保持纯净零侵入，索引可随时安全重建，外部系统路径浏览与工作区绑定语义清晰统一，应用常驻内存与多文档切换响应显著优化；与 `spec/quicknote-design-v4.md` 冲突的旧条款全部失效，以 `Active Architecture Overrides (v5 Refactor)` 为准。
 - 否决/废止的旧方案：
   - 废止脱离笔记库的独立全局工作区模型。
+  - 模型残留已于 M5-06f 清理。
   - 废止 Spotlight 作为 `search_roots` 主检索引擎的方案。
   - 废止将 SQLite 数据库及其 WAL/SHM 文件存放于笔记库（Vault）根目录的方案。
 
