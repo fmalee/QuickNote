@@ -28,7 +28,6 @@ import {
   DIAGNOSTICS_MAX_BYTES,
   diagnosticsField,
   dispatchDiagnostics,
-  type EditorDiagnostic,
   PLAIN_TEXT_FALLBACK_BYTES,
   runLightweightDiagnostics,
 } from './extensions/codeDiagnostics';
@@ -112,10 +111,6 @@ const languageCompartment = new Compartment();
 const diagnosticsCompartment = new Compartment();
 const keymapCompartment = new Compartment();
 
-const activeLanguageLabel = ref('Markdown');
-const activeIndentLabel = ref('2 空格');
-const activeDiagnostics = ref<EditorDiagnostic[]>([]);
-const diagnosticsDisabledReason = ref<string | null>(null);
 let diagnosticsTimer: ReturnType<typeof setTimeout> | null = null;
 let lastFallbackMode: 'plain' | 'diag-off' | 'full' = 'full';
 
@@ -232,8 +227,8 @@ function buildLanguageConfig(
 
 function updateStatusAndDiagnostics(tab: EditorTab, content: string): void {
   const cfg = buildLanguageConfig(tab, content);
-  activeLanguageLabel.value = cfg.mode === 'plain' ? 'Plain Text (>5MB)' : cfg.lang.label;
-  activeIndentLabel.value = cfg.indent.useTabs ? 'Tab' : `${cfg.indent.tabSize} 空格`;
+  const docKindLabel = cfg.mode === 'plain' ? 'Plain Text (>5MB)' : cfg.lang.label;
+  const indentLabel = cfg.indent.useTabs ? 'Tab' : `${cfg.indent.tabSize} 空格`;
 
   if (view && cfg.mode !== lastFallbackMode) {
     lastFallbackMode = cfg.mode;
@@ -253,8 +248,17 @@ function updateStatusAndDiagnostics(tab: EditorTab, content: string): void {
     tab.doc?.meta.metaError ?? null,
     cfg.sizeBytes,
   );
-  activeDiagnostics.value = result.diagnostics;
-  diagnosticsDisabledReason.value = result.disabledReason;
+  const diagnosticsLabel = result.disabledReason
+    ? result.disabledReason
+    : result.diagnostics.length > 0
+      ? `${result.diagnostics.length} 个问题 · L${result.diagnostics[0]?.line}: ${result.diagnostics[0]?.message}`
+      : '语法正常';
+
+  editorTabsStore.setEditorStatus({
+    docKindLabel,
+    indentLabel,
+    diagnosticsLabel,
+  });
 
   if (view && cfg.mode !== 'plain' && cfg.sizeBytes <= DIAGNOSTICS_MAX_BYTES) {
     dispatchDiagnostics(view, result.diagnostics);
@@ -271,10 +275,6 @@ function scheduleDiagnosticsUpdate(tab: EditorTab, content: string): void {
       updateStatusAndDiagnostics(tab, content);
     }
   }, 300);
-}
-
-function jumpToDiagnostic(diag: EditorDiagnostic): void {
-  editorTabsStore.requestScrollToLine(diag.line, diag.from);
 }
 
 function getEffectiveTabSize(): number {
@@ -786,6 +786,11 @@ function switchToTab(tab: EditorTab | null): void {
   }
   if (!tab || tab.evicted) {
     currentTabKey = null;
+    editorTabsStore.setEditorStatus({
+      docKindLabel: '',
+      indentLabel: '',
+      diagnosticsLabel: '',
+    });
     return;
   }
 
@@ -994,6 +999,7 @@ watch(
       view.setState(nextState);
       reconfigureEditorCompartments();
       view.scrollDOM.scrollTop = savedScrollTop;
+      updateStatusAndDiagnostics(tab, nextState.doc.toString());
     } finally {
       suppressUpdate = false;
     }
@@ -1119,6 +1125,11 @@ onUnmounted(() => {
     view = null;
   }
   currentTabKey = null;
+  editorTabsStore.setEditorStatus({
+    docKindLabel: '',
+    indentLabel: '',
+    diagnosticsLabel: '',
+  });
 });
 </script>
 
@@ -1148,37 +1159,6 @@ onUnmounted(() => {
       :style="{ '--qn-editor-max-width': editorMaxWidth }"
       @contextmenu.prevent="handleContextMenu"
     />
-    <div
-      v-if="editorTabsStore.activeTab"
-      class="qn-editor-status-bar"
-      data-testid="editor-diagnostics-statusbar"
-    >
-      <span class="qn-editor-status-bar__badge" data-testid="editor-language-badge">
-        {{ activeLanguageLabel }}
-      </span>
-      <span class="qn-editor-status-bar__badge" data-testid="editor-indent-badge">
-        {{ activeIndentLabel }}
-      </span>
-      <span
-        v-if="diagnosticsDisabledReason"
-        class="qn-editor-status-bar__notice"
-        data-testid="editor-diagnostics-disabled"
-      >
-        {{ diagnosticsDisabledReason }}
-      </span>
-      <button
-        v-else-if="activeDiagnostics.length > 0"
-        type="button"
-        class="qn-editor-status-bar__diag-btn"
-        data-testid="editor-diagnostics-bar"
-        :title="activeDiagnostics[0]?.message"
-        @click="activeDiagnostics[0] && jumpToDiagnostic(activeDiagnostics[0])"
-      >
-        {{ activeDiagnostics.length }} 个问题 · L{{ activeDiagnostics[0]?.line }}:
-        {{ activeDiagnostics[0]?.message }}
-      </button>
-      <span v-else class="qn-editor-status-bar__ok">语法正常</span>
-    </div>
   </div>
   <QnContextMenu
     :open="contextMenuOpen"
@@ -1264,51 +1244,5 @@ onUnmounted(() => {
   font-family: var(--qn-font-mono);
   font-size: var(--qn-text-xs);
   word-break: break-all;
-}
-
-.qn-editor-status-bar {
-  width: 100%;
-  max-width: var(--qn-editor-max-width, 900px);
-  display: flex;
-  align-items: center;
-  gap: var(--qn-space-2);
-  padding: var(--qn-space-1) var(--qn-space-2);
-  border-top: 1px solid var(--qn-border-subtle);
-  color: var(--qn-text-muted);
-  font-size: var(--qn-text-xs);
-  font-family: var(--qn-font-mono);
-}
-
-.qn-editor-status-bar__badge {
-  padding: 1px var(--qn-space-2);
-  border-radius: var(--qn-radius-sm);
-  background-color: var(--qn-bg-elevated);
-  border: 1px solid var(--qn-border-subtle);
-  color: var(--qn-text-secondary);
-}
-
-.qn-editor-status-bar__notice {
-  color: var(--qn-warning);
-}
-
-.qn-editor-status-bar__diag-btn {
-  border: none;
-  background: transparent;
-  padding: 0;
-  color: var(--qn-danger);
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.qn-editor-status-bar__diag-btn:hover {
-  text-decoration: underline;
-}
-
-.qn-editor-status-bar__ok {
-  color: var(--qn-text-muted);
 }
 </style>

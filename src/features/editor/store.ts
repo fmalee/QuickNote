@@ -110,6 +110,12 @@ export interface EditorScrollTarget {
   seq: number;
 }
 
+export interface EditorStatusInfo {
+  docKindLabel: string;
+  indentLabel: string;
+  diagnosticsLabel: string;
+}
+
 function toTabItemState(tab: EditorTab): TabItemState {
   return {
     key: tab.key,
@@ -208,6 +214,15 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
   const tabs = ref<EditorTab[]>([]);
   const activeKey = ref<string | null>(null);
   const closedStack = ref<string[]>([]);
+  const editorStatus = ref<EditorStatusInfo>({
+    docKindLabel: '',
+    indentLabel: '',
+    diagnosticsLabel: '',
+  });
+
+  function setEditorStatus(next: EditorStatusInfo): void {
+    editorStatus.value = next;
+  }
   const loading = ref<boolean>(false);
   const errorMessage = ref<string | null>(null);
   const initialized = ref<boolean>(false);
@@ -1712,6 +1727,8 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     activeDoc,
     activeTopLine,
     scrollTarget,
+    editorStatus,
+    setEditorStatus,
     confirmedExternalMetaPaths,
     inboxExtractModalOpen,
     inboxBloatThreshold,

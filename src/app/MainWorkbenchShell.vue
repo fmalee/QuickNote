@@ -845,7 +845,22 @@ onUnmounted(() => {
             {{ externalActions.feedback.message }}
           </span>
         </div>
-        <span>热键：{{ settingsStore.hotkeyStatus?.combo ?? 'ctrl+alt+space' }}</span>
+        <div class="qn-main-shell__status-right">
+          <span v-if="editorTabsStore.editorStatus?.docKindLabel" data-testid="statusbar-doc-kind">
+            {{ editorTabsStore.editorStatus.docKindLabel }}
+          </span>
+          <span v-if="editorTabsStore.editorStatus?.indentLabel" data-testid="statusbar-indent">
+            {{ editorTabsStore.editorStatus.indentLabel }}
+          </span>
+          <span
+            v-if="editorTabsStore.editorStatus?.diagnosticsLabel"
+            class="qn-main-shell__status-diagnostics"
+            data-testid="statusbar-diagnostics"
+            :title="editorTabsStore.editorStatus.diagnosticsLabel"
+          >
+            {{ editorTabsStore.editorStatus.diagnosticsLabel }}
+          </span>
+        </div>
       </footer>
     </div>
 
@@ -1084,18 +1099,45 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--qn-space-3);
   height: 26px;
   padding: 0 var(--qn-space-4);
   border-top: 1px solid var(--qn-border-subtle);
   background-color: var(--qn-bg-sidebar);
   font-size: var(--qn-text-xs);
   color: var(--qn-text-muted);
+  overflow: hidden;
 }
 
 .qn-main-shell__status-left {
   display: flex;
   align-items: center;
   gap: var(--qn-space-3);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.qn-main-shell__status-right {
+  display: flex;
+  align-items: center;
+  gap: var(--qn-space-3);
+  min-width: 0;
+  flex-shrink: 1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.qn-main-shell__status-right > span {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.qn-main-shell__status-right > .qn-main-shell__status-diagnostics {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .qn-main-shell__status-feedback--success {
