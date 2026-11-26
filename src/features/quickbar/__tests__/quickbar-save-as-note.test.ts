@@ -125,12 +125,6 @@ function makeUiState(): UiState {
       closedStack: [],
     },
     lastActiveDoc: null,
-    panelGroup: {
-      visible: true,
-      activeId: 'outline',
-      width: 260,
-      collapsed: false,
-    },
     windows: {
       main: {
         isOpen: false,

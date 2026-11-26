@@ -172,7 +172,6 @@ function makeUiState(): UiState {
     filters: { activeTab: 'recent', selectedDir: null, selectedTags: [], listScrollTop: 0 },
     tabs: { items: [], activeKey: null, closedStack: [] },
     lastActiveDoc: null,
-    panelGroup: { visible: true, activeId: 'outline', width: 260, collapsed: false },
     windows: { main: { isOpen: true, mode: 'standard', x: 0, y: 0, width: 1200, height: 800 } },
     hotkey: { combo: 'ctrl+alt+space', backupCombo: 'ctrl+alt+cmd+space', selfCheck: 'ok' },
   };

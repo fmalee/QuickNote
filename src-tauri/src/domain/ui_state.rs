@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::domain::error::{AppError, ErrorCode};
-use crate::domain::settings::{PanelId, WindowMode};
+use crate::domain::settings::WindowMode;
 
 /// Capture formatting mode (`C3.4`, `C6.3`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
@@ -112,27 +112,6 @@ pub struct TabsUiState {
     pub closed_stack: Vec<String>,
 }
 
-/// Right panel group state (`C6.3`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct PanelGroupUiState {
-    pub visible: bool,
-    pub active_id: PanelId,
-    pub width: u32,
-    pub collapsed: bool,
-}
-
-impl Default for PanelGroupUiState {
-    fn default() -> Self {
-        Self {
-            visible: true,
-            active_id: PanelId::Outline,
-            width: 260,
-            collapsed: false,
-        }
-    }
-}
-
 /// Top-level view shown in the left sidebar (`C6.3`, `C7.4`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
 #[serde(rename_all = "camelCase")]
@@ -227,7 +206,6 @@ pub struct LastActiveDocState {
 pub struct UiState {
     pub windows: WindowsUiState,
     pub tabs: TabsUiState,
-    pub panel_group: PanelGroupUiState,
     #[serde(default)]
     pub left_sidebar: LeftSidebarUiState,
     #[serde(default)]
@@ -247,7 +225,6 @@ pub struct UiState {
 pub enum UiStatePatchKey {
     Windows,
     Tabs,
-    PanelGroup,
     LeftSidebar,
     TerminalPanel,
     Filters,
@@ -263,7 +240,6 @@ impl UiStatePatchKey {
         match self {
             Self::Windows => "windows",
             Self::Tabs => "tabs",
-            Self::PanelGroup => "panelGroup",
             Self::LeftSidebar => "leftSidebar",
             Self::TerminalPanel => "terminalPanel",
             Self::Filters => "filters",
@@ -300,9 +276,6 @@ impl UiState {
             }
             UiStatePatchKey::Tabs => {
                 self.tabs = parse_patch_value(key_name, value)?;
-            }
-            UiStatePatchKey::PanelGroup => {
-                self.panel_group = parse_patch_value(key_name, value)?;
             }
             UiStatePatchKey::LeftSidebar => {
                 self.left_sidebar = parse_patch_value(key_name, value)?;

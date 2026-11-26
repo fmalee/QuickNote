@@ -142,12 +142,6 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
       activeKey: null,
       closedStack: [],
     },
-    panelGroup: overrides.panelGroup ?? {
-      visible: true,
-      activeId: 'outline',
-      width: 260,
-      collapsed: false,
-    },
     filters: overrides.filters ?? {
       activeTab: 'projects',
       selectedDir: null,

@@ -3,20 +3,14 @@ import { defineStore } from 'pinia';
 import type {
   LeftSidebarUiState,
   LeftViewId,
-  NoteSummary,
-  PanelGroupUiState,
-  PanelId,
   RelatedNoteItem,
   TerminalPanelUiState,
 } from '@/bindings/types';
 import { useEditorTabsStore } from '@/features/editor';
 import {
-  RECENT_NOTES_LIMIT,
-  fetchRecentNotes,
   fetchRelatedNotes,
   fetchUiState,
   patchLeftSidebarUiState,
-  patchPanelGroupUiState,
   patchTerminalPanelUiState,
 } from './api';
 import {
@@ -26,35 +20,22 @@ import {
 } from './outlineExtractor';
 import {
   BP_COLLAPSE_LEFT_SIDEBAR,
-  BP_COLLAPSE_RIGHT_PANEL,
   BP_OVERLAY_DRAWER,
   MIN_EDITOR_WIDTH,
-  MIN_PANEL_WIDTH,
   SIDEBAR_COLLAPSED_STRIP_WIDTH,
-  SIDEBAR_EXPANDED_WIDTH,
-  getRightPanelDef,
 } from './registry';
 
 export const OUTLINE_DEBOUNCE_MS = 150;
-export const DEFAULT_PANEL_WIDTH = 260;
-export const PANEL_WIDTH_PERSIST_DEBOUNCE_MS = 180;
 export const MIN_SIDEBAR_WIDTH = 220;
 export const MIN_TERMINAL_DOCK_HEIGHT = 120;
 export const MAX_TERMINAL_DOCK_HEIGHT = 600;
 
-export { MIN_PANEL_WIDTH };
+const LAYOUT_PERSIST_DEBOUNCE_MS = 180;
 
 export type RelatedEmptyReason = 'no-doc' | 'outside-library' | 'empty' | null;
 
 export const usePanelsStore = defineStore('panels', () => {
   const editorTabsStore = useEditorTabsStore();
-
-  const panelGroup = ref<PanelGroupUiState>({
-    visible: true,
-    activeId: 'outline',
-    width: DEFAULT_PANEL_WIDTH,
-    collapsed: false,
-  });
 
   const leftSidebar = ref<LeftSidebarUiState>({
     width: 300,
@@ -67,12 +48,9 @@ export const usePanelsStore = defineStore('panels', () => {
     collapsed: false,
   });
 
-  const preferredVisible = ref<boolean>(true);
-  const preferredCollapsed = ref<boolean>(false);
   const viewportWidth = ref<number>(1280);
   const forceOverlayDrawer = ref<boolean>(false);
   const leftSidebarCollapsed = ref<boolean>(false);
-  const autoCollapsedByNarrowRight = ref<boolean>(false);
   let hasViewportMeasured = false;
 
   const outlineItems = ref<OutlineItem[]>([]);
@@ -83,24 +61,11 @@ export const usePanelsStore = defineStore('panels', () => {
   const relatedError = ref<string | null>(null);
   const relatedEmptyReason = ref<RelatedEmptyReason>(null);
 
-  const recentItems = ref<NoteSummary[]>([]);
-  const recentLoading = ref<boolean>(false);
-
   let outlineDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let widthPersistTimer: ReturnType<typeof setTimeout> | null = null;
   let leftSidebarWidthPersistTimer: ReturnType<typeof setTimeout> | null = null;
   let terminalHeightPersistTimer: ReturnType<typeof setTimeout> | null = null;
   let lastComputedKey: string | null = null;
   let relatedRequestSeq = 0;
-  let recentRequestSeq = 0;
-
-  const isPanelGroupExpanded = computed<boolean>(
-    () => panelGroup.value.visible && !panelGroup.value.collapsed,
-  );
-
-  const isOutlineVisible = computed<boolean>(
-    () => isPanelGroupExpanded.value && panelGroup.value.activeId === 'outline',
-  );
 
   const isTerminalPanelShown = computed<boolean>(
     () => terminalPanel.value.visible && !terminalPanel.value.collapsed,
@@ -123,21 +88,11 @@ export const usePanelsStore = defineStore('panels', () => {
   const isNarrowLeftBreakpoint = computed<boolean>(
     () => viewportWidth.value < BP_COLLAPSE_LEFT_SIDEBAR,
   );
-  const isNarrowRightBreakpoint = computed<boolean>(
-    () => viewportWidth.value < BP_COLLAPSE_RIGHT_PANEL,
-  );
 
   function clearOutlineTimer(): void {
     if (outlineDebounceTimer !== null) {
       clearTimeout(outlineDebounceTimer);
       outlineDebounceTimer = null;
-    }
-  }
-
-  function clearWidthPersistTimer(): void {
-    if (widthPersistTimer !== null) {
-      clearTimeout(widthPersistTimer);
-      widthPersistTimer = null;
     }
   }
 
@@ -174,19 +129,6 @@ export const usePanelsStore = defineStore('panels', () => {
     }, OUTLINE_DEBOUNCE_MS);
   }
 
-  function persistPanelGroup(): void {
-    clearWidthPersistTimer();
-    void patchPanelGroupUiState({ ...panelGroup.value }).catch(() => undefined);
-  }
-
-  function schedulePersistPanelGroup(): void {
-    clearWidthPersistTimer();
-    widthPersistTimer = setTimeout(() => {
-      widthPersistTimer = null;
-      void patchPanelGroupUiState({ ...panelGroup.value }).catch(() => undefined);
-    }, PANEL_WIDTH_PERSIST_DEBOUNCE_MS);
-  }
-
   function persistLeftSidebar(): void {
     clearLeftSidebarWidthPersistTimer();
     void patchLeftSidebarUiState({ ...leftSidebar.value }).catch(() => undefined);
@@ -197,7 +139,7 @@ export const usePanelsStore = defineStore('panels', () => {
     leftSidebarWidthPersistTimer = setTimeout(() => {
       leftSidebarWidthPersistTimer = null;
       void patchLeftSidebarUiState({ ...leftSidebar.value }).catch(() => undefined);
-    }, PANEL_WIDTH_PERSIST_DEBOUNCE_MS);
+    }, LAYOUT_PERSIST_DEBOUNCE_MS);
   }
 
   function persistTerminalPanel(): void {
@@ -210,7 +152,7 @@ export const usePanelsStore = defineStore('panels', () => {
     terminalHeightPersistTimer = setTimeout(() => {
       terminalHeightPersistTimer = null;
       void patchTerminalPanelUiState({ ...terminalPanel.value }).catch(() => undefined);
-    }, PANEL_WIDTH_PERSIST_DEBOUNCE_MS);
+    }, LAYOUT_PERSIST_DEBOUNCE_MS);
   }
 
   async function refreshRelatedNotes(): Promise<void> {
@@ -257,37 +199,9 @@ export const usePanelsStore = defineStore('panels', () => {
     }
   }
 
-  async function refreshRecentNotes(): Promise<void> {
-    const seq = ++recentRequestSeq;
-    recentLoading.value = true;
-    try {
-      const items = await fetchRecentNotes();
-      if (seq !== recentRequestSeq) {
-        return;
-      }
-      recentItems.value = items.slice(0, RECENT_NOTES_LIMIT);
-    } catch {
-      if (seq === recentRequestSeq) {
-        recentItems.value = [];
-      }
-    } finally {
-      if (seq === recentRequestSeq) {
-        recentLoading.value = false;
-      }
-    }
-  }
-
   function refreshActivePanelData(): void {
     if (leftSidebar.value.activeView === 'related') {
       void refreshRelatedNotes();
-    }
-    if (!isPanelGroupExpanded.value) {
-      return;
-    }
-    if (panelGroup.value.activeId === 'related') {
-      void refreshRelatedNotes();
-    } else if (panelGroup.value.activeId === 'recent') {
-      void refreshRecentNotes();
     }
   }
 
@@ -313,19 +227,6 @@ export const usePanelsStore = defineStore('panels', () => {
   );
 
   watch(
-    () => editorTabsStore.activeTab?.saveStatus,
-    (status) => {
-      if (
-        status === 'saved' &&
-        isPanelGroupExpanded.value &&
-        panelGroup.value.activeId === 'recent'
-      ) {
-        void refreshRecentNotes();
-      }
-    },
-  );
-
-  watch(
     () => leftSidebar.value.activeView,
     (view) => {
       if (view === 'related') {
@@ -333,19 +234,6 @@ export const usePanelsStore = defineStore('panels', () => {
       }
     },
   );
-
-  function applyPanelGroupState(nextGroup: PanelGroupUiState): void {
-    const def = getRightPanelDef(nextGroup.activeId || 'outline');
-    panelGroup.value = {
-      visible: nextGroup.visible,
-      activeId: def.id,
-      width: Math.max(MIN_PANEL_WIDTH, nextGroup.width || def.defaultWidth),
-      collapsed: nextGroup.collapsed,
-    };
-    preferredVisible.value = panelGroup.value.visible;
-    preferredCollapsed.value = panelGroup.value.collapsed;
-    refreshActivePanelData();
-  }
 
   function clampLeftSidebarWidth(width: number): number {
     const maxAllowed = Math.max(
@@ -365,9 +253,6 @@ export const usePanelsStore = defineStore('panels', () => {
   async function initialize(): Promise<void> {
     try {
       const uiState = await fetchUiState();
-      if (uiState.panelGroup) {
-        applyPanelGroupState(uiState.panelGroup);
-      }
       if (uiState.leftSidebar) {
         leftSidebar.value = {
           width: clampLeftSidebarWidth(uiState.leftSidebar.width),
@@ -385,75 +270,6 @@ export const usePanelsStore = defineStore('panels', () => {
     } catch {
       // 容错：回退默认面板状态
     }
-  }
-
-  function selectPanel(id: PanelId): void {
-    panelGroup.value.visible = true;
-    panelGroup.value.collapsed = false;
-    panelGroup.value.activeId = id;
-    preferredVisible.value = true;
-    preferredCollapsed.value = false;
-    autoCollapsedByNarrowRight.value = false;
-    persistPanelGroup();
-    refreshActivePanelData();
-  }
-
-  function togglePanel(id: PanelId): void {
-    if (
-      !panelGroup.value.visible ||
-      panelGroup.value.collapsed ||
-      panelGroup.value.activeId !== id
-    ) {
-      selectPanel(id);
-      return;
-    }
-    panelGroup.value.collapsed = true;
-    preferredCollapsed.value = true;
-    autoCollapsedByNarrowRight.value = false;
-    persistPanelGroup();
-  }
-
-  function toggleOutlinePanel(): void {
-    togglePanel('outline');
-  }
-
-  function toggleCollapseAll(): void {
-    if (!panelGroup.value.visible || panelGroup.value.collapsed) {
-      panelGroup.value.visible = true;
-      panelGroup.value.collapsed = false;
-      preferredVisible.value = true;
-      preferredCollapsed.value = false;
-      autoCollapsedByNarrowRight.value = false;
-      refreshActivePanelData();
-    } else {
-      panelGroup.value.collapsed = true;
-      preferredCollapsed.value = true;
-      autoCollapsedByNarrowRight.value = false;
-    }
-    persistPanelGroup();
-  }
-
-  function computeMaxPanelWidth(vpWidth: number): number {
-    if (vpWidth < BP_OVERLAY_DRAWER || forceOverlayDrawer.value) {
-      return Math.max(MIN_PANEL_WIDTH, vpWidth - 48);
-    }
-    const leftWidth = leftSidebarCollapsed.value
-      ? SIDEBAR_COLLAPSED_STRIP_WIDTH
-      : SIDEBAR_EXPANDED_WIDTH;
-    return Math.max(MIN_PANEL_WIDTH, vpWidth - leftWidth - MIN_EDITOR_WIDTH);
-  }
-
-  function setPanelWidth(nextWidth: number, vpWidth?: number): number {
-    const effectiveVp = vpWidth && vpWidth > 0 ? vpWidth : viewportWidth.value;
-    const maxAllowed = computeMaxPanelWidth(effectiveVp);
-    const clamped = Math.min(maxAllowed, Math.max(MIN_PANEL_WIDTH, Math.round(nextWidth)));
-    panelGroup.value.width = clamped;
-    schedulePersistPanelGroup();
-    return clamped;
-  }
-
-  function commitPanelWidth(): void {
-    persistPanelGroup();
   }
 
   function applyViewportWidth(width: number): void {
@@ -474,35 +290,10 @@ export const usePanelsStore = defineStore('panels', () => {
       leftSidebarCollapsed.value = false;
     }
 
-    // 2. 右侧栏断点 < 900px（抽屉模式）与 < 1200px（自动收起）
+    // 2. 窄窗抽屉断点 < 900px：若底部终端展开则自动折叠（不持久化）
     if (width < BP_OVERLAY_DRAWER) {
-      if (firstMeasure || prevWidth >= BP_OVERLAY_DRAWER) {
-        if (isPanelGroupExpanded.value) {
-          panelGroup.value.collapsed = true;
-          autoCollapsedByNarrowRight.value = true;
-        }
-      }
-    } else if (width < BP_COLLAPSE_RIGHT_PANEL) {
-      if (firstMeasure || prevWidth >= BP_COLLAPSE_RIGHT_PANEL) {
-        if (isPanelGroupExpanded.value) {
-          panelGroup.value.collapsed = true;
-          autoCollapsedByNarrowRight.value = true;
-        }
-      }
-    } else {
-      if (autoCollapsedByNarrowRight.value) {
-        panelGroup.value.visible = preferredVisible.value;
-        panelGroup.value.collapsed = preferredCollapsed.value;
-        autoCollapsedByNarrowRight.value = false;
-        refreshActivePanelData();
-      }
-    }
-
-    // 3. 非抽屉展开状态下确保编辑区 >= 480px
-    if (!isOverlayDrawer.value && isPanelGroupExpanded.value) {
-      const maxAllowed = computeMaxPanelWidth(width);
-      if (panelGroup.value.width > maxAllowed) {
-        panelGroup.value.width = maxAllowed;
+      if ((firstMeasure || prevWidth >= BP_OVERLAY_DRAWER) && isTerminalPanelShown.value) {
+        terminalPanel.value.collapsed = true;
       }
     }
   }
@@ -511,21 +302,11 @@ export const usePanelsStore = defineStore('panels', () => {
     forceOverlayDrawer.value = enabled;
     if (enabled) {
       leftSidebarCollapsed.value = true;
-      if (isPanelGroupExpanded.value) {
-        panelGroup.value.collapsed = true;
-        autoCollapsedByNarrowRight.value = true;
-      }
       return;
     }
 
     if (viewportWidth.value >= BP_COLLAPSE_LEFT_SIDEBAR) {
       leftSidebarCollapsed.value = false;
-    }
-    if (viewportWidth.value >= BP_COLLAPSE_RIGHT_PANEL && autoCollapsedByNarrowRight.value) {
-      panelGroup.value.visible = preferredVisible.value;
-      panelGroup.value.collapsed = preferredCollapsed.value;
-      autoCollapsedByNarrowRight.value = false;
-      refreshActivePanelData();
     }
   }
 
@@ -583,13 +364,11 @@ export const usePanelsStore = defineStore('panels', () => {
 
   function dispose(): void {
     clearOutlineTimer();
-    clearWidthPersistTimer();
     clearLeftSidebarWidthPersistTimer();
     clearTerminalHeightPersistTimer();
   }
 
   return {
-    panelGroup,
     leftSidebar,
     terminalPanel,
     viewportWidth,
@@ -601,23 +380,11 @@ export const usePanelsStore = defineStore('panels', () => {
     relatedLoading,
     relatedError,
     relatedEmptyReason,
-    recentItems,
-    recentLoading,
-    isPanelGroupExpanded,
-    isOutlineVisible,
     isTerminalPanelShown,
     leftSidebarWidth,
     isOverlayDrawer,
     isNarrowLeftBreakpoint,
-    isNarrowRightBreakpoint,
-    applyPanelGroupState,
     initialize,
-    selectPanel,
-    togglePanel,
-    toggleOutlinePanel,
-    toggleCollapseAll,
-    setPanelWidth,
-    commitPanelWidth,
     applyViewportWidth,
     setForceOverlayDrawer,
     toggleLeftSidebar,
@@ -630,7 +397,6 @@ export const usePanelsStore = defineStore('panels', () => {
     setTerminalPanelHeight,
     commitTerminalPanelHeight,
     refreshRelatedNotes,
-    refreshRecentNotes,
     jumpToHeading,
     recomputeOutlineNow,
     dispose,

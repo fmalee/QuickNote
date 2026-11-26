@@ -45,9 +45,7 @@ export const NATIVE_MENU_ACTION_IDS = [
   'editor.heading6',
   'panel.toggle.outline',
   'panel.toggle.related',
-  'panel.toggle.recent',
   'panel.toggle.terminal',
-  'panel.collapseGroup',
 ] as const;
 
 const FIXED_NATIVE_MENU_ACCELERATORS: Readonly<Record<string, string>> = {

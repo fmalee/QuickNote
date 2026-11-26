@@ -89,7 +89,6 @@ function makeUiState(lastRelPath: string | null = 'inbox.md'): UiState {
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
     filters: { activeTab: 'recent', selectedDir: null, selectedTags: [], listScrollTop: 0 },
-    panelGroup: { visible: true, activeId: 'outline', width: 260, collapsed: false },
     selectedWorkspaceKey: null,
     lastActiveDoc: lastRelPath
       ? { relPath: lastRelPath, workspaceKey: null, touchedAtMs: 100 }

@@ -29,7 +29,6 @@ function makeDefaultUiState(): UiState {
       main: { x: 100, y: 100, width: 1280, height: 800, mode: 'standard', isOpen: true },
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
-    panelGroup: { visible: true, activeId: 'outline', width: 260, collapsed: false },
     leftSidebar: { width: 300, activeView: 'workspace', collapsed: false },
     terminalPanel: { visible: false, height: 240, collapsed: false },
     filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },

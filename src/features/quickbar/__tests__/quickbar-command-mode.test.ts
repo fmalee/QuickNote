@@ -128,7 +128,6 @@ function createSampleUiState(): UiState {
       workspaceKey: 'quicknote',
       touchedAtMs: 1700000000000,
     },
-    panelGroup: { visible: true, activeId: 'outline', width: 260, collapsed: false },
     windows: {
       main: { isOpen: false, mode: 'standard', x: 0, y: 0, width: 1200, height: 800 },
     },

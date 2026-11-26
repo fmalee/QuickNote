@@ -489,14 +489,6 @@ export type OpenExternalUrlArgs = {
 	url: string,
 };
 
-/**  Right panel group state (`C6.3`). */
-export type PanelGroupUiState = {
-	visible: boolean,
-	activeId: PanelId,
-	width: number,
-	collapsed: boolean,
-};
-
 /**  Right-side panel identifier (`C6.2`, `C6.3`, `C7.4`). */
 export type PanelId = "outline" | "terminal" | "related" | "recent";
 
@@ -881,7 +873,6 @@ export type TerminalWriteArgs = {
 export type UiState = {
 	windows: WindowsUiState,
 	tabs: TabsUiState,
-	panelGroup: PanelGroupUiState,
 	leftSidebar?: LeftSidebarUiState,
 	terminalPanel?: TerminalPanelUiState,
 	filters: FiltersUiState,
@@ -899,7 +890,7 @@ export type UiStateArgs = {
 };
 
 /**  Whitelisted patch keys accepted by `ui_state_set` (`C4.2`, `C6.3`). */
-export type UiStatePatchKey = "windows" | "tabs" | "panelGroup" | "leftSidebar" | "terminalPanel" | "filters" | "selectedWorkspace" | "hotkey" | "lastActiveDoc" | "workspaceModes" | "backupPaths";
+export type UiStatePatchKey = "windows" | "tabs" | "leftSidebar" | "terminalPanel" | "filters" | "selectedWorkspace" | "hotkey" | "lastActiveDoc" | "workspaceModes" | "backupPaths";
 
 /**  Result returned by `note_undo_last_append` (`C8.3`). */
 export type UndoAppendResult = {

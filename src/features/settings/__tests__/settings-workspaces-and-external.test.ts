@@ -161,7 +161,6 @@ function makeUiState(): UiState {
       main: { x: 100, y: 100, width: 1200, height: 800, mode: 'standard', isOpen: true },
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
-    panelGroup: { visible: true, activeId: 'outline', width: 260, collapsed: false },
     filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },
     selectedWorkspaceKey: null,
     lastActiveDoc: null,

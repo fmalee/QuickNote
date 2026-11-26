@@ -215,7 +215,6 @@ function makeUiState(mode: 'standard' | 'auxiliary' | 'fullscreen' = 'standard')
       main: { x: 100, y: 100, width: 1280, height: 800, mode, isOpen: true },
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
-    panelGroup: { visible: true, activeId: 'outline', width: 260, collapsed: false },
     filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },
     selectedWorkspaceKey: null,
     hotkey: { combo: 'ctrl+alt+space', backupCombo: 'ctrl+alt+cmd+space', selfCheck: 'ok' },

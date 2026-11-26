@@ -155,7 +155,6 @@ function makeUiState(): UiState {
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
     filters: { activeTab: 'recent', selectedDir: null, selectedTags: [], listScrollTop: 0 },
-    panelGroup: { visible: true, activeId: 'outline', width: 260, collapsed: false },
     selectedWorkspaceKey: null,
     lastActiveDoc: null,
     workspaceModes: {},

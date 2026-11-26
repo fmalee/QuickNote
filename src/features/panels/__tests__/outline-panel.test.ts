@@ -46,7 +46,6 @@ function makeUiState(): UiState {
     },
     tabs: { items: [], activeKey: null, closedStack: [] },
     filters: { activeTab: 'inbox', selectedDir: null, selectedTags: [], listScrollTop: 0 },
-    panelGroup: { visible: true, activeId: 'outline', width: 260, collapsed: false },
     selectedWorkspaceKey: null,
     lastActiveDoc: null,
     workspaceModes: {},
@@ -147,7 +146,7 @@ describe('outlineExtractor & usePanelsStore', () => {
     expect(findActiveHeadingIndex([], 5)).toBe(-1);
   });
 
-  it('debounces outline updates by 150ms, highlights active heading, and persists panelGroup toggles', async () => {
+  it('debounces outline updates by 150ms and highlights active heading', async () => {
     const doc = makeDoc('# 初始标题\n正文');
     mockNoteRead.mockResolvedValue(doc);
 
@@ -169,23 +168,5 @@ describe('outlineExtractor & usePanelsStore', () => {
     editorTabsStore.setActiveTopLine(3);
     await vi.advanceTimersByTimeAsync(0);
     expect(panelsStore.activeHeadingIndex).toBe(1);
-
-    // ⌃⌘O 切换大纲折叠并持久化
-    panelsStore.toggleOutlinePanel();
-    expect(panelsStore.panelGroup.collapsed).toBe(true);
-    expect(panelsStore.isOutlineVisible).toBe(false);
-    expect(mockUiStateSet).toHaveBeenLastCalledWith({
-      key: 'panelGroup',
-      value: { visible: true, activeId: 'outline', width: 260, collapsed: true },
-    });
-
-    // ⌃⌘0 展开全部面板组并持久化
-    panelsStore.toggleCollapseAll();
-    expect(panelsStore.panelGroup.collapsed).toBe(false);
-    expect(panelsStore.isOutlineVisible).toBe(true);
-    expect(mockUiStateSet).toHaveBeenLastCalledWith({
-      key: 'panelGroup',
-      value: { visible: true, activeId: 'outline', width: 260, collapsed: false },
-    });
   });
 });

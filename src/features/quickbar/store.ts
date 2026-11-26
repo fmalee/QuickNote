@@ -193,10 +193,14 @@ function createFallbackUiState(): UiState {
       closedStack: [],
     },
     lastActiveDoc: null,
-    panelGroup: {
-      visible: true,
-      activeId: 'outline',
-      width: 260,
+    leftSidebar: {
+      width: 300,
+      activeView: 'workspace',
+      collapsed: false,
+    },
+    terminalPanel: {
+      visible: false,
+      height: 240,
       collapsed: false,
     },
     windows: {
@@ -1190,14 +1194,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
       removeDraftStorage();
 
       if (openInMain) {
-        await Promise.resolve(
-          patchQuickBarUiState('panelGroup', {
-            visible: true,
-            activeId: 'outline',
-            width: 260,
-            collapsed: false,
-          }),
-        ).catch(() => undefined);
         await hideQuickBarWindow('esc');
         await showMainWindowForOnboarding();
       } else {

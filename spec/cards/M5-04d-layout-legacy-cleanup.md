@@ -20,10 +20,14 @@
 - `src/features/panels/index.ts`
 - `src/features/panels/RecentNotesPanel.vue`（删除）
 - `src/lib/actions/registry.ts`（只改 `NATIVE_MENU_ACTION_IDS` 一处）
+- `src/features/quickbar/store.ts`（只动 `panelGroup` 的两处，见 3.6；本卡因此共 9 个代码文件，属明示例外）
 
-删除类例外（仅当第 3.1 步确认全仓零引用时才删除，否则不动）：`src/features/settings/VisualBaselinePreview.vue`
+删除类例外（仅当第 3.1 步确认全仓零引用时才删除，否则不动）：`src/features/settings/VisualBaselinePreview.vue`（设置页 `SettingsView.vue` 仍在用，预期结果是保留）
 
-测试文件（不计入上限）：`src/lib/actions/__tests__/action-registry.test.ts`、`src/features/panels/__tests__/` 下的受影响用例。
+测试文件（不计入上限）：
+
+- `src/lib/actions/__tests__/action-registry.test.ts`、`src/features/panels/__tests__/` 下的受影响用例。
+- 全仓所有因 `UiState` 类型变化而报错的测试文件（基线实测约 16 个，分布在 `src/app/__tests__/`、`src/features/settings/__tests__/`、`src/features/editor/__tests__/`、`src/features/notes/__tests__/`、`src/features/quickbar/__tests__/`）。只允许删掉 mock 里的 `panelGroup` 字段、`PanelGroupUiState` 类型导入，以及针对已删功能的断言；其余内容一个字符都不改。以类型检查和单测实际报错的清单为准，不必和这里的文件数一一对应。
 
 ## 3. 具体实现要求
 
@@ -39,7 +43,9 @@ grep -rn 'VisualBaselinePreview' src/
 grep -rn 'panel.toggle.recent\|panel.collapseGroup' src/ src-tauri/src/
 ```
 
-若有非预期引用（即不在本卡白名单文件内、也不是马上要删的定义），停下并报告。
+若有引用落在白名单之外、也不是马上要删的定义，停下并报告。已知并已列入白名单的例外：`src/features/quickbar/store.ts` 的两处（见 3.6）。
+
+`src-tauri/tests/persistence_test.rs` 里旧版 `ui-state.json` 样本中的 `"panelGroup"` 键是兼容性样本，保留不删；只有当该文件里有对 `panel_group` 的断言报错时才做最小适配。
 
 ### 3.2 Rust
 
@@ -69,6 +75,14 @@ grep -rn 'panel.toggle.recent\|panel.collapseGroup' src/ src-tauri/src/
 ### 3.5 测试
 
 删除只针对已删功能的用例；其余用例因导出变化做最小适配。不得为了过测试而恢复已删代码。
+
+`src/features/quickbar/__tests__/quickbar-capture-flow.test.ts` 里对 `key: 'panelGroup'` 的 `uiStateSet` 断言随行为一起删除，不要改成别的键。
+
+### 3.6 `src/features/quickbar/store.ts` 的两处 `panelGroup`
+
+1. 默认 `UiState` 对象里的 `panelGroup: { ... }` 整块删除。类型检查若要求补 `leftSidebar` / `terminalPanel`，按生成的类型补上带默认值的字段即可。
+2. 追加笔记并选择在主窗口打开（`openInMain`）时调用的 `patchQuickBarUiState('panelGroup', { visible: true, activeId: 'outline', width: 260, collapsed: false })`：整个 `await Promise.resolve(...).catch(...)` 语句删除，不替换成别的键。
+   原意是强制展开右侧的大纲面板；右侧栏已不存在，主窗口打开后左侧栏保持用户上次的状态。保留后面的 `hideQuickBarWindow('esc')` 与 `showMainWindowForOnboarding()` 不变。
 
 ## 4. 自动化验收标准（必须全绿）
 

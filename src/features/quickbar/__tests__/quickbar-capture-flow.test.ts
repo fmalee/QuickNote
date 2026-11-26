@@ -160,7 +160,6 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     filters: { activeTab: 'recent', selectedDir: null, selectedTags: [], listScrollTop: 0 },
     tabs: { items: [], activeKey: null, closedStack: [] },
     lastActiveDoc: null,
-    panelGroup: { visible: true, activeId: 'outline', width: 260, collapsed: false },
     windows: {
       main: {
         isOpen: false,
@@ -568,10 +567,6 @@ describe('quickbar-capture-flow (M1-05)', () => {
     });
     await store2.submitAppend(true);
     expect(store2.draft).toBe('');
-    expect(mockUiStateSet).toHaveBeenCalledWith({
-      key: 'panelGroup',
-      value: { visible: true, activeId: 'outline', width: 260, collapsed: false },
-    });
     expect(mockWindowShowMain).toHaveBeenCalledWith({ mode: null });
   });
 });
