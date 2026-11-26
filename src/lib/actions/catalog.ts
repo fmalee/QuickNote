@@ -27,7 +27,7 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     id: 'quickbar.mode.capture',
     title: '切换到捕捉模式',
     category: 'quickbar',
-    defaultKeys: null,
+    defaultKeys: 'cmd+n',
     scope: 'quickbar',
     run: noopAction,
   },

@@ -321,13 +321,9 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
     expect(dispatched.handled).toBe(true);
     expect(store.mode).toBe('open');
 
-    // First Esc returns to capture mode without hiding Quick Bar
+    // Esc in open mode directly hides Quick Bar and resets mode to capture
     await store.handleEscape();
     expect(store.mode).toBe('capture');
-    expect(mockWindowHideQuickBar).not.toHaveBeenCalled();
-
-    // Second Esc hides Quick Bar
-    await store.handleEscape();
     expect(mockWindowHideQuickBar).toHaveBeenCalledWith({ reason: 'esc' });
 
     dispose();
@@ -783,7 +779,7 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
       expect(dispatchRes.handled).toBe(false);
       expect(mockNoteAppend).not.toHaveBeenCalled();
 
-      // 2. In open mode, one Esc with bubbles: true returns to capture mode and must NOT hide Quick Bar
+      // 2. In open mode, one Esc with bubbles: true stops bubbling and hides Quick Bar once (R33)
       const escEvent = new FakeKeyboardEvent('keydown', {
         key: 'Escape',
         code: 'Escape',
@@ -794,7 +790,8 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
       inputEl!.dispatchEvent(escEvent);
       expect(escEvent.cancelBubble).toBe(true);
       expect(store.mode).toBe('capture');
-      expect(mockWindowHideQuickBar).not.toHaveBeenCalled();
+      expect(mockWindowHideQuickBar).toHaveBeenCalledTimes(1);
+      expect(mockWindowHideQuickBar).toHaveBeenCalledWith({ reason: 'esc' });
     } finally {
       app.unmount();
       store.dispose();

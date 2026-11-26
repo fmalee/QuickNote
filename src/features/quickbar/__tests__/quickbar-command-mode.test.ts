@@ -284,13 +284,10 @@ describe('quickbar-command-mode', () => {
       expect(handledOpen.handled).toBe(true);
       expect(store.mode).toBe('open');
 
-      // 回到 command 模式后，第一次 Esc 退回 capture 模式而不隐藏，第二次 Esc 隐藏窗口
+      // 回到 command 模式后，按 Esc 直接隐藏窗口并将模式复位为 capture
       store.mode = 'command';
       await store.handleEscape();
       expect(store.mode).toBe('capture');
-      expect(mockWindowHideQuickBar).not.toHaveBeenCalled();
-
-      await store.handleEscape();
       expect(mockWindowHideQuickBar).toHaveBeenCalledWith({ reason: 'esc' });
     } finally {
       disposers.forEach((dispose) => dispose());

@@ -481,4 +481,12 @@ describe('ActionRegistry 作用域优先级、显式吞键与冲突矩阵', () =
     expect(registry.detectConflicts('window.nextTab', 'ctrl+tab')).toEqual([]);
     expect(registry.detectConflicts('window.prevTab', 'ctrl+shift+tab')).toEqual([]);
   });
+
+  it('10. quickbar.mode.capture 默认绑定 cmd+n 且与 main-window 的 window.newNote 不冲突', () => {
+    const registry = createActionRegistry({ storage: null });
+    registerDefaultActionCatalog(registry);
+
+    expect(registry.getEffectiveKeys('quickbar.mode.capture')).toBe('cmd+n');
+    expect(registry.detectConflicts('quickbar.mode.capture', 'cmd+n')).toEqual([]);
+  });
 });

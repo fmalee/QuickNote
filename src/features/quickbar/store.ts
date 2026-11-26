@@ -1177,11 +1177,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
       closeTargetPicker();
       return;
     }
-    if (mode.value !== 'capture') {
-      mode.value = 'capture';
-      focusTick.value += 1;
-      return;
-    }
     await hide('esc');
   }
 

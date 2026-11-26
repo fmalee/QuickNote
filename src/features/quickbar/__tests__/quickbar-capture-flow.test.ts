@@ -498,14 +498,10 @@ describe('quickbar-capture-flow (M1-05)', () => {
     expect(store.effectiveTargetRelPath).toBe('work-b/spec.md');
     expect(store.targetChipLabel).toContain('B 区规格');
 
-    // Esc 第二层：open/command 模式先退回 capture 模式
+    // Esc 在 open 模式下直接隐藏 Quick Bar 并将模式复位为 capture
     store.mode = 'open';
     await store.handleEscape();
     expect(store.mode).toBe('capture');
-    expect(mockWindowHideQuickBar).not.toHaveBeenCalled();
-
-    // Esc 第三层：capture 主视图才隐藏 Quick Bar
-    await store.handleEscape();
     expect(mockWindowHideQuickBar).toHaveBeenCalledWith({ reason: 'esc' });
   });
 
