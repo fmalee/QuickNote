@@ -17,7 +17,6 @@ use crate::domain::window::{HideReason, WindowState};
 use crate::infra::external_open::{ExternalLauncher, MacosExternalLauncher};
 use crate::infra::macos::{NativeWindowBridge, NoopNativeBridge};
 use crate::infra::settings_watch::SettingsWatcher;
-use crate::infra::spotlight::SpotlightRunner;
 use crate::infra::vault_watch::VaultWatcher;
 
 pub mod application;
@@ -624,9 +623,6 @@ pub fn run() -> Result<(), tauri::Error> {
             let cm = Arc::new(CaptureManager::new());
             app.manage(Arc::clone(&cm));
 
-            let spotlight_runner = Arc::new(SpotlightRunner::new());
-            app.manage(spotlight_runner);
-
             let external_launcher: Arc<dyn ExternalLauncher> = Arc::new(MacosExternalLauncher);
             app.manage(external_launcher);
 
@@ -784,7 +780,6 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::notes::note_export_pdf,
             commands::search::search_notes_and_files,
             commands::search::commands_search,
-            commands::search::search_spotlight,
             commands::search::path_complete,
             commands::external::external_actions_resolve,
             commands::external::external_action_run,

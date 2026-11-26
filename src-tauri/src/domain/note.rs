@@ -339,15 +339,6 @@ pub struct SearchResponse {
     pub truncated: bool,
 }
 
-/// Arguments for `search_spotlight` (`C4.2`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct SpotlightArgs {
-    pub query: String,
-    #[specta(type = specta_typescript::Number)]
-    pub request_id: u64,
-}
-
 /// Arguments for `path_complete` (`C4.2`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]

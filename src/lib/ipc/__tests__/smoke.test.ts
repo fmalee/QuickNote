@@ -25,7 +25,6 @@ import {
   noteExportPdf,
   notesGetRelated,
   pathComplete,
-  searchSpotlight,
   settingsExport,
   settingsImport,
   tagsBatchRename,
@@ -123,13 +122,7 @@ describe('IPC smoke wrapper', () => {
     expect(res).toEqual({ updatedFiles: 2 });
   });
 
-  it('invokes M3-01b searchSpotlight, pathComplete, externalActionsResolve, and externalActionRun', async () => {
-    mockInvoke.mockResolvedValueOnce({ requestId: 1, items: [], truncated: false });
-    await searchSpotlight({ query: 'foo', requestId: 1 });
-    expect(mockInvoke).toHaveBeenCalledWith('search_spotlight', {
-      args: { query: 'foo', requestId: 1 },
-    });
-
+  it('invokes M3-01b pathComplete, externalActionsResolve, and externalActionRun', async () => {
     mockInvoke.mockResolvedValueOnce([]);
     await pathComplete({ prefix: '/tmp/', requestId: 2 });
     expect(mockInvoke).toHaveBeenCalledWith('path_complete', {

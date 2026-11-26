@@ -738,12 +738,6 @@ export type SettingsSnapshot = {
 	status: SettingsLoadStatus,
 };
 
-/**  Arguments for `search_spotlight` (`C4.2`). */
-export type SpotlightArgs = {
-	query: string,
-	requestId: number,
-};
-
 /**  Single open editor tab state (`C6.3`). */
 export type TabItemState = {
 	key: string,

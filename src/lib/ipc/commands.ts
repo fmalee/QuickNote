@@ -51,7 +51,6 @@ import type {
   SetRootArgs,
   SettingsPatch,
   SettingsSnapshot,
-  SpotlightArgs,
   TagRenameArgs,
   TagRenameResult,
   TargetResolveInput,
@@ -247,10 +246,6 @@ export function notesGetRelated(args: RelPathArgs): Promise<RelatedNoteItem[]> {
 
 export function tagsBatchRename(args: TagRenameArgs): Promise<TagRenameResult> {
   return invoke<TagRenameResult>('tags_batch_rename', { args });
-}
-
-export function searchSpotlight(args: SpotlightArgs): Promise<SearchResponse> {
-  return invoke<SearchResponse>('search_spotlight', { args });
 }
 
 export function pathComplete(args: PathCompleteArgs): Promise<PathEntry[]> {

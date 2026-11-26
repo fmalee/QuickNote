@@ -24,8 +24,8 @@ use crate::domain::note::{
     NoteDoc, NoteMeta, NoteMetaPatch, NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs,
     PathCompleteArgs, PathEntry, ReadNoteArgs, RelPathArgs, RelatedNoteItem, RelatedReason,
     RenameNoteArgs, SaveImageArgs, SavedImageResult, SearchItemKind, SearchQueryArgs,
-    SearchResponse, SearchResultItem, SearchSource, SpotlightArgs, TagNode, TagRenameArgs,
-    TagRenameResult, WorkspaceSummary, WriteNoteArgs, WriteResult,
+    SearchResponse, SearchResultItem, SearchSource, TagNode, TagRenameArgs, TagRenameResult,
+    WorkspaceSummary, WriteNoteArgs, WriteResult,
 };
 use crate::domain::settings::{
     EditorSettings, EditorSettingsPatch, EditorTheme, EditorsSettings, EditorsSettingsPatch,
@@ -147,7 +147,6 @@ pub fn collect_types() -> Types {
         .register::<SearchResultItem>()
         .register::<SearchQueryArgs>()
         .register::<SearchResponse>()
-        .register::<SpotlightArgs>()
         .register::<PathCompleteArgs>()
         .register::<PathEntry>()
         .register::<ExternalActionId>()

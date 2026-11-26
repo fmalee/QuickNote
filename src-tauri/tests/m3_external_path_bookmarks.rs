@@ -1,17 +1,14 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::sync::Mutex;
 
 use quicknote_lib::application::external::{
     directory_workspace_config_get, directory_workspace_config_write, external_action_run,
     external_actions_resolve, external_bookmark_add, external_bookmark_remove,
     external_bookmarks_list, external_list_directory, external_list_sibling_files,
     external_probe_path, external_search_roots, path_complete,
-    resolve_effective_workspace_for_path, search_spotlight,
+    resolve_effective_workspace_for_path,
 };
 use quicknote_lib::application::index::index_rebuild;
 use quicknote_lib::application::library::set_library_root;
@@ -20,19 +17,16 @@ use quicknote_lib::application::persistence::PersistenceManager;
 use quicknote_lib::domain::bookmark::ExternalBookmarkKind;
 use quicknote_lib::domain::error::{AppError, ErrorCode};
 use quicknote_lib::domain::external::{
-    is_spotlight_blacklisted, ExternalActionId, ExternalActionState, ResolveExternalArgs,
-    RunExternalArgs, SETTINGS_FILE_SENTINEL,
+    ExternalActionId, ExternalActionState, ResolveExternalArgs, RunExternalArgs,
+    SETTINGS_FILE_SENTINEL,
 };
-use quicknote_lib::domain::note::{
-    PathCompleteArgs, ReadNoteArgs, SearchQueryArgs, SearchSource, SpotlightArgs,
-};
+use quicknote_lib::domain::note::{PathCompleteArgs, ReadNoteArgs, SearchQueryArgs, SearchSource};
 use quicknote_lib::domain::settings::{
     parse_settings_yaml, ExternalAppConfig, SetRootArgs, SettingsPatch, WorkspaceConfig,
 };
 use quicknote_lib::domain::workspace_context::DirectoryWorkspaceConfig;
 use quicknote_lib::infra::external_open::ExternalLauncher;
 use quicknote_lib::infra::fs_browser::{ListDirectoryOptions, PathEntryKind};
-use quicknote_lib::infra::spotlight::{SpotlightRunner, SPOTLIGHT_HARD_LIMIT};
 
 static TEST_DIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -136,131 +130,6 @@ fn find_state(states: &[ExternalActionState], id: ExternalActionId) -> &External
         .iter()
         .find(|s| s.id == id)
         .expect("all 8 action states present")
-}
-
-#[test]
-fn spotlight_blacklist_and_hard_limit_50() {
-    assert!(is_spotlight_blacklisted("/repo/.git/HEAD"));
-    assert!(is_spotlight_blacklisted("/repo/node_modules/pkg/index.js"));
-    assert!(is_spotlight_blacklisted("/repo/target/debug/app"));
-    assert!(is_spotlight_blacklisted("/repo/dist/bundle.js"));
-    assert!(is_spotlight_blacklisted("/repo/build/output.o"));
-    assert!(is_spotlight_blacklisted("/repo/.venv/bin/python"));
-    assert!(is_spotlight_blacklisted("/repo/docs/.DS_Store"));
-    assert!(!is_spotlight_blacklisted("/repo/src/main.rs"));
-
-    let (_app, lib, pm) = setup_pm();
-    let root_str = lib.path().to_string_lossy().to_string();
-    pm.settings_update(SettingsPatch {
-        search_roots: Some(vec![root_str]),
-        ..Default::default()
-    })
-    .expect("update search_roots");
-
-    let runner = SpotlightRunner::with_command_factory(|_root, _query| {
-        let mut lines = vec![
-            "/tmp/proj/.git/config".to_string(),
-            "/tmp/proj/node_modules/a.js".to_string(),
-            "/tmp/proj/target/out".to_string(),
-            "/tmp/proj/dist/app.js".to_string(),
-            "/tmp/proj/build/main.o".to_string(),
-            "/tmp/proj/.venv/pyvenv.cfg".to_string(),
-            "/tmp/proj/.DS_Store".to_string(),
-        ];
-        for i in 0..75 {
-            lines.push(format!("/tmp/proj/src/file_{i:02}.rs"));
-        }
-        let payload = lines.join("\n");
-        let mut cmd = Command::new("/usr/bin/printf");
-        cmd.arg("%s\n").arg(payload);
-        cmd
-    });
-
-    let resp = search_spotlight(
-        &pm,
-        &runner,
-        SpotlightArgs {
-            query: "file".to_string(),
-            request_id: 42,
-        },
-    )
-    .expect("search_spotlight");
-
-    assert_eq!(resp.request_id, 42);
-    assert!(resp.truncated);
-    assert_eq!(resp.items.len(), SPOTLIGHT_HARD_LIMIT);
-    assert!(resp
-        .items
-        .iter()
-        .all(|item| item.source == SearchSource::Spotlight
-            && !is_spotlight_blacklisted(&item.abs_path)));
-}
-
-#[test]
-#[ignore = "已知遗留：并发取消 10s 超时；Spotlight 已于 v5 废止，随 M5-06e1 删除 Spotlight 时一并移除"]
-fn spotlight_concurrent_request_cancels_previous_process() {
-    let (_app, lib, pm) = setup_pm();
-    let root_str = lib.path().to_string_lossy().to_string();
-    pm.settings_update(SettingsPatch {
-        search_roots: Some(vec![root_str]),
-        ..Default::default()
-    })
-    .expect("update search_roots");
-
-    let runner = Arc::new(SpotlightRunner::with_command_factory(|_root, query| {
-        if query == "slow" {
-            let mut cmd = Command::new("/bin/sleep");
-            cmd.arg("10");
-            cmd
-        } else {
-            let mut cmd = Command::new("/usr/bin/printf");
-            cmd.arg("%s\n").arg("/tmp/fast_hit.txt");
-            cmd
-        }
-    }));
-
-    let runner_t1 = Arc::clone(&runner);
-    let app_dir_path = _app.path().to_path_buf();
-    let t1 = thread::spawn(move || {
-        let pm_t1 = PersistenceManager::open(app_dir_path).expect("open pm in thread");
-        let start = Instant::now();
-        let res = search_spotlight(
-            &pm_t1,
-            &runner_t1,
-            SpotlightArgs {
-                query: "slow".to_string(),
-                request_id: 1,
-            },
-        )
-        .expect("slow search");
-        (res, start.elapsed())
-    });
-
-    // Give request 1 a brief moment to spawn `/bin/sleep 10`.
-    thread::sleep(Duration::from_millis(80));
-
-    let res2 = search_spotlight(
-        &pm,
-        &runner,
-        SpotlightArgs {
-            query: "fast".to_string(),
-            request_id: 2,
-        },
-    )
-    .expect("fast search");
-
-    let (res1, elapsed1) = t1.join().expect("join thread 1");
-    assert!(
-        elapsed1 < Duration::from_secs(2),
-        "expected cancelled request 1 to return fast, took {:?}",
-        elapsed1
-    );
-    assert!(res1.items.is_empty());
-    assert!(!res1.truncated);
-
-    assert_eq!(res2.request_id, 2);
-    assert_eq!(res2.items.len(), 1);
-    assert_eq!(res2.items[0].abs_path, "/tmp/fast_hit.txt");
 }
 
 #[test]

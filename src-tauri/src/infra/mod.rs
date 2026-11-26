@@ -4,7 +4,6 @@ pub mod fs_browser;
 pub mod macos;
 pub mod pty;
 pub mod settings_watch;
-pub mod spotlight;
 pub mod sqlite;
 pub mod trash;
 pub mod vault_watch;

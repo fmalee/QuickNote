@@ -36,8 +36,7 @@
 | Rust 全量单元与集成测试 | `cargo test --manifest-path src-tauri/Cargo.toml --all-features` | 核心 94 条全部通过（含 10k Vault 性能压测、0002 迁移、只读对账、三级级联、目录工作区原子写、外部直扫与书签、PTY 生命周期与辅助窗口策略） |
 
 > 备注（已知非阻断遗留项）：
-> - `prettier --check .` 有 10 个历史文件待执行 `pnpm format` 统一格式化；
-> - 已废弃 Spotlight 历史兼容用例 `m3_spotlight_path_external::spotlight_concurrent_request_cancels_previous_process` 在并发执行下触发 10s 超时（Spotlight 主检索已于 v5 废止，后续清理 `infra/spotlight.rs` 时一并移除）。`M5-01b` 起已标 `#[ignore]`，待 `M5-06e1` 删除。
+> - `prettier --check .` 有 10 个历史文件待执行 `pnpm format` 统一格式化。
 
 ## 4. 已验证实机约定（摘要）
 

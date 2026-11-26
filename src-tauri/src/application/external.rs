@@ -20,21 +20,18 @@ use crate::domain::external::{
     ExternalResolveContext, ExternalWorkspaceTarget, PathProbe, ResolveExternalArgs,
     RunExternalArgs, SETTINGS_FILE_SENTINEL,
 };
-use crate::domain::note::{
-    parse_note, PathCompleteArgs, PathEntry, SearchItemKind, SearchResponse, SearchResultItem,
-    SearchSource, SpotlightArgs,
-};
+use crate::domain::note::{parse_note, PathCompleteArgs, PathEntry};
 use crate::domain::settings::{ExternalAppConfig, Settings, SettingsPatch, WorkspaceConfig};
 use crate::domain::workspace_context::{
     resolve_effective_workspace, DirectoryWorkspaceConfig, EffectiveWorkspaceContext,
     DIRECTORY_CONFIG_FILENAME,
 };
 use crate::infra::external_open::ExternalLauncher;
+use crate::infra::fs::expand_tilde;
 use crate::infra::fs_browser::{
     self, DirectoryEntry, DirectoryListing, FsBrowserError, ListDirectoryOptions, PathEntryKind,
     PathProbeResult, DEFAULT_MAX_DEPTH, DEFAULT_MAX_ENTRIES,
 };
-use crate::infra::spotlight::{expand_tilde, SpotlightRunner, SPOTLIGHT_HARD_LIMIT};
 use crate::infra::sqlite::list_ancestor_directory_workspace_configs;
 use crate::infra::trash::{default_file_remover, FileRemover};
 
@@ -75,8 +72,7 @@ pub fn external_list_sibling_files(
     fs_browser::list_sibling_files(file_path, depth).map_err(map_fs_browser_error)
 }
 
-/// Searches configured `search_roots` and bookmarked directories directly via pure Rust FS traversal
-/// (replaces Spotlight as the primary external directory search path in v5).
+/// Searches configured `search_roots` and bookmarked directories directly via pure Rust FS traversal.
 pub fn external_search_roots(
     pm: &PersistenceManager,
     query: &str,
@@ -414,52 +410,6 @@ pub fn resolve_effective_workspace_for_path(
     ))
 }
 
-/// Runs legacy cancellable Spotlight (`mdfind`) search across configured `search_roots`.
-/// Note: in v5, [`external_search_roots`] is the primary pure-Rust external directory search path.
-pub fn search_spotlight(
-    pm: &PersistenceManager,
-    runner: &SpotlightRunner,
-    args: SpotlightArgs,
-) -> Result<SearchResponse, AppError> {
-    let settings = pm.settings_get()?.settings;
-    let result = runner.search(&settings.search_roots, &args.query)?;
-
-    let items = result
-        .paths
-        .into_iter()
-        .enumerate()
-        .map(|(idx, path)| {
-            let p = Path::new(&path);
-            let kind = if p.is_dir() {
-                SearchItemKind::Dir
-            } else {
-                SearchItemKind::File
-            };
-            let title = p
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&path)
-                .to_string();
-            SearchResultItem {
-                kind,
-                key: format!("abs:{path}"),
-                title,
-                subtitle: path.clone(),
-                rel_path: None,
-                abs_path: path,
-                score: (SPOTLIGHT_HARD_LIMIT.saturating_sub(idx)) as f64,
-                source: SearchSource::Spotlight,
-            }
-        })
-        .collect();
-
-    Ok(SearchResponse {
-        request_id: args.request_id,
-        items,
-        truncated: result.truncated,
-    })
-}
-
 /// Completes local filesystem paths for Quick Bar `/path` mode (`v4` §5.3).
 pub fn path_complete(args: PathCompleteArgs) -> Result<Vec<PathEntry>, AppError> {
     if args.prefix.is_empty() {
@@ -775,9 +725,7 @@ fn resolve_sentinel_path(pm: &PersistenceManager, raw: Option<&str>) -> Option<S
 }
 
 fn expand_optional_path(raw: &str) -> String {
-    expand_tilde(raw)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| raw.to_string())
+    expand_tilde(raw).to_string_lossy().to_string()
 }
 
 fn require_existing_file(path: Option<&str>) -> Result<PathBuf, AppError> {

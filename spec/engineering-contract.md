@@ -270,7 +270,6 @@ pub enum ErrorCode {
 | 搜索与命令库 | `path_complete` | `PathCompleteArgs { prefix: String, requestId: u64 }` | `Vec<PathEntry>` | M3 |
 | 搜索与命令库 | `commands_search` | `CommandSearchArgs { query: String }` | `Vec<CommandEntry>` | M3 |
 | 搜索与命令库 | `tags_batch_rename` | `TagRenameArgs { oldTag: String, newTag: String }` | `TagRenameResult { updatedFiles: u32 }` | M3 |
-| 搜索与命令库 | `search_spotlight` | `SpotlightArgs` | `Vec<SearchResultItem>` | deprecated（Spotlight 已废止，M5-06e 删除） |
 | 外部直扫、书签与目录工作区 | `probe_external_path` | `{ rawPath: String }` | `ExternalPathProbeResult` | v5 |
 | 外部直扫、书签与目录工作区 | `list_external_directory` | `{ dirPath: String, query: Option<String>, includeHidden: bool }` | `ExternalDirectoryListing` | v5 |
 | 外部直扫、书签与目录工作区 | `list_current_doc_siblings` | `{ docPath: String }` | `ExternalDirectoryListing` | v5 |

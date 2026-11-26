@@ -2,19 +2,14 @@ use std::sync::Arc;
 
 use tauri::State;
 
-use crate::application::external::{
-    path_complete as path_complete_uc, search_spotlight as search_spotlight_uc,
-};
+use crate::application::external::path_complete as path_complete_uc;
 use crate::application::notes::{
     commands_search as commands_search_uc, search_notes_and_files as search_uc,
 };
 use crate::application::persistence::PersistenceManager;
 use crate::domain::command_book::{CommandEntry, CommandSearchArgs};
 use crate::domain::error::AppError;
-use crate::domain::note::{
-    PathCompleteArgs, PathEntry, SearchQueryArgs, SearchResponse, SpotlightArgs,
-};
-use crate::infra::spotlight::SpotlightRunner;
+use crate::domain::note::{PathCompleteArgs, PathEntry, SearchQueryArgs, SearchResponse};
 
 #[tauri::command]
 pub fn search_notes_and_files(
@@ -30,15 +25,6 @@ pub fn commands_search(
     args: CommandSearchArgs,
 ) -> Result<Vec<CommandEntry>, AppError> {
     commands_search_uc(&pm, args)
-}
-
-#[tauri::command]
-pub fn search_spotlight(
-    pm: State<'_, Arc<PersistenceManager>>,
-    runner: State<'_, Arc<SpotlightRunner>>,
-    args: SpotlightArgs,
-) -> Result<SearchResponse, AppError> {
-    search_spotlight_uc(&pm, &runner, args)
 }
 
 #[tauri::command]

@@ -30,7 +30,6 @@ const {
   mockNoteRead,
   mockNoteWrite,
   mockSearchNotesAndFiles,
-  mockSearchSpotlight,
   mockPathComplete,
   mockProbeExternalPath,
   mockListExternalDirectory,
@@ -53,7 +52,6 @@ const {
   mockNoteRead: vi.fn(),
   mockNoteWrite: vi.fn(),
   mockSearchNotesAndFiles: vi.fn(),
-  mockSearchSpotlight: vi.fn(),
   mockPathComplete: vi.fn(),
   mockProbeExternalPath: vi.fn(),
   mockListExternalDirectory: vi.fn(),
@@ -79,7 +77,6 @@ vi.mock('@/lib/ipc/commands', () => ({
   noteRead: mockNoteRead,
   noteWrite: mockNoteWrite,
   searchNotesAndFiles: mockSearchNotesAndFiles,
-  searchSpotlight: mockSearchSpotlight,
   pathComplete: mockPathComplete,
   probeExternalPath: mockProbeExternalPath,
   listExternalDirectory: mockListExternalDirectory,
@@ -876,7 +873,6 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
     await store.refreshOpenMode(false);
 
     expect(mockProbeExternalPath).toHaveBeenCalledWith('/usr/local/etc/nginx/nginx.conf');
-    expect(mockSearchSpotlight).not.toHaveBeenCalled();
     expect(store.openGroups).toHaveLength(1);
     expect(store.openGroups[0]?.id).toBe('path_direct');
     expect(store.openGroups[0]?.items[0]?.badgeLabel).toBe('路径直开');
