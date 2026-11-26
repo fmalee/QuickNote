@@ -180,15 +180,15 @@ pub enum ErrorCode {
    - `ConflictInfo { absPath: String, currentBody: String, currentBodyHash: String, currentMtimeMs: i64 }`
    - `NoteMetaPatch { title: Option<String>, docType: Option<NoteType>, tags: Option<Vec<String>>, project: Option<Option<String>>, openDir: Option<Option<String>>, codeWorkspace: Option<Option<String>>, terminalDir: Option<Option<String>>, pinned: Option<bool>, archived: Option<bool> }`
    - `NoteUpdateMetaArgs { absPath: String, patch: NoteMetaPatch }`
-   - `NotesFilterArgs { tab: String, dirRelPath: Option<String>, tags: Vec<String>, workspaceKey: Option<String>, filterText: Option<String> }`
-   - `NavTreeSnapshot { dirs: Vec<DirNode>, tags: Vec<TagNode>, workspaces: Vec<WorkspaceSummary> }`（`DirNode { relPath, name, count, children }`、`TagNode { tag, count, children }`、`WorkspaceSummary { key, name, root, openDir }`）
+   - `NotesFilterArgs { tab: String, dirRelPath: Option<String>, tags: Vec<String>, filterText: Option<String> }`
+   - `NavTreeSnapshot { dirs: Vec<DirNode>, tags: Vec<TagNode> }`（`DirNode { relPath, name, count, children }`、`TagNode { tag, count, children }`）
 
 3. **捕捉、目标解析、追加与撤销（`C8.1`–`C8.3`）**：
    - `CaptureMode = "list" | "todo" | "prose"`
    - `QuickBarMode = "capture" | "open" | "command"`
-   - `TargetResolveInput { mainVisible: bool, activeDocKey: Option<String>, selectedWorkspaceKey: Option<String>, isInboxView: bool }`
-   - `ResolvedTarget { scenario: String, kind: TargetKind, targetRelPath: Option<String>, targetTitle: String, sectionHint: Option<String>, workspaceKey: Option<String>, workspaceName: Option<String>, isCrossWorkspaceFallback: bool, recommendedMode: CaptureMode, chipLabel: String }`（`TargetKind = "unconfigured" | "note" | "inbox"`）
-   - `AppendNoteArgs { targetRelPath: String, content: String, mode: CaptureMode, workspaceKey: Option<String> }`
+   - `TargetResolveInput { mainVisible: bool, activeDocKey: Option<String> }`
+   - `ResolvedTarget { scenario: String, kind: TargetKind, targetRelPath: Option<String>, targetTitle: String, sectionHint: Option<String>, recommendedMode: CaptureMode, chipLabel: String }`（`TargetKind = "unconfigured" | "note" | "inbox"`）
+   - `AppendNoteArgs { targetRelPath: String, content: String, mode: CaptureMode }`
    - `AppendResult { relPath: String, title: String, addedLines: u32, sectionHeading: Option<String>, bodyHash: String, mtimeMs: i64, undoAvailable: bool }`
    - `UndoAppendResult { relPath: String, restoredBodyHash: String, mtimeMs: i64 }`
    - `InboxExtractArgs { fromLine: u32, toLine: u32, newTitle: String, targetDirRelPath: String, templateName: String }`
@@ -278,7 +278,7 @@ pub enum ErrorCode {
 | 外部直扫、书签与目录工作区 | `list_directory_workspace_configs` | — | `Vec<DirectoryWorkspaceConfigEntry>` | v5 |
 | 外部直扫、书签与目录工作区 | `set_directory_workspace_config` | `{ vaultRelDir: String, config: Option<DirectoryWorkspaceConfig> }` | `()` | v5 |
 | 关联、外部与导出 | `notes_get_related` | `RelPathArgs { relPath: String }` | `Vec<RelatedNoteItem>` | M3 |
-| 关联、外部与导出 | `external_actions_resolve` | `ResolveExternalArgs { absPath: Option<String>, workspaceKey: Option<String>, commandId: Option<String> }` | `Vec<ExternalActionState>` | M3 |
+| 关联、外部与导出 | `external_actions_resolve` | `ResolveExternalArgs { absPath: Option<String>, commandId: Option<String> }` | `Vec<ExternalActionState>` | M3 |
 | 关联、外部与导出 | `external_action_run` | `RunExternalArgs { id: ExternalActionId, absPath: Option<String>, dirPath: Option<String> }` | `()` | M3 |
 | 关联、外部与导出 | `note_export_pdf` | `ExportPdfArgs { htmlDocument: String, destPath: String }` | `()` | M4 |
 | 内嵌终端 | `terminal_spawn` | `TerminalSpawnArgs`, `onData: Channel<TerminalData>` | `TerminalSessionInfo` | M4 |
@@ -288,7 +288,7 @@ pub enum ErrorCode {
 | 内嵌终端 | `terminal_kill` | `TerminalKillArgs { sessionId: String }` | `()` | M4 |
 | 内嵌终端 | `terminal_list_sessions` | — | `Vec<TerminalSessionInfo>` | M4 |
 
-> 说明：`ui_state_set` 的键白名单涵盖：`windows`、`tabs`、`leftSidebar`、`terminalPanel`、`filters`、`backupPaths`、`selectedWorkspace`、`hotkey`、`lastActiveDoc`、`workspaceModes`。
+> 说明：`ui_state_set` 的键白名单涵盖：`windows`、`tabs`、`leftSidebar`、`terminalPanel`、`filters`、`backupPaths`、`hotkey`、`lastActiveDoc`。
 
 ### C4.3 事件与流式通道契约
 
@@ -408,7 +408,7 @@ CREATE TABLE IF NOT EXISTS directory_workspace_configs (
    - `settings.yaml`：应用主配置文件（唯一配置文件格式，见 `D-0008`）。
    - `ui-state.json`：窗口、标签、滚动、面板与热键状态。
    - `bookmarks.json`：外部文件/目录书签持久化文件（同时与 `settings.yaml` 的 `external_bookmarks` 保持规范化同步）。
-   - `quickbar-draft.json`：Quick Bar 未提交草稿 `{ mode, targetRelPath, selectedWorkspaceKey, text, updatedAt }`，成功提交或用户显式清空时删除。
+   - `quickbar-draft.json`：Quick Bar 未提交草稿 `{ mode, targetRelPath, text, updatedAt }`，成功提交或用户显式清空时删除。
    - `recovery/<hash>.json`：脏标签每 2 秒增量落盘的崩溃恢复快照，正常保存或干净关闭时删除。
    - `backups/<name>.<YYYYMMDD-HHmmss>.bak`：冲突强制覆盖或损坏 YAML 重写前自动备份；每次写新备份后执行滚动清理，仅保留最近 **30 天**内且总数不超过 **50 份**的备份，超限按修改时间淘汰最旧文件。
 2. **缓存目录（`$APP_CACHE_DIR/`，随时可删除并无损重建）**：
@@ -476,11 +476,11 @@ scan_hidden_files: true                   # 受控目录直扫是否允许 .xxx 
 external_bookmarks: []                    # 常用外部文件/目录书签（持久化于配置目录）
 ```
 
-- 解析使用 `#[serde(deny_unknown_fields)]`（历史 `workspaces` 字段仅作只读向后兼容保留，不再作为工作区主模型）；手改错误时保持原 `settings.yaml` **只读不动**，运行时回退上次有效配置或默认配置，并通过 `SettingsLoadStatus` 返回准确行列号与提示文案（`D-0008`）。
+- 解析使用 `#[serde(deny_unknown_fields)]`（历史 `workspaces` 键仅为兼容旧文件而保留只读解析，不使用、不写出）；手改错误时保持原 `settings.yaml` **只读不动**，运行时回退上次有效配置或默认配置，并通过 `SettingsLoadStatus` 返回准确行列号与提示文案（`D-0008`）。
 
 ### C6.3 `ui-state.json` 完整 Schema
 
-`leftSidebar`、`terminalPanel`、`backupPaths` 在旧版 `ui-state.json` 缺失时取默认值；旧键 `panelGroup` 读取时忽略。
+`leftSidebar`、`terminalPanel`、`backupPaths` 在旧版 `ui-state.json` 缺失时取默认值；旧键 `panelGroup`、`selectedWorkspaceKey`、`workspaceModes` 读取时忽略。
 
 ```typescript
 // 本表对应 Rust UiState 结构体导出形态（camelCase）
@@ -512,9 +512,7 @@ interface UiState {
     listScrollTop: number;
   };
   backupPaths: { lastExportPath: string | null; lastImportPath: string | null };
-  selectedWorkspaceKey: string | null; // 已废弃，M5-06f 移除
-  lastActiveDoc: { relPath: string; workspaceKey: string | null; touchedAtMs: number } | null;
-  workspaceModes: Record<string, "list" | "todo" | "prose">;
+  lastActiveDoc: { relPath: string; touchedAtMs: number } | null;
   hotkey: { combo: string; backupCombo: string; selfCheck: "pending" | "ok" | "conflict" };
 }
 ```
@@ -589,20 +587,16 @@ interface ActionDef {
 
 ## C8. 核心确定性算法与状态机契约
 
-### C8.1 Quick Bar `S1–S8` 目标真值表
+### C8.1 Quick Bar `S1–S4` 目标真值表
 
 `domain::capture::resolve_target(input, state)` 为无副作用纯函数，严格按以下真值表输出（任何实现不得偏离）：
 
 | 场景 | 条件 | 输出目标与说明 |
 | --- | --- | --- |
 | **S1** | `libraryRoot == None` | `kind = unconfigured`（禁用提交） |
-| **S2** | `mainVisible && activeDoc != None` | `kind = note/inbox`，`target = activeDoc`（工作区随 `activeDoc`） |
-| **S3** | `mainVisible && activeDoc == None && selectedWorkspace == Some(W) && lastActiveDoc in 24h && lastActiveDoc.workspace == W` | `target = lastActiveDoc` |
-| **S4** | `mainVisible && activeDoc == None && selectedWorkspace == Some(W)` 且 `lastActiveDoc` 缺失或属于异区 `W'` | 有 `W.defaultEntryDoc` 则取之，否则 `inbox.md`；若因异区触发标记 `isCrossWorkspaceFallback = true` |
-| **S5** | `mainVisible && activeDoc == None && selectedWorkspace == None` | 若 `isInboxView` 取 `inbox.md`；否则 `lastActiveDoc in 24h` 存在则取之，无则 `inbox.md` |
-| **S6** | `!mainVisible && selectedWorkspace == Some(W) && lastActiveDoc in 24h && lastActiveDoc.workspace == W` | 忽略隐藏态 `activeDoc`，`target = lastActiveDoc` |
-| **S7** | `!mainVisible && selectedWorkspace == Some(W)` 且 `lastActiveDoc` 缺失或属于异区 `W'` | 有 `W.defaultEntryDoc` 则取之，否则 `inbox.md`；若因异区触发标记 `isCrossWorkspaceFallback = true` |
-| **S8** | `!mainVisible && selectedWorkspace == None` | `lastActiveDoc in 24h` 存在则取之，否则 `inbox.md` |
+| **S2** | `mainVisible && activeDoc != None` | `kind = note/inbox`，`target = activeDoc` |
+| **S3** | `mainVisible && activeDoc == None` | `lastActiveDoc in 24h` 存在则取之，否则 `inbox.md` |
+| **S4** | `!mainVisible` | `lastActiveDoc in 24h` 存在则取之，否则 `inbox.md` |
 
 ### C8.2 分区追加与前缀去重算法
 
