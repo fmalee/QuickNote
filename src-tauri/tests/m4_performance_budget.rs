@@ -150,6 +150,7 @@ fn generate_10k_vault(vault_dir: &Path) -> PathBuf {
 }
 
 #[test]
+#[ignore = "10k vault / 6MB doc perf benchmark; run with -- --ignored"]
 fn m4_performance_budget_10k_vault_and_6mb_doc() {
     let tmp = TempDir::new();
     let app_data = tmp.path().join("app_data");
