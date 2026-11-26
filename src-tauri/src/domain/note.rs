@@ -220,7 +220,6 @@ pub struct NotesFilterArgs {
     pub tab: String,
     pub dir_rel_path: Option<String>,
     pub tags: Vec<String>,
-    pub workspace_key: Option<String>,
     pub filter_text: Option<String>,
 }
 
@@ -243,23 +242,12 @@ pub struct TagNode {
     pub children: Vec<TagNode>,
 }
 
-/// Workspace summary for navigation (`C3.4`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceSummary {
-    pub key: String,
-    pub name: String,
-    pub root: String,
-    pub open_dir: String,
-}
-
 /// Navigation snapshot returned by `notes_get_tree_and_tags` (`C3.4`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct NavTreeSnapshot {
     pub dirs: Vec<DirNode>,
     pub tags: Vec<TagNode>,
-    pub workspaces: Vec<WorkspaceSummary>,
 }
 
 /// Index lifecycle phase (`C3.4`).

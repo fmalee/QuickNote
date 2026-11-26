@@ -23,7 +23,6 @@ export type AppendNoteArgs = {
 	targetRelPath: string,
 	content: string,
 	mode: CaptureMode,
-	workspaceKey: string | null,
 };
 
 /**  Result returned by `note_append` and emitted on `toast:append-undo` (`C8.2`, `C8.3`). */
@@ -346,7 +345,6 @@ export type IndexStatus = {
 /**  Last active document tracking for Quick Bar target resolution (`C6.3`, `C8.1`). */
 export type LastActiveDocState = {
 	relPath: string,
-	workspaceKey: string | null,
 	touchedAtMs: number,
 };
 
@@ -395,13 +393,12 @@ export type MainWindowState = {
 };
 
 /**  Left navigation active tab (`C6.3`). */
-export type NavTab = "tags" | "recent" | "workspaces" | string;
+export type NavTab = "tags" | "recent" | string;
 
 /**  Navigation snapshot returned by `notes_get_tree_and_tags` (`C3.4`). */
 export type NavTreeSnapshot = {
 	dirs: DirNode[],
 	tags: TagNode[],
-	workspaces: WorkspaceSummary[],
 };
 
 /**  Full document returned by `note_read` (`C3.4`). `body` never contains the YAML block. */
@@ -482,7 +479,6 @@ export type NotesFilterArgs = {
 	tab: string,
 	dirRelPath: string | null,
 	tags: string[],
-	workspaceKey: string | null,
 	filterText: string | null,
 };
 
@@ -530,7 +526,6 @@ export type QuickBarArgs = {
 export type QuickBarDraft = {
 	mode: CaptureMode,
 	targetRelPath: string | null,
-	selectedWorkspaceKey: string | null,
 	text: string,
 	updatedAt: number,
 };
@@ -596,7 +591,6 @@ export type RenameNoteArgs = {
 /**  Request payload for `external_actions_resolve` (`C4.2`). */
 export type ResolveExternalArgs = {
 	absPath: string | null,
-	workspaceKey: string | null,
 	commandId: string | null,
 };
 
@@ -607,9 +601,6 @@ export type ResolvedTarget = {
 	targetRelPath: string | null,
 	targetTitle: string,
 	sectionHint: string | null,
-	workspaceKey: string | null,
-	workspaceName: string | null,
-	isCrossWorkspaceFallback: boolean,
 	recommendedMode: CaptureMode,
 	chipLabel: string,
 };
@@ -697,11 +688,6 @@ export type Settings = {
 	maxActiveEditorRenders?: number,
 	externalBookmarks?: ExternalBookmark[],
 	scanHiddenFiles?: boolean,
-	/**
-	 *  Deprecated in v5 refactor: replaced by directory-level `.quicknote.yaml`.
-	 *  Kept with `#[serde(default)]` for backward-compatible reading of legacy `settings.yaml`.
-	 */
-	workspaces?: { [key in string]: WorkspaceConfig },
 };
 
 /**  Diagnostic status of loading `settings.yaml` (`C3.4`, `D-0008`). */
@@ -728,8 +714,6 @@ export type SettingsPatch = {
 	maxActiveEditorRenders?: number | null,
 	externalBookmarks?: ExternalBookmark[] | null,
 	scanHiddenFiles?: boolean | null,
-	/**  Deprecated in v5 refactor; kept for backward compatibility. */
-	workspaces?: { [key in string]: WorkspaceConfig } | null,
 };
 
 /**  Combined settings and load-status payload returned by `settings_get` (`C4.2`). */
@@ -781,8 +765,6 @@ export type TargetKind = "unconfigured" | "note" | "inbox";
 export type TargetResolveInput = {
 	mainVisible: boolean,
 	activeDocKey: string | null,
-	selectedWorkspaceKey: string | null,
-	isInboxView: boolean,
 };
 
 /**  Streamed PTY output chunk sent over `tauri::ipc::Channel` (`C4.3`). */
@@ -879,9 +861,7 @@ export type UiState = {
 	leftSidebar?: LeftSidebarUiState,
 	terminalPanel?: TerminalPanelUiState,
 	filters: FiltersUiState,
-	selectedWorkspaceKey: string | null,
 	lastActiveDoc: LastActiveDocState | null,
-	workspaceModes: { [key in string]: CaptureMode },
 	hotkey: HotkeyStatus,
 	backupPaths?: BackupPathsUiState,
 };
@@ -893,7 +873,7 @@ export type UiStateArgs = {
 };
 
 /**  Whitelisted patch keys accepted by `ui_state_set` (`C4.2`, `C6.3`). */
-export type UiStatePatchKey = "windows" | "tabs" | "leftSidebar" | "terminalPanel" | "filters" | "selectedWorkspace" | "hotkey" | "lastActiveDoc" | "workspaceModes" | "backupPaths";
+export type UiStatePatchKey = "windows" | "tabs" | "leftSidebar" | "terminalPanel" | "filters" | "hotkey" | "lastActiveDoc" | "backupPaths";
 
 /**  Result returned by `note_undo_last_append` (`C8.3`). */
 export type UndoAppendResult = {
@@ -917,31 +897,6 @@ export type WindowState = {
 /**  Windows section of `ui-state.json` (`C6.3`). */
 export type WindowsUiState = {
 	main: MainWindowState,
-};
-
-/**
- *  Legacy global workspace configuration entry (`C3.4`, `C6.2`).
- * 
- *  Deprecated in v5 refactor: directory-bound `.quicknote.yaml` replaces global workspaces.
- *  Retained for backward-compatible deserialization of existing `settings.yaml` files.
- */
-export type WorkspaceConfig = {
-	name: string,
-	key: string,
-	root: string,
-	openDir: string,
-	codeWorkspace: string | null,
-	terminalDir: string | null,
-	defaultEditor: string,
-	defaultEntryDoc: string | null,
-};
-
-/**  Workspace summary for navigation (`C3.4`). */
-export type WorkspaceSummary = {
-	key: string,
-	name: string,
-	root: string,
-	openDir: string,
 };
 
 /**  Arguments for `note_write` (`C3.4`). */

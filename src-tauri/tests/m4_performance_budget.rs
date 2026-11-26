@@ -326,7 +326,6 @@ fn m4_performance_budget_10k_vault_and_6mb_doc() {
                 target_rel_path: huge_rel.to_string(),
                 content: "6MB 追加内容验证".to_string(),
                 mode: CaptureMode::Prose,
-                workspace_key: None,
             },
             None,
         )

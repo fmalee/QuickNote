@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -22,7 +21,7 @@ use quicknote_lib::domain::external::{
 };
 use quicknote_lib::domain::note::{PathCompleteArgs, ReadNoteArgs, SearchQueryArgs, SearchSource};
 use quicknote_lib::domain::settings::{
-    parse_settings_yaml, ExternalAppConfig, SetRootArgs, SettingsPatch, WorkspaceConfig,
+    parse_settings_yaml, ExternalAppConfig, SetRootArgs, SettingsPatch,
 };
 use quicknote_lib::domain::workspace_context::DirectoryWorkspaceConfig;
 use quicknote_lib::infra::external_open::ExternalLauncher;
@@ -210,25 +209,15 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
     let code_ws_file = ws_root.path().join("demo.code-workspace");
     fs::write(&code_ws_file, "{}").expect("write code-workspace");
 
-    let mut workspaces = BTreeMap::new();
-    workspaces.insert(
-        "demo".to_string(),
-        WorkspaceConfig {
-            name: "Demo".to_string(),
-            key: "demo".to_string(),
-            root: ws_root.path().to_string_lossy().to_string(),
-            open_dir: ws_open.path().to_string_lossy().to_string(),
-            code_workspace: Some(code_ws_file.to_string_lossy().to_string()),
-            terminal_dir: Some(ws_term.path().to_string_lossy().to_string()),
-            default_editor: "vscode".to_string(),
-            default_entry_doc: None,
-        },
-    );
-    pm.settings_update(SettingsPatch {
-        workspaces: Some(workspaces),
-        ..Default::default()
-    })
-    .expect("update workspaces");
+    let demo_ws_cfg = DirectoryWorkspaceConfig {
+        vscode_workspace_path: Some(code_ws_file.to_string_lossy().to_string()),
+        project_root: Some(ws_open.path().to_string_lossy().to_string()),
+        default_terminal_cwd: Some(ws_term.path().to_string_lossy().to_string()),
+        external_app_overrides: None,
+    };
+    fs::create_dir_all(lib.path().join("notes/demo")).expect("mkdir notes/demo");
+    directory_workspace_config_write(&pm, "notes/demo", &demo_ws_cfg)
+        .expect("write notes/demo .quicknote.yaml");
 
     // 1. Library doc without open_dir / terminal_dir / workspace -> strictly disabled, no fallback!
     let plain_note = lib.path().join("notes/plain.md");
@@ -239,7 +228,6 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
         &pm,
         ResolveExternalArgs {
             abs_path: Some(plain_note.to_string_lossy().to_string()),
-            workspace_key: None,
             command_id: None,
         },
     )
@@ -266,14 +254,13 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
         );
     }
 
-    // 2. Library doc with `project: demo` -> inherits workspace dirs.
-    let proj_note = lib.path().join("notes/proj.md");
+    // 2. Library doc under directory with `.quicknote.yaml` -> inherits workspace dirs.
+    let proj_note = lib.path().join("notes/demo/proj.md");
     fs::write(&proj_note, "---\ntitle: Proj\nproject: demo\n---\nBody\n").expect("write proj");
     let proj_states = external_actions_resolve(
         &pm,
         ResolveExternalArgs {
             abs_path: Some(proj_note.to_string_lossy().to_string()),
-            workspace_key: None,
             command_id: None,
         },
     )
@@ -293,7 +280,7 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
     assert!(!find_state(&proj_states, ExternalActionId::ExternalPin).enabled);
 
     // 3. Library doc own `terminal_dir` / `open_dir` overrides workspace config.
-    let override_note = lib.path().join("notes/override.md");
+    let override_note = lib.path().join("notes/demo/override.md");
     fs::write(
         &override_note,
         format!(
@@ -307,7 +294,6 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
         &pm,
         ResolveExternalArgs {
             abs_path: Some(override_note.to_string_lossy().to_string()),
-            workspace_key: None,
             command_id: None,
         },
     )
@@ -328,7 +314,6 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
         &pm,
         ResolveExternalArgs {
             abs_path: Some(ext_file.to_string_lossy().to_string()),
-            workspace_key: None,
             command_id: None,
         },
     )
@@ -344,8 +329,10 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
     );
 
     // 5. Command context `commandId` priority: current doc workspace -> command book workspace -> disabled.
-    let cmd_book_with_ws = lib.path().join("commands/deploy.md");
-    fs::create_dir_all(cmd_book_with_ws.parent().expect("parent")).expect("mkdir commands");
+    let cmd_book_with_ws = lib.path().join("commands/demo/deploy.md");
+    fs::create_dir_all(cmd_book_with_ws.parent().expect("parent")).expect("mkdir commands/demo");
+    directory_workspace_config_write(&pm, "commands/demo", &demo_ws_cfg)
+        .expect("write commands/demo .quicknote.yaml");
     fs::write(
         &cmd_book_with_ws,
         "---\ntitle: Deploy\ntype: command-book\nproject: demo\n---\n## Build\n```sh\necho ok\n```\n",
@@ -363,8 +350,7 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
         &pm,
         ResolveExternalArgs {
             abs_path: Some(override_note.to_string_lossy().to_string()),
-            workspace_key: None,
-            command_id: Some("commands/deploy.md:6:0".to_string()),
+            command_id: Some("commands/demo/deploy.md:6:0".to_string()),
         },
     )
     .expect("resolve cmd ctx override");
@@ -378,8 +364,7 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
         &pm,
         ResolveExternalArgs {
             abs_path: None,
-            workspace_key: None,
-            command_id: Some("commands/deploy.md:6:0".to_string()),
+            command_id: Some("commands/demo/deploy.md:6:0".to_string()),
         },
     )
     .expect("resolve cmd book fallback");
@@ -393,7 +378,6 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
         &pm,
         ResolveExternalArgs {
             abs_path: None,
-            workspace_key: None,
             command_id: Some("commands/plain.md:6:0".to_string()),
         },
     )
@@ -533,40 +517,15 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
 fn three_tier_workspace_cascade_priority_and_external_actions() {
     let (_app, lib, pm) = setup_pm();
 
-    let global_open = TempDir::new().expect("global_open");
-    let global_term = TempDir::new().expect("global_term");
     let parent_open = TempDir::new().expect("parent_open");
     let parent_term = TempDir::new().expect("parent_term");
     let child_open = TempDir::new().expect("child_open");
     let doc_term = TempDir::new().expect("doc_term");
 
-    let global_ws_file = global_open.path().join("global.code-workspace");
     let parent_ws_file = parent_open.path().join("parent.code-workspace");
-    fs::write(&global_ws_file, "{}").expect("write global ws");
     fs::write(&parent_ws_file, "{}").expect("write parent ws");
 
-    // Tier 3 (lowest): global legacy workspace fallback.
-    let mut workspaces = BTreeMap::new();
-    workspaces.insert(
-        "demo".to_string(),
-        WorkspaceConfig {
-            name: "Demo".to_string(),
-            key: "demo".to_string(),
-            root: global_open.path().to_string_lossy().to_string(),
-            open_dir: global_open.path().to_string_lossy().to_string(),
-            code_workspace: Some(global_ws_file.to_string_lossy().to_string()),
-            terminal_dir: Some(global_term.path().to_string_lossy().to_string()),
-            default_editor: "vscode".to_string(),
-            default_entry_doc: None,
-        },
-    );
-    pm.settings_update(SettingsPatch {
-        workspaces: Some(workspaces),
-        ..Default::default()
-    })
-    .expect("update legacy workspaces");
-
-    // Tier 2 (middle): ancestor directory `.quicknote.yaml` files written via reconciler.
+    // Tier 2: ancestor directory `.quicknote.yaml` files written via reconciler.
     fs::create_dir_all(lib.path().join("projects/app")).expect("mkdir projects/app");
     directory_workspace_config_write(
         &pm,
@@ -611,9 +570,8 @@ fn three_tier_workspace_cascade_priority_and_external_actions() {
     )
     .expect("write spec.md");
 
-    let effective =
-        resolve_effective_workspace_for_path(&pm, Some(&spec_note.to_string_lossy()), None)
-            .expect("resolve effective workspace");
+    let effective = resolve_effective_workspace_for_path(&pm, Some(&spec_note.to_string_lossy()))
+        .expect("resolve effective workspace");
     assert_eq!(
         effective.default_terminal_cwd.as_deref(),
         Some(doc_term.path().to_string_lossy().as_ref()),
@@ -635,7 +593,6 @@ fn three_tier_workspace_cascade_priority_and_external_actions() {
         &pm,
         ResolveExternalArgs {
             abs_path: Some(spec_note.to_string_lossy().to_string()),
-            workspace_key: None,
             command_id: None,
         },
     )
@@ -715,29 +672,20 @@ fn three_tier_workspace_cascade_priority_and_external_actions() {
         )
     );
 
-    // Fallback to global default when no Frontmatter dir and no ancestor `.quicknote.yaml`.
+    // Without Frontmatter dirs and without ancestor `.quicknote.yaml`, effective context is empty.
     fs::create_dir_all(lib.path().join("other")).expect("mkdir other");
-    let global_only_note = lib.path().join("other/global_only.md");
+    let plain_other_note = lib.path().join("other/plain_other.md");
     fs::write(
-        &global_only_note,
-        "---\ntitle: GlobalOnly\nproject: demo\n---\nBody\n",
+        &plain_other_note,
+        "---\ntitle: PlainOther\nproject: demo\n---\nBody\n",
     )
-    .expect("write global_only.md");
-    let global_effective =
-        resolve_effective_workspace_for_path(&pm, Some(&global_only_note.to_string_lossy()), None)
-            .expect("resolve global fallback");
-    assert_eq!(
-        global_effective.project_root.as_deref(),
-        Some(global_open.path().to_string_lossy().as_ref())
-    );
-    assert_eq!(
-        global_effective.default_terminal_cwd.as_deref(),
-        Some(global_term.path().to_string_lossy().as_ref())
-    );
-    assert_eq!(
-        global_effective.vscode_workspace_path.as_deref(),
-        Some(global_ws_file.to_string_lossy().as_ref())
-    );
+    .expect("write plain_other.md");
+    let empty_effective =
+        resolve_effective_workspace_for_path(&pm, Some(&plain_other_note.to_string_lossy()))
+            .expect("resolve empty context");
+    assert_eq!(empty_effective.project_root, None);
+    assert_eq!(empty_effective.default_terminal_cwd, None);
+    assert_eq!(empty_effective.vscode_workspace_path, None);
 
     // Manually dropped root markdown + `.quicknote.yaml` reconciled via `index_rebuild`.
     let manual_dir = lib.path().join("manual_sub");
@@ -805,7 +753,6 @@ workspaces:
     assert!(status.valid);
     assert_eq!(parsed_legacy.max_active_editor_renders, 5);
     assert!(parsed_legacy.external_bookmarks.is_empty());
-    assert!(parsed_legacy.workspaces.contains_key("legacy"));
 
     // 3. External fs browser: probe, directory listing (including hidden), siblings, and search_roots.
     let ext_root = TempDir::new().expect("ext_root");

@@ -162,7 +162,6 @@ fn internal_writes_are_suppressed_by_process_external_fs_path_and_vault_watcher(
             target_rel_path: rel_path,
             mode: CaptureMode::List,
             content: "追加的一条捕捉内容".to_string(),
-            workspace_key: None,
         },
         None,
     )?;
@@ -272,7 +271,6 @@ fn external_modify_and_delete_update_index_and_emit_events(
             tab: "all".to_string(),
             dir_rel_path: None,
             tags: Vec::new(),
-            workspace_key: None,
             filter_text: None,
         },
     )?;

@@ -215,7 +215,6 @@ fn templates_b3_alignment_render_and_note_create_isolation() {
             tab: "templates".to_string(),
             dir_rel_path: None,
             tags: vec![],
-            workspace_key: None,
             filter_text: None,
         },
     )
@@ -234,7 +233,6 @@ fn templates_b3_alignment_render_and_note_create_isolation() {
             tab: "recent".to_string(),
             dir_rel_path: None,
             tags: vec![],
-            workspace_key: None,
             filter_text: None,
         },
     )

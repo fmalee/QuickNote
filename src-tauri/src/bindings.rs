@@ -25,7 +25,7 @@ use crate::domain::note::{
     PathCompleteArgs, PathEntry, ReadNoteArgs, RelPathArgs, RelatedNoteItem, RelatedReason,
     RenameNoteArgs, SaveImageArgs, SavedImageResult, SearchItemKind, SearchQueryArgs,
     SearchResponse, SearchResultItem, SearchSource, TagNode, TagRenameArgs, TagRenameResult,
-    WorkspaceSummary, WriteNoteArgs, WriteResult,
+    WriteNoteArgs, WriteResult,
 };
 use crate::domain::settings::{
     EditorSettings, EditorSettingsPatch, EditorTheme, EditorsSettings, EditorsSettingsPatch,
@@ -34,7 +34,6 @@ use crate::domain::settings::{
     MainWindowSettingsPatch, PanelId, PanelsSettings, PanelsSettingsPatch, QuickBarSettings,
     QuickBarSettingsPatch, SetRootArgs, Settings, SettingsLoadStatus, SettingsPatch,
     SettingsSnapshot, TerminalPanelSettings, TerminalPanelSettingsPatch, WindowMode,
-    WorkspaceConfig,
 };
 use crate::domain::terminal::{
     TerminalData, TerminalExitPayload, TerminalExitReason, TerminalKillArgs,
@@ -72,7 +71,6 @@ pub fn collect_types() -> Types {
         .register::<PanelId>()
         .register::<LibraryInfo>()
         .register::<SetRootArgs>()
-        .register::<WorkspaceConfig>()
         .register::<HotkeySettings>()
         .register::<QuickBarSettings>()
         .register::<MainWindowSettings>()
@@ -138,7 +136,6 @@ pub fn collect_types() -> Types {
         .register::<NotesFilterArgs>()
         .register::<DirNode>()
         .register::<TagNode>()
-        .register::<WorkspaceSummary>()
         .register::<NavTreeSnapshot>()
         .register::<IndexPhase>()
         .register::<IndexStatus>()

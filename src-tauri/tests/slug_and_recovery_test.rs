@@ -115,7 +115,6 @@ fn quickbar_draft_and_recovery_snapshots_lifecycle() -> Result<(), Box<dyn std::
     let draft = QuickBarDraft {
         mode: CaptureMode::List,
         target_rel_path: Some("inbox.md".to_string()),
-        selected_workspace_key: Some("inbox".to_string()),
         text: "未发送的草稿内容".to_string(),
         updated_at: 1_700_000_000_000,
     };
@@ -129,7 +128,6 @@ fn quickbar_draft_and_recovery_snapshots_lifecycle() -> Result<(), Box<dyn std::
             target_rel_path: INBOX_REL_PATH.to_string(),
             mode: CaptureMode::List,
             content: "正式提交的捕捉内容".to_string(),
-            workspace_key: None,
         },
         None,
     )?;

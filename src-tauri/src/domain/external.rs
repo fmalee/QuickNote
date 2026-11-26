@@ -44,7 +44,6 @@ pub struct ExternalActionState {
 #[serde(rename_all = "camelCase")]
 pub struct ResolveExternalArgs {
     pub abs_path: Option<String>,
-    pub workspace_key: Option<String>,
     pub command_id: Option<String>,
 }
 
@@ -93,7 +92,7 @@ pub struct ExternalResolveContext {
     pub has_command_id: bool,
     /// Active/context document target metadata.
     pub doc: Option<ExternalDocTarget>,
-    /// Associated workspace for the active/context document or explicit `workspace_key`.
+    /// Associated workspace directory target for the active/context document (`.quicknote.yaml`).
     pub workspace: Option<ExternalWorkspaceTarget>,
     /// Command-book document's own target metadata (when `has_command_id == true`).
     pub command_doc: Option<ExternalDocTarget>,

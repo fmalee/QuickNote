@@ -34,7 +34,6 @@ pub struct ExternalChangeEvent {
 pub struct QuickBarDraft {
     pub mode: CaptureMode,
     pub target_rel_path: Option<String>,
-    pub selected_workspace_key: Option<String>,
     pub text: String,
     #[specta(type = specta_typescript::Number)]
     pub updated_at: i64,

@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -22,7 +20,6 @@ pub enum CaptureMode {
 pub enum NavTab {
     Tags,
     Recent,
-    Workspaces,
     #[default]
     #[serde(other)]
     Projects,
@@ -195,7 +192,6 @@ impl Default for FiltersUiState {
 #[serde(rename_all = "camelCase")]
 pub struct LastActiveDocState {
     pub rel_path: String,
-    pub workspace_key: Option<String>,
     #[specta(type = specta_typescript::Number)]
     pub touched_at_ms: i64,
 }
@@ -211,9 +207,7 @@ pub struct UiState {
     #[serde(default)]
     pub terminal_panel: TerminalPanelUiState,
     pub filters: FiltersUiState,
-    pub selected_workspace_key: Option<String>,
     pub last_active_doc: Option<LastActiveDocState>,
-    pub workspace_modes: BTreeMap<String, CaptureMode>,
     pub hotkey: HotkeyStatus,
     #[serde(default)]
     pub backup_paths: BackupPathsUiState,
@@ -228,10 +222,8 @@ pub enum UiStatePatchKey {
     LeftSidebar,
     TerminalPanel,
     Filters,
-    SelectedWorkspace,
     Hotkey,
     LastActiveDoc,
-    WorkspaceModes,
     BackupPaths,
 }
 
@@ -243,10 +235,8 @@ impl UiStatePatchKey {
             Self::LeftSidebar => "leftSidebar",
             Self::TerminalPanel => "terminalPanel",
             Self::Filters => "filters",
-            Self::SelectedWorkspace => "selectedWorkspace",
             Self::Hotkey => "hotkey",
             Self::LastActiveDoc => "lastActiveDoc",
-            Self::WorkspaceModes => "workspaceModes",
             Self::BackupPaths => "backupPaths",
         }
     }
@@ -286,17 +276,11 @@ impl UiState {
             UiStatePatchKey::Filters => {
                 self.filters = parse_patch_value(key_name, value)?;
             }
-            UiStatePatchKey::SelectedWorkspace => {
-                self.selected_workspace_key = parse_patch_value(key_name, value)?;
-            }
             UiStatePatchKey::Hotkey => {
                 self.hotkey = parse_patch_value(key_name, value)?;
             }
             UiStatePatchKey::LastActiveDoc => {
                 self.last_active_doc = parse_patch_value(key_name, value)?;
-            }
-            UiStatePatchKey::WorkspaceModes => {
-                self.workspace_modes = parse_patch_value(key_name, value)?;
             }
             UiStatePatchKey::BackupPaths => {
                 self.backup_paths = parse_patch_value(key_name, value)?;

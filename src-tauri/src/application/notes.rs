@@ -23,7 +23,7 @@ use crate::domain::note::{
     NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs, RelPathArgs, RelatedNoteCandidate,
     RelatedNoteItem, RenameNoteArgs, SaveImageArgs, SavedImageResult, SearchItemKind,
     SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode, TagRenameArgs,
-    TagRenameResult, WorkspaceSummary, WriteNoteArgs, WriteResult, INBOX_REL_PATH,
+    TagRenameResult, WriteNoteArgs, WriteResult, INBOX_REL_PATH,
 };
 use crate::domain::template::{builtin_template, render_template, TemplateVars};
 use crate::domain::tokenizer::build_fts_query;
@@ -194,16 +194,6 @@ pub fn notes_list(
                 }
             }
             "recent" => !is_template,
-            "workspaces" => {
-                if is_template {
-                    false
-                } else {
-                    match args.workspace_key.as_deref() {
-                        Some(ws) => row.project.as_deref() == Some(ws),
-                        None => false,
-                    }
-                }
-            }
             _ => !is_template,
         };
 
@@ -258,7 +248,7 @@ pub fn notes_list(
     Ok(out)
 }
 
-/// Builds the navigation snapshot: directory tree, hierarchical tags, and workspaces (`C4.2`).
+/// Builds the navigation snapshot: directory tree and hierarchical tags (`C4.2`).
 pub fn notes_get_tree_and_tags(pm: &PersistenceManager) -> Result<NavTreeSnapshot, AppError> {
     let _ = require_library_root(pm)?;
     let rows = pm.with_db(list_all_indexed_notes)?;
@@ -298,23 +288,7 @@ pub fn notes_get_tree_and_tags(pm: &PersistenceManager) -> Result<NavTreeSnapsho
     }
     let tags = build_tag_tree(&all_tag_prefixes, &tag_notes);
 
-    let settings = pm.reload_settings()?.settings;
-    let workspaces = settings
-        .workspaces
-        .into_iter()
-        .map(|(key, ws)| WorkspaceSummary {
-            key,
-            name: ws.name,
-            root: ws.root,
-            open_dir: ws.open_dir,
-        })
-        .collect();
-
-    Ok(NavTreeSnapshot {
-        dirs,
-        tags,
-        workspaces,
-    })
+    Ok(NavTreeSnapshot { dirs, tags })
 }
 
 fn build_dir_tree(dir_counts: &BTreeMap<String, u32>) -> Vec<DirNode> {

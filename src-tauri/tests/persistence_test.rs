@@ -100,27 +100,30 @@ fn ui_state_set_persists_whitelisted_keys_and_rejects_invalid_keys() {
 
     let updated = pm
         .ui_state_set(
-            UiStatePatchKey::SelectedWorkspace,
-            serde_json::json!("quicknote"),
+            UiStatePatchKey::LastActiveDoc,
+            serde_json::json!({
+                "relPath": "projects/quicknote.md",
+                "touchedAtMs": 1_732_400_000_000_i64
+            }),
         )
-        .expect("selectedWorkspace must succeed");
-    assert_eq!(updated.selected_workspace_key.as_deref(), Some("quicknote"));
-
-    let updated_modes = pm
-        .ui_state_set(
-            UiStatePatchKey::WorkspaceModes,
-            serde_json::json!({ "quicknote": "todo" }),
-        )
-        .expect("workspaceModes must succeed");
-    assert_eq!(updated_modes.workspace_modes.len(), 1);
+        .expect("lastActiveDoc must succeed");
+    assert_eq!(
+        updated
+            .last_active_doc
+            .as_ref()
+            .map(|d| d.rel_path.as_str()),
+        Some("projects/quicknote.md")
+    );
 
     // Reopen PersistenceManager from disk to confirm atomic persistence.
     drop(pm);
     let reopened =
         PersistenceManager::open(app_data_dir.clone()).expect("reopen PersistenceManager");
     let loaded = reopened.ui_state_get().expect("ui_state_get");
-    assert_eq!(loaded.selected_workspace_key.as_deref(), Some("quicknote"));
-    assert_eq!(loaded.workspace_modes.len(), 1);
+    assert_eq!(
+        loaded.last_active_doc.as_ref().map(|d| d.rel_path.as_str()),
+        Some("projects/quicknote.md")
+    );
 
     // Non-whitelisted key must be rejected by UiStatePatchKey deserialization.
     let invalid_key_deser = serde_json::from_value::<UiStateArgs>(serde_json::json!({
@@ -545,4 +548,107 @@ fn settings_quick_bar_pinned_defaults_false_and_persists_patch() {
     assert!(reloaded.settings.quick_bar.pinned);
 
     let _ = fs::remove_dir_all(&app_data_dir);
+}
+
+#[test]
+fn legacy_pre_m5_settings_and_ui_state_load_without_error() {
+    let config_dir = make_temp_dir("legacy_pre_m5_cfg");
+    let cache_dir = make_temp_dir("legacy_pre_m5_cache");
+
+    let legacy_settings_yaml = r#"library_root: null
+workspaces:
+  alpha:
+    name: Alpha
+    key: alpha
+    root: /tmp/alpha
+    open_dir: /tmp/alpha
+    default_editor: vscode
+    default_entry_doc: projects/alpha.md
+editor:
+  font_size: 16
+"#;
+    fs::write(config_dir.join("settings.yaml"), legacy_settings_yaml)
+        .expect("write legacy settings.yaml");
+
+    let legacy_ui_state = serde_json::json!({
+        "windows": {
+            "main": { "x": 100, "y": 80, "width": 1200, "height": 800, "mode": "standard", "isOpen": false }
+        },
+        "tabs": {
+            "items": [],
+            "activeKey": null,
+            "closedStack": []
+        },
+        "panelGroup": {
+            "visible": true,
+            "activeId": "outline",
+            "width": 260,
+            "collapsed": false
+        },
+        "filters": {
+            "activeTab": "inbox",
+            "selectedDir": null,
+            "selectedTags": [],
+            "listScrollTop": 0.0
+        },
+        "selectedWorkspaceKey": "alpha",
+        "workspaceModes": {
+            "alpha": "todo"
+        },
+        "lastActiveDoc": {
+            "relPath": "projects/alpha.md",
+            "workspaceKey": "alpha",
+            "touchedAtMs": 1732400000000_i64
+        },
+        "hotkey": {
+            "combo": "ctrl+alt+space",
+            "backupCombo": "ctrl+alt+cmd+space",
+            "selfCheck": "ok"
+        }
+    });
+    fs::write(
+        config_dir.join("ui-state.json"),
+        serde_json::to_string_pretty(&legacy_ui_state).expect("serialize legacy ui-state.json"),
+    )
+    .expect("write legacy ui-state.json");
+
+    let pm = PersistenceManager::open_with_dirs(config_dir.clone(), cache_dir.clone())
+        .expect("open_with_dirs must accept legacy pre-M5 config");
+
+    let settings_snapshot = pm.settings_get().expect("settings_get must succeed");
+    assert!(
+        settings_snapshot.status.valid,
+        "legacy settings.yaml with workspaces must load as valid: {:?}",
+        settings_snapshot.status
+    );
+    assert_eq!(settings_snapshot.settings.editor.font_size, 16);
+
+    let ui_state = pm.ui_state_get().expect("ui_state_get must succeed");
+    assert_eq!(ui_state.filters.active_tab, NavTab::Projects);
+    assert_eq!(
+        ui_state
+            .last_active_doc
+            .as_ref()
+            .map(|d| d.rel_path.as_str()),
+        Some("projects/alpha.md")
+    );
+
+    // Updating settings should not write legacy `workspaces:` back to disk.
+    pm.settings_update(SettingsPatch {
+        editor: Some(EditorSettingsPatch {
+            font_size: Some(15),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })
+    .expect("settings_update must succeed");
+    let rewritten =
+        fs::read_to_string(config_dir.join("settings.yaml")).expect("read rewritten settings.yaml");
+    assert!(
+        !rewritten.contains("workspaces:"),
+        "rewritten settings.yaml must not serialize legacy workspaces key"
+    );
+
+    let _ = fs::remove_dir_all(&config_dir);
+    let _ = fs::remove_dir_all(&cache_dir);
 }

@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -48,7 +47,7 @@ impl CaptureManager {
         Self::default()
     }
 
-    /// Resolves the Quick Bar capture target using the `S1–S8` truth table (`C8.1`).
+    /// Resolves the Quick Bar capture target using the `S1–S4` truth table (`C8.1`).
     pub fn resolve_target(
         &self,
         pm: &PersistenceManager,
@@ -59,10 +58,8 @@ impl CaptureManager {
 
         let Some(root_str) = pm.current_library_root()? else {
             let empty_ui = pm.ui_state_get().unwrap_or_default();
-            let empty_workspaces = BTreeMap::new();
             let ctx = ResolveTargetContext {
                 library_configured: false,
-                workspaces: &empty_workspaces,
                 ui_state: &empty_ui,
                 docs: &[],
                 last_active_ttl_hours: 24,
@@ -93,7 +90,6 @@ impl CaptureManager {
 
         let ctx = ResolveTargetContext {
             library_configured: true,
-            workspaces: &snapshot.settings.workspaces,
             ui_state: &ui_state,
             docs: &docs,
             last_active_ttl_hours: snapshot.settings.quick_bar.last_active_ttl_hours,
@@ -196,17 +192,8 @@ impl CaptureManager {
             }
         }
 
-        let effective_ws_key = args
-            .workspace_key
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .or_else(|| parsed.meta.project.clone());
-
         let last_active = LastActiveDocState {
             rel_path: rel_path.clone(),
-            workspace_key: effective_ws_key.clone(),
             touched_at_ms: now_ms,
         };
         let last_active_val = serde_json::to_value(last_active).map_err(|err| {
@@ -217,21 +204,6 @@ impl CaptureManager {
             )
         })?;
         pm.ui_state_set(UiStatePatchKey::LastActiveDoc, last_active_val)?;
-
-        if !is_inbox {
-            if let Some(ws_key) = effective_ws_key {
-                let mut ui_state = pm.ui_state_get()?;
-                ui_state.workspace_modes.insert(ws_key, args.mode);
-                let modes_val = serde_json::to_value(ui_state.workspace_modes).map_err(|err| {
-                    AppError::with_detail(
-                        ErrorCode::InternalError,
-                        "Failed to serialize workspace_modes",
-                        err.to_string(),
-                    )
-                })?;
-                pm.ui_state_set(UiStatePatchKey::WorkspaceModes, modes_val)?;
-            }
-        }
 
         let result = AppendResult {
             rel_path,

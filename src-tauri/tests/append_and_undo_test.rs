@@ -160,7 +160,6 @@ fn append_to_code_fence_heading_fixture_skips_fenced_headings() {
                 target_rel_path: "code-fence-heading.md".to_string(),
                 content: "围栏外真实追加".to_string(),
                 mode: CaptureMode::List,
-                workspace_key: None,
             },
             None,
         )
@@ -187,7 +186,6 @@ fn note_append_preserves_missing_id_frontmatter_and_supports_undo() {
                 target_rel_path: "missing-id.md".to_string(),
                 content: "测试不改写 frontmatter".to_string(),
                 mode: CaptureMode::List,
-                workspace_key: None,
             },
             None,
         )
@@ -224,7 +222,6 @@ fn inbox_append_creates_today_heading_and_undo_reverts_entire_heading() {
                 target_rel_path: "inbox.md".to_string(),
                 content: "今日第一条速记".to_string(),
                 mode: CaptureMode::List,
-                workspace_key: None,
             },
             None,
         )
@@ -266,7 +263,6 @@ fn undo_rejects_modified_body_but_succeeds_after_meta_only_update() {
                 target_rel_path: "note-a.md".to_string(),
                 content: "待撤回条目".to_string(),
                 mode: CaptureMode::List,
-                workspace_key: None,
             },
             None,
         )
@@ -310,7 +306,6 @@ fn undo_rejects_modified_body_but_succeeds_after_meta_only_update() {
             target_rel_path: "note-b.md".to_string(),
             content: "追加B".to_string(),
             mode: CaptureMode::List,
-            workspace_key: None,
         },
         None,
     )
@@ -366,7 +361,6 @@ fn large_document_over_5mb_disables_undo_snapshot() {
                 target_rel_path: "large.md".to_string(),
                 content: "超大文档追加".to_string(),
                 mode: CaptureMode::List,
-                workspace_key: None,
             },
             None,
         )

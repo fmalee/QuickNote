@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -80,23 +78,6 @@ pub struct ExportPathArgs {
 #[serde(rename_all = "camelCase")]
 pub struct ImportPathArgs {
     pub src_path: String,
-}
-
-/// Legacy global workspace configuration entry (`C3.4`, `C6.2`).
-///
-/// Deprecated in v5 refactor: directory-bound `.quicknote.yaml` replaces global workspaces.
-/// Retained for backward-compatible deserialization of existing `settings.yaml` files.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceConfig {
-    pub name: String,
-    pub key: String,
-    pub root: String,
-    pub open_dir: String,
-    pub code_workspace: Option<String>,
-    pub terminal_dir: Option<String>,
-    pub default_editor: String,
-    pub default_entry_doc: Option<String>,
 }
 
 /// Hotkey configuration section (`C6.2`).
@@ -298,10 +279,6 @@ pub struct Settings {
     pub external_bookmarks: Vec<ExternalBookmark>,
     #[serde(default = "default_scan_hidden_files")]
     pub scan_hidden_files: bool,
-    /// Deprecated in v5 refactor: replaced by directory-level `.quicknote.yaml`.
-    /// Kept with `#[serde(default)]` for backward-compatible reading of legacy `settings.yaml`.
-    #[serde(default)]
-    pub workspaces: BTreeMap<String, WorkspaceConfig>,
 }
 
 impl Default for Settings {
@@ -327,7 +304,6 @@ impl Default for Settings {
             max_active_editor_renders: DEFAULT_MAX_ACTIVE_EDITOR_RENDERS,
             external_bookmarks: Vec::new(),
             scan_hidden_files: true,
-            workspaces: BTreeMap::new(),
         }
     }
 }
@@ -500,9 +476,6 @@ pub struct SettingsPatch {
     pub external_bookmarks: Option<Vec<ExternalBookmark>>,
     #[serde(default)]
     pub scan_hidden_files: Option<bool>,
-    /// Deprecated in v5 refactor; kept for backward compatibility.
-    #[serde(default)]
-    pub workspaces: Option<BTreeMap<String, WorkspaceConfig>>,
 }
 
 fn apply_external_app_patch(target: &mut ExternalAppConfig, patch: &ExternalAppConfigPatch) {
@@ -652,10 +625,6 @@ pub fn apply_settings_patch(base: &Settings, patch: &SettingsPatch) -> Result<Se
         next.scan_hidden_files = scan_hidden;
     }
 
-    if let Some(ref ws) = patch.workspaces {
-        next.workspaces = ws.clone();
-    }
-
     validate_settings(&next)?;
     Ok(next)
 }
@@ -745,34 +714,6 @@ fn validate_settings(s: &Settings) -> Result<(), AppError> {
 }
 
 // --- YAML disk representation (`snake_case`, `deny_unknown_fields`, `C6.2`) ---
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct WorkspaceConfigYaml {
-    name: String,
-    key: String,
-    root: String,
-    open_dir: String,
-    code_workspace: Option<String>,
-    terminal_dir: Option<String>,
-    default_editor: String,
-    default_entry_doc: Option<String>,
-}
-
-impl Default for WorkspaceConfigYaml {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            key: String::new(),
-            root: String::new(),
-            open_dir: String::new(),
-            code_workspace: None,
-            terminal_dir: None,
-            default_editor: "vscode".to_string(),
-            default_entry_doc: None,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -990,9 +931,11 @@ struct SettingsYaml {
     max_active_editor_renders: u32,
     external_bookmarks: Vec<ExternalBookmarkYaml>,
     scan_hidden_files: bool,
-    /// Deprecated in v5 refactor; kept with `#[serde(default)]` for legacy `settings.yaml` compatibility.
-    #[serde(default)]
-    workspaces: BTreeMap<String, WorkspaceConfigYaml>,
+    /// Legacy compatibility placeholder for `settings.yaml` files written before M5-06f.
+    /// Accepted on read (due to `deny_unknown_fields`), ignored at runtime, never serialized back.
+    #[allow(dead_code)]
+    #[serde(default, skip_serializing)]
+    workspaces: Option<serde_yaml::Value>,
 }
 
 impl Default for SettingsYaml {
@@ -1015,7 +958,7 @@ impl Default for SettingsYaml {
             max_active_editor_renders: d.max_active_editor_renders,
             external_bookmarks: Vec::new(),
             scan_hidden_files: d.scan_hidden_files,
-            workspaces: BTreeMap::new(),
+            workspaces: None,
         }
     }
 }
@@ -1026,27 +969,6 @@ impl From<SettingsYaml> for Settings {
             .library_root
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
-
-        let workspaces = y
-            .workspaces
-            .into_iter()
-            .map(|(k, w)| {
-                let key = if w.key.is_empty() { k.clone() } else { w.key };
-                (
-                    k,
-                    WorkspaceConfig {
-                        name: w.name,
-                        key,
-                        root: w.root,
-                        open_dir: w.open_dir,
-                        code_workspace: w.code_workspace,
-                        terminal_dir: w.terminal_dir,
-                        default_editor: w.default_editor,
-                        default_entry_doc: w.default_entry_doc,
-                    },
-                )
-            })
-            .collect();
 
         let external_bookmarks = normalize_and_sort_bookmarks(
             y.external_bookmarks
@@ -1122,33 +1044,12 @@ impl From<SettingsYaml> for Settings {
             max_active_editor_renders: y.max_active_editor_renders,
             external_bookmarks,
             scan_hidden_files: y.scan_hidden_files,
-            workspaces,
         }
     }
 }
 
 impl From<&Settings> for SettingsYaml {
     fn from(s: &Settings) -> Self {
-        let workspaces = s
-            .workspaces
-            .iter()
-            .map(|(k, w)| {
-                (
-                    k.clone(),
-                    WorkspaceConfigYaml {
-                        name: w.name.clone(),
-                        key: w.key.clone(),
-                        root: w.root.clone(),
-                        open_dir: w.open_dir.clone(),
-                        code_workspace: w.code_workspace.clone(),
-                        terminal_dir: w.terminal_dir.clone(),
-                        default_editor: w.default_editor.clone(),
-                        default_entry_doc: w.default_entry_doc.clone(),
-                    },
-                )
-            })
-            .collect();
-
         let external_bookmarks = s
             .external_bookmarks
             .iter()
@@ -1222,7 +1123,7 @@ impl From<&Settings> for SettingsYaml {
             max_active_editor_renders: s.max_active_editor_renders,
             external_bookmarks,
             scan_hidden_files: s.scan_hidden_files,
-            workspaces,
+            workspaces: None,
         }
     }
 }

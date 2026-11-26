@@ -21,7 +21,7 @@ use crate::domain::external::{
     RunExternalArgs, SETTINGS_FILE_SENTINEL,
 };
 use crate::domain::note::{parse_note, PathCompleteArgs, PathEntry};
-use crate::domain::settings::{ExternalAppConfig, Settings, SettingsPatch, WorkspaceConfig};
+use crate::domain::settings::{ExternalAppConfig, SettingsPatch};
 use crate::domain::workspace_context::{
     resolve_effective_workspace, DirectoryWorkspaceConfig, EffectiveWorkspaceContext,
     DIRECTORY_CONFIG_FILENAME,
@@ -379,13 +379,11 @@ pub fn directory_workspace_config_delete_uc_with(
 pub fn resolve_effective_workspace_for_path(
     pm: &PersistenceManager,
     abs_path: Option<&str>,
-    workspace_key: Option<&str>,
 ) -> Result<EffectiveWorkspaceContext, AppError> {
-    let settings = pm.settings_get()?.settings;
     let library_root = pm.current_library_root()?;
     let resolved_path = resolve_sentinel_path(pm, abs_path);
 
-    let (doc_layer, doc_project) = match resolved_path.as_deref() {
+    let (doc_layer, _doc_project) = match resolved_path.as_deref() {
         Some(path) => read_doc_workspace_layer(Path::new(path)),
         None => (None, None),
     };
@@ -397,16 +395,10 @@ pub fn resolve_effective_workspace_for_path(
         _ => Vec::new(),
     };
 
-    let effective_ws_key = workspace_key
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .or(doc_project.as_deref());
-    let global_layer = effective_ws_key.and_then(|k| lookup_workspace_as_layer(&settings, k));
-
     Ok(resolve_effective_workspace(
         doc_layer.as_ref(),
         &ancestor_layers,
-        global_layer.as_ref(),
+        None,
     ))
 }
 
@@ -505,7 +497,6 @@ pub fn external_actions_resolve(
     args: ResolveExternalArgs,
 ) -> Result<Vec<ExternalActionState>, AppError> {
     let settings = pm.settings_get()?.settings;
-    let ui_state = pm.ui_state_get()?;
     let library_root = pm.current_library_root()?;
 
     let file_path = resolve_sentinel_path(pm, args.abs_path.as_deref());
@@ -519,7 +510,7 @@ pub fn external_actions_resolve(
         _ => false,
     };
 
-    let (doc, doc_project) = if let Some(ref abs) = file_path {
+    let (doc, _doc_project) = if let Some(ref abs) = file_path {
         read_doc_target(Path::new(abs))
     } else {
         (None, None)
@@ -536,15 +527,7 @@ pub fn external_actions_resolve(
         _ => Vec::new(),
     };
 
-    let effective_ws_key = args
-        .workspace_key
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .or(doc_project.as_deref());
-    let global_layer = effective_ws_key.and_then(|k| lookup_workspace_as_layer(&settings, k));
-
-    let inherited_ctx = resolve_effective_workspace(None, &ancestor_layers, global_layer.as_ref());
+    let inherited_ctx = resolve_effective_workspace(None, &ancestor_layers, None);
     let workspace = effective_context_to_workspace_target(&inherited_ctx);
 
     let has_command_id = args
@@ -559,7 +542,7 @@ pub fn external_actions_resolve(
             (Some(rel), Some(root)) => Some(Path::new(root).join(rel)),
             _ => None,
         };
-        let (cmd_doc, cmd_proj) = match cmd_abs.as_deref() {
+        let (cmd_doc, _cmd_proj) = match cmd_abs.as_deref() {
             Some(path) => read_doc_target(path),
             None => (None, None),
         };
@@ -567,19 +550,10 @@ pub fn external_actions_resolve(
             (Some(abs), Some(root)) => load_ancestor_workspace_layers(pm, abs, Path::new(root))?,
             _ => Vec::new(),
         };
-        let cmd_global = cmd_proj
-            .as_deref()
-            .and_then(|k| lookup_workspace_as_layer(&settings, k));
-        let cmd_inherited = resolve_effective_workspace(None, &cmd_ancestors, cmd_global.as_ref());
+        let cmd_inherited = resolve_effective_workspace(None, &cmd_ancestors, None);
         let cmd_ws = effective_context_to_workspace_target(&cmd_inherited);
 
-        let recent_ws_key = ui_state
-            .last_active_doc
-            .as_ref()
-            .and_then(|d| d.workspace_key.as_deref())
-            .or(ui_state.selected_workspace_key.as_deref());
-        let recent_ws = recent_ws_key.and_then(|k| lookup_workspace(&settings, k));
-        (cmd_doc, cmd_ws, recent_ws)
+        (cmd_doc, cmd_ws, None)
     } else {
         (None, None, None)
     };
@@ -625,7 +599,7 @@ pub fn external_action_run(
         .filter(|s| !s.is_empty())
         .map(expand_optional_path);
 
-    let effective = resolve_effective_workspace_for_path(pm, args.abs_path.as_deref(), None)?;
+    let effective = resolve_effective_workspace_for_path(pm, args.abs_path.as_deref())?;
     let is_library_doc = match (abs_path.as_deref(), library_root.as_deref()) {
         (Some(abs), Some(root)) => is_path_inside_root(Path::new(abs), Path::new(root)),
         _ => false,
@@ -783,21 +757,6 @@ fn read_doc_target(path: &Path) -> (Option<ExternalDocTarget>, Option<String>) {
     (Some(target), parsed.meta.project)
 }
 
-fn lookup_workspace(settings: &Settings, key: &str) -> Option<ExternalWorkspaceTarget> {
-    let ws: &WorkspaceConfig = settings.workspaces.get(key).or_else(|| {
-        settings
-            .workspaces
-            .values()
-            .find(|w| w.key == key || w.name == key)
-    })?;
-    Some(ExternalWorkspaceTarget {
-        root: Some(expand_optional_path(&ws.root)),
-        open_dir: Some(expand_optional_path(&ws.open_dir)),
-        terminal_dir: ws.terminal_dir.as_deref().map(expand_optional_path),
-        code_workspace: ws.code_workspace.as_deref().map(expand_optional_path),
-    })
-}
-
 fn extract_command_rel_path(command_id: &str) -> Option<&str> {
     command_id.rsplitn(3, ':').nth(2).filter(|s| !s.is_empty())
 }
@@ -899,24 +858,6 @@ fn load_ancestor_workspace_layers(
         }
     }
     Ok(layers)
-}
-
-fn lookup_workspace_as_layer(settings: &Settings, key: &str) -> Option<DirectoryWorkspaceConfig> {
-    let ws = lookup_workspace(settings, key)?;
-    let project_root = ws
-        .open_dir
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| ws.root.filter(|s| !s.trim().is_empty()));
-    let default_terminal_cwd = ws
-        .terminal_dir
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| project_root.clone());
-    Some(DirectoryWorkspaceConfig {
-        vscode_workspace_path: ws.code_workspace.filter(|s| !s.trim().is_empty()),
-        project_root,
-        default_terminal_cwd,
-        external_app_overrides: None,
-    })
 }
 
 fn effective_context_to_workspace_target(

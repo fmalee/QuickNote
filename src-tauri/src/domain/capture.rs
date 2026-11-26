@@ -1,11 +1,8 @@
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::note::INBOX_REL_PATH;
-use crate::domain::settings::WorkspaceConfig;
 use crate::domain::ui_state::{CaptureMode, UiState};
 
 /// Resolved capture target kind (`C8.1`).
@@ -23,8 +20,6 @@ pub enum TargetKind {
 pub struct TargetResolveInput {
     pub main_visible: bool,
     pub active_doc_key: Option<String>,
-    pub selected_workspace_key: Option<String>,
-    pub is_inbox_view: bool,
 }
 
 /// Resolved Quick Bar capture target and display metadata (`C8.1`).
@@ -36,9 +31,6 @@ pub struct ResolvedTarget {
     pub target_rel_path: Option<String>,
     pub target_title: String,
     pub section_hint: Option<String>,
-    pub workspace_key: Option<String>,
-    pub workspace_name: Option<String>,
-    pub is_cross_workspace_fallback: bool,
     pub recommended_mode: CaptureMode,
     pub chip_label: String,
 }
@@ -50,7 +42,6 @@ pub struct AppendNoteArgs {
     pub target_rel_path: String,
     pub content: String,
     pub mode: CaptureMode,
-    pub workspace_key: Option<String>,
 }
 
 /// Result returned by `note_append` and emitted on `toast:append-undo` (`C8.2`, `C8.3`).
@@ -102,7 +93,6 @@ pub struct ResolveDocCandidate {
 /// Pure context passed into `resolve_target` (`C8.1`).
 pub struct ResolveTargetContext<'a> {
     pub library_configured: bool,
-    pub workspaces: &'a BTreeMap<String, WorkspaceConfig>,
     pub ui_state: &'a UiState,
     pub docs: &'a [ResolveDocCandidate],
     pub last_active_ttl_hours: u32,
@@ -122,15 +112,10 @@ pub struct AppendBodyOutput {
 #[derive(Debug, Clone, Copy)]
 enum SelectedTarget<'a> {
     Doc(&'a ResolveDocCandidate),
-    Inbox {
-        title: &'a str,
-        workspace_key: Option<&'a str>,
-        workspace_name: Option<&'a str>,
-        is_cross_workspace_fallback: bool,
-    },
+    Inbox { title: &'a str },
 }
 
-/// Pure `S1–S8` Quick Bar target resolution truth table (`C8.1`).
+/// Pure `S1–S4` Quick Bar target resolution truth table (`C8.1`).
 pub fn resolve_target(
     ctx: &ResolveTargetContext<'_>,
     input: &TargetResolveInput,
@@ -142,9 +127,6 @@ pub fn resolve_target(
             target_rel_path: None,
             target_title: "未选库".to_string(),
             section_hint: None,
-            workspace_key: None,
-            workspace_name: None,
-            is_cross_workspace_fallback: false,
             recommended_mode: CaptureMode::List,
             chip_label: "请先选择或创建笔记库".to_string(),
         };
@@ -159,37 +141,15 @@ pub fn resolve_target(
             .and_then(|key| find_doc_by_key_or_path(ctx.docs, key))
         {
             ("S2", SelectedTarget::Doc(active_doc))
-        } else if let Some(ws_key) = input.selected_workspace_key.as_deref() {
-            if let Some((last_doc, last_ws)) = valid_last {
-                if last_ws.as_deref() == Some(ws_key) {
-                    ("S3", SelectedTarget::Doc(last_doc))
-                } else {
-                    ("S4", resolve_workspace_fallback(ctx, ws_key, true))
-                }
-            } else {
-                ("S4", resolve_workspace_fallback(ctx, ws_key, false))
-            }
-        } else if input.is_inbox_view {
-            ("S5", inbox_selection(ctx.docs, None, None, false))
-        } else if let Some((last_doc, _)) = valid_last {
-            ("S5", SelectedTarget::Doc(last_doc))
+        } else if let Some(last_doc) = valid_last {
+            ("S3", SelectedTarget::Doc(last_doc))
         } else {
-            ("S5", inbox_selection(ctx.docs, None, None, false))
+            ("S3", inbox_selection(ctx.docs))
         }
-    } else if let Some(ws_key) = input.selected_workspace_key.as_deref() {
-        if let Some((last_doc, last_ws)) = valid_last {
-            if last_ws.as_deref() == Some(ws_key) {
-                ("S6", SelectedTarget::Doc(last_doc))
-            } else {
-                ("S7", resolve_workspace_fallback(ctx, ws_key, true))
-            }
-        } else {
-            ("S7", resolve_workspace_fallback(ctx, ws_key, false))
-        }
-    } else if let Some((last_doc, _)) = valid_last {
-        ("S8", SelectedTarget::Doc(last_doc))
+    } else if let Some(last_doc) = valid_last {
+        ("S4", SelectedTarget::Doc(last_doc))
     } else {
-        ("S8", inbox_selection(ctx.docs, None, None, false))
+        ("S4", inbox_selection(ctx.docs))
     };
 
     build_resolved_target(ctx, scenario, selected)
@@ -207,7 +167,6 @@ pub fn apply_doc_section_hints(
 
     let (section_hint, chip_label) = compute_note_hints(
         &resolved.target_title,
-        resolved.workspace_name.as_deref(),
         resolved.recommended_mode,
         Some(has_section_heading(body, "## 想法")),
         Some(has_section_heading(body, "## 待办")),
@@ -305,20 +264,9 @@ fn find_doc_by_key_or_path<'a>(
         .find(|d| d.key == key_or_path || d.rel_path == key_or_path)
 }
 
-fn find_workspace<'a>(
-    workspaces: &'a BTreeMap<String, WorkspaceConfig>,
-    key_or_name: &str,
-) -> Option<&'a WorkspaceConfig> {
-    workspaces.get(key_or_name).or_else(|| {
-        workspaces
-            .values()
-            .find(|w| w.key == key_or_name || w.name == key_or_name)
-    })
-}
-
 fn resolve_valid_last_active<'a>(
     ctx: &'a ResolveTargetContext<'a>,
-) -> Option<(&'a ResolveDocCandidate, Option<String>)> {
+) -> Option<&'a ResolveDocCandidate> {
     let last = ctx.ui_state.last_active_doc.as_ref()?;
     if ctx.last_active_ttl_hours == 0 {
         return None;
@@ -329,58 +277,17 @@ fn resolve_valid_last_active<'a>(
         return None;
     }
 
-    let doc = ctx.docs.iter().find(|d| d.rel_path == last.rel_path)?;
-    let doc_ws = last.workspace_key.clone().or_else(|| {
-        doc.project
-            .as_deref()
-            .map(|p| normalize_workspace_key(ctx.workspaces, p))
-    });
-    Some((doc, doc_ws))
+    ctx.docs.iter().find(|d| d.rel_path == last.rel_path)
 }
 
-fn normalize_workspace_key(
-    workspaces: &BTreeMap<String, WorkspaceConfig>,
-    key_or_name: &str,
-) -> String {
-    find_workspace(workspaces, key_or_name)
-        .map(|w| w.key.clone())
-        .unwrap_or_else(|| key_or_name.to_string())
-}
-
-fn resolve_workspace_fallback<'a>(
-    ctx: &'a ResolveTargetContext<'a>,
-    ws_key: &'a str,
-    has_other_workspace_last: bool,
-) -> SelectedTarget<'a> {
-    let ws = find_workspace(ctx.workspaces, ws_key);
-    if let Some(entry_rel) = ws.and_then(|w| w.default_entry_doc.as_deref()) {
-        if let Some(entry_doc) = ctx.docs.iter().find(|d| d.rel_path == entry_rel) {
-            return SelectedTarget::Doc(entry_doc);
-        }
-    }
-
-    let ws_name = ws.map(|w| w.name.as_str());
-    inbox_selection(ctx.docs, Some(ws_key), ws_name, has_other_workspace_last)
-}
-
-fn inbox_selection<'a>(
-    docs: &'a [ResolveDocCandidate],
-    workspace_key: Option<&'a str>,
-    workspace_name: Option<&'a str>,
-    is_cross_workspace_fallback: bool,
-) -> SelectedTarget<'a> {
+fn inbox_selection<'a>(docs: &'a [ResolveDocCandidate]) -> SelectedTarget<'a> {
     let title = docs
         .iter()
         .find(|d| d.rel_path == INBOX_REL_PATH)
         .map(|d| d.title.as_str())
         .filter(|t| !t.is_empty())
         .unwrap_or("收件箱");
-    SelectedTarget::Inbox {
-        title,
-        workspace_key,
-        workspace_name,
-        is_cross_workspace_fallback,
-    }
+    SelectedTarget::Inbox { title }
 }
 
 fn build_resolved_target(
@@ -389,39 +296,16 @@ fn build_resolved_target(
     selected: SelectedTarget<'_>,
 ) -> ResolvedTarget {
     match selected {
-        SelectedTarget::Inbox {
-            title,
-            workspace_key,
-            workspace_name,
-            is_cross_workspace_fallback,
-        } => {
-            let chip_label = if is_cross_workspace_fallback {
-                "收件箱 · 跨工作区".to_string()
-            } else {
-                format!("{title} › {}", ctx.today_date)
-            };
-            ResolvedTarget {
-                scenario: scenario.to_string(),
-                kind: TargetKind::Inbox,
-                target_rel_path: Some(INBOX_REL_PATH.to_string()),
-                target_title: title.to_string(),
-                section_hint: Some(ctx.today_date.to_string()),
-                workspace_key: workspace_key.map(str::to_string),
-                workspace_name: workspace_name.map(str::to_string),
-                is_cross_workspace_fallback,
-                recommended_mode: CaptureMode::List,
-                chip_label,
-            }
-        }
+        SelectedTarget::Inbox { title } => ResolvedTarget {
+            scenario: scenario.to_string(),
+            kind: TargetKind::Inbox,
+            target_rel_path: Some(INBOX_REL_PATH.to_string()),
+            target_title: title.to_string(),
+            section_hint: Some(ctx.today_date.to_string()),
+            recommended_mode: CaptureMode::List,
+            chip_label: format!("{title} › {}", ctx.today_date),
+        },
         SelectedTarget::Doc(doc) => {
-            let (ws_key, ws_name) = match doc.project.as_deref() {
-                Some(proj) => match find_workspace(ctx.workspaces, proj) {
-                    Some(w) => (Some(w.key.clone()), Some(w.name.clone())),
-                    None => (Some(proj.to_string()), None),
-                },
-                None => (None, None),
-            };
-
             if doc.rel_path == INBOX_REL_PATH {
                 let title = if doc.title.is_empty() {
                     "收件箱"
@@ -434,22 +318,15 @@ fn build_resolved_target(
                     target_rel_path: Some(INBOX_REL_PATH.to_string()),
                     target_title: title.to_string(),
                     section_hint: Some(ctx.today_date.to_string()),
-                    workspace_key: ws_key,
-                    workspace_name: ws_name,
-                    is_cross_workspace_fallback: false,
                     recommended_mode: CaptureMode::List,
                     chip_label: format!("{title} › {}", ctx.today_date),
                 };
             }
 
-            let recommended_mode = ws_key
-                .as_deref()
-                .and_then(|k| ctx.ui_state.workspace_modes.get(k).copied())
-                .unwrap_or(CaptureMode::List);
+            let recommended_mode = CaptureMode::List;
 
             let (section_hint, chip_label) = compute_note_hints(
                 &doc.title,
-                ws_name.as_deref(),
                 recommended_mode,
                 doc.has_ideas_section,
                 doc.has_todo_section,
@@ -462,9 +339,6 @@ fn build_resolved_target(
                 target_rel_path: Some(doc.rel_path.clone()),
                 target_title: doc.title.clone(),
                 section_hint,
-                workspace_key: ws_key,
-                workspace_name: ws_name,
-                is_cross_workspace_fallback: false,
                 recommended_mode,
                 chip_label,
             }
@@ -474,7 +348,6 @@ fn build_resolved_target(
 
 fn compute_note_hints(
     target_title: &str,
-    workspace_name: Option<&str>,
     mode: CaptureMode,
     has_ideas_section: Option<bool>,
     has_todo_section: Option<bool>,
@@ -498,11 +371,9 @@ fn compute_note_hints(
         CaptureMode::Prose => None,
     };
 
-    let chip_label = match (section_hint.as_deref(), workspace_name) {
-        (Some(sec), Some(ws)) => format!("{target_title} › {sec} · {ws}"),
-        (Some(sec), None) => format!("{target_title} › {sec}"),
-        (None, Some(ws)) => format!("{target_title} · {ws}"),
-        (None, None) => target_title.to_string(),
+    let chip_label = match section_hint.as_deref() {
+        Some(sec) => format!("{target_title} › {sec}"),
+        None => target_title.to_string(),
     };
 
     (section_hint, chip_label)
