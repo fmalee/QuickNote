@@ -3,9 +3,6 @@ import { defineStore } from 'pinia';
 import type {
   AppendResult,
   CaptureMode,
-  ExternalBookmark,
-  ExternalDirectoryEntry,
-  ExternalPathProbeResult,
   HideReason,
   LibraryInfo,
   NavTreeSnapshot,
@@ -28,24 +25,29 @@ import {
   flattenDirRelPaths,
   inferDefaultTemplateName,
 } from '@/features/notes';
-import { writePendingOpenFile } from '@/features/quickopen';
+import {
+  useQuickOpen,
+  writePendingOpenFile,
+  type QuickOpenActionItem,
+  type QuickOpenDirectoryScope,
+  type QuickOpenOpenMode,
+  type QuickOpenResultItem,
+} from '@/features/quickopen';
 import { useSettingsStore } from '@/features/settings';
-import { windowSetQuickBarPinned, windowShowMain } from '@/lib/ipc/commands';
+import { actionRegistry, formatKeyComboDisplay, type ActionContext } from '@/lib/actions';
+import { externalActionRun, windowSetQuickBarPinned, windowShowMain } from '@/lib/ipc/commands';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import {
   appendQuickBarNote,
   createQuickBarNote,
-  fetchQuickBarExternalBookmarks,
   fetchQuickBarLibraryInfo,
   fetchQuickBarNavTree,
   fetchQuickBarNotesList,
   fetchQuickBarSettings,
   fetchQuickBarUiState,
   hideQuickBarWindow,
-  listExternalDirectory,
   listQuickBarTemplates,
   patchQuickBarUiState,
-  probeExternalPath,
   resolveQuickBarTarget,
   searchQuickBarNotes,
   showMainWindowForOnboarding,
@@ -69,9 +71,11 @@ export interface QuickBarDraftStorage {
   updatedAt: number;
 }
 
-export type QuickBarOpenGroupId = 'path_direct' | 'note' | 'file_bookmark' | 'dir_bookmark';
+export type QuickBarOpenGroupId =
+  'action' | 'note' | 'tag' | 'file_bookmark' | 'dir_bookmark' | 'path_direct';
 
-export type QuickBarOpenBadgeLabel = '路径直开' | '笔记' | '文件书签' | '目录书签';
+export type QuickBarOpenBadgeLabel =
+  '动作' | '笔记' | '标签' | '文件书签' | '目录书签' | '路径直开';
 
 export type QuickBarOpenActionKind = 'open_file' | 'enter_directory';
 
@@ -85,6 +89,11 @@ export interface QuickBarOpenItem {
   absPath: string;
   isHidden?: boolean;
   pinned?: boolean;
+  tagName?: string;
+  actionId?: string;
+  shortcutLabel?: string;
+  disabled?: boolean;
+  rawIndex?: number;
 }
 
 export interface QuickBarOpenGroup {
@@ -93,88 +102,102 @@ export interface QuickBarOpenGroup {
   items: QuickBarOpenItem[];
 }
 
-export interface QuickBarOpenDirectoryScope {
-  dirPath: string;
-  title: string;
-}
+export type QuickBarOpenDirectoryScope = QuickOpenDirectoryScope;
 
 type ExplicitTargetSource = 'picker' | 'related' | null;
 
-function isExternalPathQuery(raw: string): boolean {
-  return raw.startsWith('/') || raw.startsWith('~/') || raw === '~';
-}
+const QUICKBAR_OPEN_GROUP_ORDER: readonly QuickBarOpenGroupId[] = [
+  'action',
+  'note',
+  'tag',
+  'file_bookmark',
+  'dir_bookmark',
+  'path_direct',
+];
 
-function getPathBaseName(targetPath: string): string {
-  const normalized = targetPath.replace(/\/+$/, '');
-  if (!normalized) {
-    return '/';
+function mapQuickOpenResultToQuickBarItem(
+  item: QuickOpenResultItem,
+  rawIndex: number,
+): QuickBarOpenItem {
+  if (item.kind === 'action') {
+    return {
+      id: item.id,
+      group: 'action',
+      badgeLabel: '动作',
+      actionKind: 'open_file',
+      title: item.title,
+      subtitle: item.subtitle,
+      absPath: item.absPath ?? '',
+      actionId: item.actionId,
+      shortcutLabel: item.shortcutLabel,
+      disabled: item.disabled,
+      rawIndex,
+    };
   }
-  const idx = normalized.lastIndexOf('/');
-  return idx >= 0 ? normalized.slice(idx + 1) : normalized;
-}
-
-function joinVaultAbsPath(root: string, relPath: string): string {
-  const cleanRoot = root.replace(/\/+$/, '');
-  const cleanRel = relPath.replace(/^\/+/, '');
-  return `${cleanRoot}/${cleanRel}`;
-}
-
-function splitPartialExternalPath(raw: string): { parentDir: string; filterQuery: string } | null {
-  const lastSlash = raw.lastIndexOf('/');
-  if (lastSlash < 0) {
-    return null;
+  if (item.kind === 'tag') {
+    return {
+      id: item.id,
+      group: 'tag',
+      badgeLabel: '标签',
+      actionKind: 'open_file',
+      title: item.title,
+      subtitle: item.subtitle,
+      absPath: item.absPath ?? '',
+      tagName: item.tagName,
+      rawIndex,
+    };
   }
-  const parentDir = lastSlash === 0 ? '/' : raw.slice(0, lastSlash);
-  const filterQuery = raw.slice(lastSlash + 1);
-  if (!parentDir || !filterQuery) {
-    return null;
+  if (item.kind === 'note') {
+    return {
+      id: item.id,
+      group: 'note',
+      badgeLabel: '笔记',
+      actionKind: 'open_file',
+      title: item.title,
+      subtitle: item.subtitle,
+      absPath: item.absPath ?? '',
+      pinned: item.pinned,
+      rawIndex,
+    };
   }
-  return { parentDir, filterQuery };
-}
-
-function matchesBookmarkQuery(bookmark: ExternalBookmark, lowerQuery: string): boolean {
-  if (!lowerQuery) {
-    return true;
+  if (item.kind === 'file' && item.source === 'file_bookmark') {
+    return {
+      id: item.id,
+      group: 'file_bookmark',
+      badgeLabel: '文件书签',
+      actionKind: 'open_file',
+      title: item.title,
+      subtitle: item.subtitle,
+      absPath: item.absPath ?? '',
+      pinned: item.pinned,
+      rawIndex,
+    };
   }
-  const alias = (bookmark.alias ?? '').toLowerCase();
-  const baseName = getPathBaseName(bookmark.path).toLowerCase();
-  const fullPath = bookmark.path.toLowerCase();
-  return (
-    alias.includes(lowerQuery) || baseName.includes(lowerQuery) || fullPath.includes(lowerQuery)
-  );
-}
-
-function sortBookmarks(items: ExternalBookmark[]): ExternalBookmark[] {
-  return [...items].sort((a, b) => {
-    const pinnedDiff = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
-    if (pinnedDiff !== 0) {
-      return pinnedDiff;
-    }
-    const openedDiff = (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0);
-    if (openedDiff !== 0) {
-      return openedDiff;
-    }
-    return a.path.localeCompare(b.path);
-  });
-}
-
-function mapDirectoryEntryToOpenItem(
-  entry: ExternalDirectoryEntry,
-  group: QuickBarOpenGroupId,
-): QuickBarOpenItem | null {
-  if (entry.kind !== 'file' && entry.kind !== 'directory') {
-    return null;
+  if (item.kind === 'dir' && item.source === 'dir_bookmark') {
+    return {
+      id: item.id,
+      group: 'dir_bookmark',
+      badgeLabel: '目录书签',
+      actionKind: 'enter_directory',
+      title: item.title,
+      subtitle: item.subtitle,
+      absPath: item.absPath ?? '',
+      pinned: item.pinned,
+      rawIndex,
+    };
   }
-  const isDir = entry.kind === 'directory';
+  const isDir = item.kind === 'dir';
   return {
-    id: `${group}:${entry.kind}:${entry.path}`,
-    group,
+    id: item.id,
+    group: 'path_direct',
     badgeLabel: isDir ? '目录书签' : '路径直开',
     actionKind: isDir ? 'enter_directory' : 'open_file',
-    title: entry.name,
-    subtitle: entry.path,
-    absPath: entry.path,
-    isHidden: entry.isHidden,
+    title: item.title,
+    subtitle: item.subtitle,
+    absPath: item.absPath ?? '',
+    isHidden: item.isHidden,
+    pinned: item.pinned,
+    rawIndex,
   };
 }
 
@@ -355,22 +378,83 @@ export const useQuickBarStore = defineStore('quickbar', () => {
   const pickerTags = ref<TagNode[]>([]);
   const pickerWorkspaces = ref<WorkspaceSummary[]>([]);
 
-  const externalBookmarks = ref<ExternalBookmark[]>([]);
-  const openQuery = ref<string>('');
-  const openLoading = ref<boolean>(false);
-  const openError = ref<string | null>(null);
-  const openGroups = ref<QuickBarOpenGroup[]>([]);
-  const openSelectedIndex = ref<number>(0);
-  const openDirectoryStack = ref<QuickBarOpenDirectoryScope[]>([]);
-  const openProbeResult = ref<ExternalPathProbeResult | null>(null);
+  function buildQuickBarActionContext(): ActionContext {
+    return {
+      activeScope: 'quickbar',
+      activeScopes: ['quickbar', 'global'],
+    };
+  }
+
+  function quickBarActionItems(): QuickOpenActionItem[] {
+    const ctx = buildQuickBarActionContext();
+    return actionRegistry
+      .getAll()
+      .filter((action) => action.scope === 'quickbar' || action.scope === 'global')
+      .map((action) => ({
+        id: action.id,
+        title: action.title,
+        subtitle: action.id,
+        shortcutLabel: formatKeyComboDisplay(actionRegistry.getEffectiveKeys(action.id)),
+        disabled: action.when ? !action.when(ctx) : false,
+      }));
+  }
+
+  async function openItemFromQuickBar(
+    item: QuickOpenResultItem,
+    openMode: QuickOpenOpenMode,
+  ): Promise<void> {
+    if (!item.absPath) {
+      return;
+    }
+    await openFileInMain(item.absPath, openMode === 'newTab');
+  }
+
+  async function runActionFromQuickBar(actionId: string): Promise<void> {
+    await actionRegistry.executeById(actionId, buildQuickBarActionContext());
+  }
+
+  async function selectTagFromQuickBar(tagName: string): Promise<void> {
+    writePendingOpenFile({
+      kind: 'tag',
+      tag: tagName,
+      ts: Date.now(),
+    });
+    await showMainWindowForOnboarding();
+    await hide('esc');
+  }
+
+  async function revealItemFromQuickBar(item: QuickOpenResultItem): Promise<void> {
+    if (!item.absPath) {
+      return;
+    }
+    await externalActionRun({
+      id: 'external.reveal',
+      absPath: item.absPath,
+      dirPath: null,
+    });
+  }
+
+  const quickOpen = useQuickOpen({
+    getActionItems: () => quickBarActionItems(),
+    onOpenItem: (item, openMode) => openItemFromQuickBar(item, openMode),
+    onExecuteAction: (actionId) => runActionFromQuickBar(actionId),
+    onSelectTag: (tagName) => selectTagFromQuickBar(tagName),
+    onRevealItem: (item) => revealItemFromQuickBar(item),
+  });
+
+  const externalBookmarks = quickOpen.externalBookmarks;
+  const openQuery = quickOpen.query;
+  const openLoading = quickOpen.loading;
+  const openError = quickOpen.errorMessage;
+  const openSelectedIndex = quickOpen.selectedIndex;
+  const openDirectoryStack = quickOpen.directoryStack;
+  const openProbeResult = quickOpen.pathProbeResult;
 
   let unlistenWindowState: UnlistenFn | null = null;
   let relatedDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let pickerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let openDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let relatedRequestId = 0;
   let pickerRequestId = 0;
-  let openRequestId = 0;
   let suppressDraftWatch = false;
   let hasLiveMainWindowState = false;
 
@@ -447,373 +531,120 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     }));
   });
 
-  const activeOpenDirectoryScope = computed<QuickBarOpenDirectoryScope | null>(() => {
-    if (openDirectoryStack.value.length === 0) {
-      return null;
-    }
-    return openDirectoryStack.value[openDirectoryStack.value.length - 1] ?? null;
-  });
+  const activeOpenDirectoryScope = quickOpen.activeDirectoryScope;
 
-  const openFlatItems = computed<QuickBarOpenItem[]>(() => {
-    const out: QuickBarOpenItem[] = [];
-    for (const group of openGroups.value) {
-      for (const item of group.items) {
-        out.push(item);
+  const openFlatItems = computed<QuickBarOpenItem[]>(() =>
+    quickOpen.items.value.map((item, idx) => mapQuickOpenResultToQuickBarItem(item, idx)),
+  );
+
+  const openGroups = computed<QuickBarOpenGroup[]>(() => {
+    const buckets = new Map<QuickBarOpenGroupId, QuickBarOpenItem[]>();
+    for (const item of openFlatItems.value) {
+      let list = buckets.get(item.group);
+      if (!list) {
+        list = [];
+        buckets.set(item.group, list);
       }
+      list.push(item);
     }
-    return out;
-  });
 
-  function clearOpenTimer(): void {
-    if (openDebounceTimer !== null) {
-      clearTimeout(openDebounceTimer);
-      openDebounceTimer = null;
-    }
-  }
+    const scope = activeOpenDirectoryScope.value;
+    const probe = openProbeResult.value;
+    const pathDirectLabel = scope
+      ? `目录文件 · ${scope.dirPath}`
+      : probe?.exists && probe.kind === 'directory'
+        ? `目录内容 · ${probe.resolvedPath}`
+        : '路径直开';
 
-  function resetOpenModeState(): void {
-    clearOpenTimer();
-    openRequestId += 1;
-    openQuery.value = '';
-    openLoading.value = false;
-    openError.value = null;
-    openGroups.value = [];
-    openSelectedIndex.value = 0;
-    openDirectoryStack.value = [];
-    openProbeResult.value = null;
-  }
-
-  function clampOpenSelection(): void {
-    const len = openFlatItems.value.length;
-    if (len === 0) {
-      openSelectedIndex.value = 0;
-      return;
-    }
-    if (openSelectedIndex.value < 0) {
-      openSelectedIndex.value = 0;
-    } else if (openSelectedIndex.value >= len) {
-      openSelectedIndex.value = len - 1;
-    }
-  }
-
-  function buildBookmarkGroups(trimmedQuery: string): QuickBarOpenGroup[] {
-    const lower = trimmedQuery.toLowerCase();
-    const sorted = sortBookmarks(externalBookmarks.value);
-    const fileItems: QuickBarOpenItem[] = [];
-    const dirItems: QuickBarOpenItem[] = [];
-
-    for (const bookmark of sorted) {
-      if (!matchesBookmarkQuery(bookmark, lower)) {
-        continue;
-      }
-      const title = bookmark.alias?.trim() || getPathBaseName(bookmark.path);
-      if (bookmark.kind === 'file') {
-        fileItems.push({
-          id: `file-bookmark:${bookmark.path}`,
-          group: 'file_bookmark',
-          badgeLabel: '文件书签',
-          actionKind: 'open_file',
-          title,
-          subtitle: bookmark.path,
-          absPath: bookmark.path,
-          pinned: Boolean(bookmark.pinned),
-        });
-      } else {
-        dirItems.push({
-          id: `dir-bookmark:${bookmark.path}`,
-          group: 'dir_bookmark',
-          badgeLabel: '目录书签',
-          actionKind: 'enter_directory',
-          title,
-          subtitle: bookmark.path,
-          absPath: bookmark.path,
-          pinned: Boolean(bookmark.pinned),
-        });
-      }
-    }
+    const labels: Record<QuickBarOpenGroupId, string> = {
+      action: '动作',
+      note: '笔记库文档',
+      tag: '标签',
+      file_bookmark: '外部文件书签',
+      dir_bookmark: '外部目录书签',
+      path_direct: pathDirectLabel,
+    };
 
     const groups: QuickBarOpenGroup[] = [];
-    if (fileItems.length > 0) {
-      groups.push({ id: 'file_bookmark', label: '外部文件书签', items: fileItems });
-    }
-    if (dirItems.length > 0) {
-      groups.push({ id: 'dir_bookmark', label: '外部目录书签', items: dirItems });
+    for (const groupId of QUICKBAR_OPEN_GROUP_ORDER) {
+      const items = buckets.get(groupId);
+      if (items && items.length > 0) {
+        groups.push({
+          id: groupId,
+          label: labels[groupId],
+          items,
+        });
+      }
     }
     return groups;
+  });
+
+  function resetOpenModeState(): void {
+    quickOpen.reset();
   }
 
-  async function runOpenModeSearchNow(): Promise<void> {
-    clearOpenTimer();
-    openRequestId += 1;
-    const reqId = openRequestId;
-    const trimmed = openQuery.value.trim();
-    const scope = activeOpenDirectoryScope.value;
-    openLoading.value = true;
-    openError.value = null;
-
-    try {
-      // 1. Directory bookmark / directory drill-down mode
-      if (scope) {
-        openProbeResult.value = null;
-        const listing = await listExternalDirectory(scope.dirPath, {
-          query: trimmed.length > 0 ? trimmed : null,
-          includeHidden: true,
-        });
-        if (reqId !== openRequestId) {
-          return;
-        }
-        const items = listing.entries
-          .map((entry) => mapDirectoryEntryToOpenItem(entry, 'path_direct'))
-          .filter((item): item is QuickBarOpenItem => item !== null);
-        openGroups.value =
-          items.length > 0
-            ? [
-                {
-                  id: 'path_direct',
-                  label: `目录文件 · ${scope.dirPath}`,
-                  items,
-                },
-              ]
-            : [];
-        openSelectedIndex.value = 0;
-        clampOpenSelection();
-        return;
-      }
-
-      // 2. Direct path mode (`/` or `~/`)
-      if (isExternalPathQuery(trimmed)) {
-        const probe = await probeExternalPath(trimmed);
-        if (reqId !== openRequestId) {
-          return;
-        }
-        openProbeResult.value = probe;
-
-        if (probe.exists && probe.kind === 'file' && probe.readable) {
-          const fileName = getPathBaseName(probe.resolvedPath);
-          openGroups.value = [
-            {
-              id: 'path_direct',
-              label: '路径直开',
-              items: [
-                {
-                  id: `path-direct:${probe.resolvedPath}`,
-                  group: 'path_direct',
-                  badgeLabel: '路径直开',
-                  actionKind: 'open_file',
-                  title: `直接打开外部文件：${fileName}`,
-                  subtitle: probe.resolvedPath,
-                  absPath: probe.resolvedPath,
-                  isHidden: probe.isHidden,
-                },
-              ],
-            },
-          ];
-          openSelectedIndex.value = 0;
-          return;
-        }
-
-        if (probe.exists && probe.kind === 'directory' && probe.readable) {
-          const listing = await listExternalDirectory(probe.resolvedPath, {
-            query: null,
-            includeHidden: true,
-          });
-          if (reqId !== openRequestId) {
-            return;
-          }
-          const items = listing.entries
-            .map((entry) => mapDirectoryEntryToOpenItem(entry, 'path_direct'))
-            .filter((item): item is QuickBarOpenItem => item !== null);
-          openGroups.value =
-            items.length > 0
-              ? [
-                  {
-                    id: 'path_direct',
-                    label: `目录内容 · ${probe.resolvedPath}`,
-                    items,
-                  },
-                ]
-              : [];
-          openSelectedIndex.value = 0;
-          clampOpenSelection();
-          return;
-        }
-
-        const partial = splitPartialExternalPath(trimmed);
-        if (partial) {
-          const listing = await Promise.resolve(
-            listExternalDirectory(partial.parentDir, {
-              query: partial.filterQuery,
-              includeHidden: true,
-            }),
-          ).catch(() => null);
-          if (reqId !== openRequestId) {
-            return;
-          }
-          const items = (listing?.entries ?? [])
-            .map((entry) => mapDirectoryEntryToOpenItem(entry, 'path_direct'))
-            .filter((item): item is QuickBarOpenItem => item !== null);
-          openGroups.value =
-            items.length > 0
-              ? [
-                  {
-                    id: 'path_direct',
-                    label: `路径筛选 · ${listing?.rootPath ?? partial.parentDir}`,
-                    items,
-                  },
-                ]
-              : [];
-          openSelectedIndex.value = 0;
-          clampOpenSelection();
-          return;
-        }
-
-        openGroups.value = [];
-        openSelectedIndex.value = 0;
-        return;
-      }
-
-      // 3. Normal keyword / empty input: vault notes + file bookmarks + directory bookmarks
-      openProbeResult.value = null;
-      const searchRes = await Promise.resolve(
-        searchQuickBarNotes({
-          query: trimmed,
-          limit: 20,
-          requestId: reqId,
-        }),
-      ).catch(() => null);
-      if (reqId !== openRequestId) {
-        return;
-      }
-
-      const root = libraryInfo.value?.root ?? null;
-      const noteItems: QuickBarOpenItem[] = [];
-      for (const item of searchRes?.items ?? []) {
-        if (item.kind !== 'note' || item.source === 'spotlight') {
-          continue;
-        }
-        const absPath =
-          item.absPath ?? (root && item.relPath ? joinVaultAbsPath(root, item.relPath) : null);
-        if (!absPath) {
-          continue;
-        }
-        noteItems.push({
-          id: `note:${item.key}`,
-          group: 'note',
-          badgeLabel: '笔记',
-          actionKind: 'open_file',
-          title: item.title,
-          subtitle: item.relPath ?? item.subtitle ?? absPath,
-          absPath,
-        });
-      }
-
-      const groups: QuickBarOpenGroup[] = [];
-      if (noteItems.length > 0) {
-        groups.push({ id: 'note', label: '笔记库文档', items: noteItems });
-      }
-      groups.push(...buildBookmarkGroups(trimmed));
-      openGroups.value = groups;
-      openSelectedIndex.value = 0;
-      clampOpenSelection();
-    } catch (error) {
-      if (reqId !== openRequestId) {
-        return;
-      }
-      openError.value = error instanceof Error ? error.message : '检索外部路径失败，请重试。';
-      openGroups.value = [];
-      openSelectedIndex.value = 0;
-    } finally {
-      if (reqId === openRequestId) {
-        openLoading.value = false;
-      }
-    }
-  }
-
-  function scheduleOpenModeSearch(): void {
-    clearOpenTimer();
-    openDebounceTimer = setTimeout(() => {
-      openDebounceTimer = null;
-      void runOpenModeSearchNow();
-    }, QUICKBAR_SEARCH_DEBOUNCE_MS);
-  }
-
-  function setOpenQuery(query: string): void {
-    openQuery.value = query;
-    openSelectedIndex.value = 0;
-    scheduleOpenModeSearch();
+  function setOpenQuery(query: string, immediate = false): void {
+    quickOpen.setQuery(query, immediate);
   }
 
   async function refreshOpenMode(resetQuery = false): Promise<void> {
     if (resetQuery) {
-      openQuery.value = '';
-      openDirectoryStack.value = [];
-      openSelectedIndex.value = 0;
+      quickOpen.reset();
     }
-    const latestBookmarks = await Promise.resolve(fetchQuickBarExternalBookmarks()).catch(
-      () => null,
-    );
-    if (latestBookmarks !== null) {
-      externalBookmarks.value = latestBookmarks;
-    } else if (settingsSnapshot.value?.settings.externalBookmarks) {
-      externalBookmarks.value = settingsSnapshot.value.settings.externalBookmarks;
-    }
-    await runOpenModeSearchNow();
+    quickOpen.refresh(true);
+    await quickOpen.waitForPendingSearch();
   }
 
   function moveOpenSelection(delta: number): void {
-    const len = openFlatItems.value.length;
-    if (len === 0) {
-      openSelectedIndex.value = 0;
-      return;
-    }
-    openSelectedIndex.value = (openSelectedIndex.value + delta + len) % len;
+    quickOpen.moveSelection(delta >= 0 ? 1 : -1);
   }
 
   async function enterOpenDirectory(dirPath: string, title?: string): Promise<void> {
-    openDirectoryStack.value = [
-      ...openDirectoryStack.value,
-      { dirPath, title: title?.trim() || getPathBaseName(dirPath) },
-    ];
-    openQuery.value = '';
-    openSelectedIndex.value = 0;
-    await runOpenModeSearchNow();
+    quickOpen.enterDirectory(dirPath, title);
+    await quickOpen.waitForPendingSearch();
   }
 
   async function exitOpenDirectory(): Promise<boolean> {
-    if (openDirectoryStack.value.length === 0) {
-      return false;
+    const exited = quickOpen.exitDirectory();
+    if (exited) {
+      await quickOpen.waitForPendingSearch();
     }
-    openDirectoryStack.value = openDirectoryStack.value.slice(0, -1);
-    openQuery.value = '';
-    openSelectedIndex.value = 0;
-    await runOpenModeSearchNow();
-    return true;
+    return exited;
   }
 
-  async function selectOpenItem(item: QuickBarOpenItem): Promise<void> {
-    if (item.actionKind === 'enter_directory') {
+  async function selectOpenItem(
+    item: QuickBarOpenItem,
+    openMode: QuickOpenOpenMode = 'open',
+  ): Promise<void> {
+    const raw =
+      (typeof item.rawIndex === 'number' ? quickOpen.items.value[item.rawIndex] : undefined) ??
+      quickOpen.items.value.find((candidate) => candidate.id === item.id) ??
+      null;
+    if (raw) {
+      await quickOpen.confirmItem(raw, openMode);
+      await quickOpen.waitForPendingSearch();
+      return;
+    }
+    if (item.actionKind === 'enter_directory' && item.absPath) {
       await enterOpenDirectory(item.absPath, item.title);
       return;
     }
-    await openFileInMain(item.absPath, true);
+    if (item.absPath) {
+      await openFileInMain(item.absPath, openMode === 'newTab');
+    }
   }
 
-  async function confirmOpenSelection(): Promise<void> {
-    const current = openFlatItems.value[openSelectedIndex.value];
-    if (current) {
-      await selectOpenItem(current);
-      return;
-    }
+  async function confirmOpenSelection(openMode: QuickOpenOpenMode = 'open'): Promise<void> {
+    await quickOpen.confirmItem(quickOpen.selectedItem.value, openMode);
+    await quickOpen.waitForPendingSearch();
+  }
 
-    // If user hit Enter on a path query before debounce settled, probe immediately
-    const trimmed = openQuery.value.trim();
-    if (!activeOpenDirectoryScope.value && isExternalPathQuery(trimmed)) {
-      await runOpenModeSearchNow();
-      const first = openFlatItems.value[0];
-      if (first) {
-        await selectOpenItem(first);
-      }
-    }
+  function handleOpenKeydown(event: KeyboardEvent): boolean {
+    return quickOpen.handleKeydown(event);
+  }
+
+  function handleOpenTabComplete(): Promise<boolean> {
+    return quickOpen.handleTabComplete();
   }
 
   function clearRelatedTimer(): void {
@@ -1392,7 +1223,7 @@ export const useQuickBarStore = defineStore('quickbar', () => {
   function dispose(): void {
     clearRelatedTimer();
     clearPickerTimer();
-    clearOpenTimer();
+    quickOpen.dispose();
     if (unlistenWindowState) {
       unlistenWindowState();
       unlistenWindowState = null;
@@ -1511,7 +1342,6 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     setMode,
     openFileInMain,
     setOpenQuery,
-    runOpenModeSearchNow,
     refreshOpenMode,
     resetOpenModeState,
     moveOpenSelection,
@@ -1519,6 +1349,8 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     exitOpenDirectory,
     selectOpenItem,
     confirmOpenSelection,
+    handleOpenKeydown,
+    handleOpenTabComplete,
     setCaptureMode,
     selectRelatedNote,
     cycleRelatedTarget,

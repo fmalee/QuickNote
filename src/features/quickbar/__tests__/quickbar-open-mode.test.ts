@@ -229,11 +229,14 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
       recommendedMode: 'list',
       chipLabel: '收件箱 · inbox.md',
     } satisfies ResolvedTarget);
-    mockSearchNotesAndFiles.mockResolvedValue({
-      requestId: 1,
-      items: [],
-      truncated: false,
-    } satisfies SearchResponse);
+    mockSearchNotesAndFiles.mockImplementation(
+      async (args: { requestId: number }) =>
+        ({
+          requestId: args.requestId,
+          items: [],
+          truncated: false,
+        }) satisfies SearchResponse,
+    );
     mockProbeExternalPath.mockResolvedValue({
       rawInput: '',
       resolvedPath: '',
@@ -873,7 +876,7 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
     } satisfies ExternalPathProbeResult);
 
     store.openQuery = '/usr/local/etc/nginx/nginx.conf';
-    await store.runOpenModeSearchNow();
+    await store.refreshOpenMode(false);
 
     expect(mockProbeExternalPath).toHaveBeenCalledWith('/usr/local/etc/nginx/nginx.conf');
     expect(mockSearchSpotlight).not.toHaveBeenCalled();
@@ -882,15 +885,16 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
     expect(store.openGroups[0]?.items[0]?.badgeLabel).toBe('路径直开');
     expect(store.openGroups[0]?.items[0]?.title).toContain('直接打开外部文件');
 
-    await store.confirmOpenSelection();
+    await store.confirmOpenSelection('newTab');
     expect(consumePendingOpenFile()).toMatchObject({
+      kind: 'file',
       absPath: '/usr/local/etc/nginx/nginx.conf',
       newTab: true,
       line: null,
     });
     expect(mockWindowShowMain).toHaveBeenCalledWith({ mode: null });
 
-    // 2. Home hidden file path: ~/.zshrc
+    // 2. Home hidden file path: ~/.zshrc (default Enter opens as preview tab)
     store.setMode('open');
     mockProbeExternalPath.mockResolvedValueOnce({
       rawInput: '~/.zshrc',
@@ -905,13 +909,14 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
     } satisfies ExternalPathProbeResult);
 
     store.openQuery = '~/.zshrc';
-    await store.runOpenModeSearchNow();
+    await store.refreshOpenMode(false);
     expect(store.openGroups[0]?.items[0]?.absPath).toBe('/Users/demo/.zshrc');
 
     await store.confirmOpenSelection();
     expect(consumePendingOpenFile()).toMatchObject({
+      kind: 'file',
       absPath: '/Users/demo/.zshrc',
-      newTab: true,
+      newTab: false,
     });
 
     // 3. Probing a directory lists entries including hidden files
@@ -956,7 +961,7 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
     } satisfies ExternalDirectoryListing);
 
     store.openQuery = '/usr/local/etc/nginx';
-    await store.runOpenModeSearchNow();
+    await store.refreshOpenMode(false);
     expect(mockListExternalDirectory).toHaveBeenCalledWith({
       dirPath: '/usr/local/etc/nginx',
       query: null,
@@ -986,32 +991,35 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
       },
     ];
     mockSettingsGet.mockResolvedValue(snapshot);
-    mockSearchNotesAndFiles.mockResolvedValue({
-      requestId: 1,
-      items: [
-        {
-          kind: 'note',
-          key: 'n1',
-          title: '架构设计笔记',
-          subtitle: 'docs/arch.md',
-          relPath: 'docs/arch.md',
-          absPath: '/Users/demo/Vault/docs/arch.md',
-          score: 100,
-          source: 'library',
-        },
-        {
-          kind: 'file',
-          key: 'sp1',
-          title: 'legacy-spotlight.txt',
-          subtitle: '/tmp/legacy-spotlight.txt',
-          relPath: null,
-          absPath: '/tmp/legacy-spotlight.txt',
-          score: 50,
-          source: 'spotlight',
-        },
-      ],
-      truncated: false,
-    } satisfies SearchResponse);
+    mockSearchNotesAndFiles.mockImplementation(
+      async (args: { requestId: number }) =>
+        ({
+          requestId: args.requestId,
+          items: [
+            {
+              kind: 'note',
+              key: 'n1',
+              title: '架构设计笔记',
+              subtitle: 'docs/arch.md',
+              relPath: 'docs/arch.md',
+              absPath: '/Users/demo/Vault/docs/arch.md',
+              score: 100,
+              source: 'library',
+            },
+            {
+              kind: 'file',
+              key: 'sp1',
+              title: 'legacy-spotlight.txt',
+              subtitle: '/tmp/legacy-spotlight.txt',
+              relPath: null,
+              absPath: '/tmp/legacy-spotlight.txt',
+              score: 50,
+              source: 'spotlight',
+            },
+          ],
+          truncated: false,
+        }) satisfies SearchResponse,
+    );
 
     const pinia = createPinia();
     setActivePinia(pinia);
@@ -1097,7 +1105,7 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
       visitedCount: 1,
     } satisfies ExternalDirectoryListing);
     store.openQuery = 'htp';
-    await store.runOpenModeSearchNow();
+    await store.refreshOpenMode(false);
     expect(mockListExternalDirectory).toHaveBeenLastCalledWith({
       dirPath: '/usr/local/etc/nginx',
       query: 'htp',
@@ -1111,6 +1119,139 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
     expect(exited).toBe(true);
     expect(store.activeOpenDirectoryScope).toBeNull();
     expect(store.openGroups.map((g) => g.id)).toEqual(['note', 'file_bookmark', 'dir_bookmark']);
+
+    store.dispose();
+  });
+
+  it('lists tag group on @ta prefix and dispatches pending tag payload on confirm (M5-06b)', async () => {
+    mockNotesGetTreeAndTags.mockResolvedValueOnce({
+      dirs: [],
+      tags: [
+        { tag: 'task', count: 3, children: [] },
+        { tag: 'other', count: 1, children: [] },
+      ],
+      workspaces: [],
+    } satisfies NavTreeSnapshot);
+
+    const store = useQuickBarStore();
+    await store.initialize();
+    store.setMode('open');
+    store.openQuery = '@ta';
+    await store.refreshOpenMode(false);
+
+    expect(store.openGroups.map((g) => g.id)).toEqual(['tag']);
+    expect(store.openGroups[0]?.items[0]).toMatchObject({
+      group: 'tag',
+      badgeLabel: '标签',
+      title: '#task',
+      tagName: 'task',
+    });
+
+    await store.confirmOpenSelection();
+    expect(consumePendingOpenFile()).toMatchObject({
+      kind: 'tag',
+      tag: 'task',
+    });
+    expect(mockWindowShowMain).toHaveBeenCalledWith({ mode: null });
+    expect(mockWindowHideQuickBar).toHaveBeenCalledWith({ reason: 'esc' });
+
+    store.dispose();
+  });
+
+  it('lists action group on > prefix and executes matched quickbar action (M5-06b)', async () => {
+    const handler = vi.fn();
+    const disposeAction = actionRegistry.bindHandler('quickbar.togglePin', handler);
+
+    const store = useQuickBarStore();
+    await store.initialize();
+    store.setMode('open');
+    store.setOpenQuery('>pin', true);
+
+    expect(store.openGroups.map((g) => g.id)).toEqual(['action']);
+    expect(store.openGroups[0]?.items[0]).toMatchObject({
+      group: 'action',
+      badgeLabel: '动作',
+      actionId: 'quickbar.togglePin',
+    });
+
+    await store.confirmOpenSelection();
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    disposeAction();
+    store.dispose();
+  });
+
+  it('triggers Tab completion in path mode via handleOpenKeydown (M5-06b)', async () => {
+    const store = useQuickBarStore();
+    await store.initialize();
+    store.setMode('open');
+
+    mockProbeExternalPath.mockResolvedValueOnce({
+      rawInput: '/usr/lo',
+      resolvedPath: '/usr/lo',
+      exists: false,
+      kind: 'not_found',
+      readable: false,
+      size: null,
+      isText: false,
+      isUtf8: false,
+      isHidden: false,
+    } satisfies ExternalPathProbeResult);
+    mockListExternalDirectory.mockResolvedValueOnce({
+      rootPath: '/usr',
+      entries: [
+        {
+          name: 'local',
+          path: '/usr/local',
+          relPath: 'local',
+          kind: 'directory',
+          depth: 0,
+          size: null,
+          isHidden: false,
+          matchScore: 100,
+        },
+      ],
+      truncated: false,
+      visitedCount: 1,
+    } satisfies ExternalDirectoryListing);
+
+    store.openQuery = '/usr/lo';
+    await store.refreshOpenMode(false);
+
+    mockProbeExternalPath.mockResolvedValueOnce({
+      rawInput: '/usr/local/',
+      resolvedPath: '/usr/local',
+      exists: true,
+      kind: 'directory',
+      readable: true,
+      size: null,
+      isText: false,
+      isUtf8: false,
+      isHidden: false,
+    } satisfies ExternalPathProbeResult);
+    mockListExternalDirectory.mockResolvedValueOnce({
+      rootPath: '/usr/local',
+      entries: [],
+      truncated: false,
+      visitedCount: 0,
+    } satisfies ExternalDirectoryListing);
+
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+    const handled = store.handleOpenKeydown({
+      key: 'Tab',
+      isComposing: false,
+      keyCode: 9,
+      altKey: false,
+      metaKey: false,
+      preventDefault,
+      stopPropagation,
+    } as unknown as KeyboardEvent);
+
+    expect(handled).toBe(true);
+    expect(preventDefault).toHaveBeenCalled();
+    await Promise.resolve();
+    expect(store.openQuery).toBe('/usr/local/');
 
     store.dispose();
   });

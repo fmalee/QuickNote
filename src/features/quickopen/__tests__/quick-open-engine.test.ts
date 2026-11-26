@@ -45,8 +45,14 @@ vi.mock('@/lib/ipc/commands', () => ({
 import {
   QUICKOPEN_DEBOUNCE_MS,
   computeLongestCommonPrefix,
+  consumePendingOpenFile,
+  getPathBaseName,
+  matchesBookmarkQuery,
   parseQuickOpenQuery,
+  sortBookmarks,
+  splitPartialExternalPath,
   useQuickOpen,
+  writePendingOpenFile,
 } from '../index';
 
 function makeSearchResponse(requestId: number, items: SearchResponse['items']): SearchResponse {
@@ -639,5 +645,48 @@ describe('quick-open-engine (M3-03 / v5 Refactor)', () => {
     );
 
     engine.dispose();
+  });
+
+  it('exports deduplicated path/bookmark pure helpers and extended pending payloads (M5-06b)', () => {
+    expect(getPathBaseName('/usr/local/etc/')).toBe('etc');
+    expect(getPathBaseName('/')).toBe('/');
+    expect(splitPartialExternalPath('/usr/lo')).toEqual({
+      parentDir: '/usr',
+      filterQuery: 'lo',
+    });
+    expect(splitPartialExternalPath('/usr/')).toBeNull();
+
+    const bookmarks: ExternalBookmark[] = [
+      { path: '/b/file.conf', kind: 'file', alias: 'Beta', pinned: false, lastOpenedAt: 10 },
+      { path: '/a/file.conf', kind: 'file', alias: 'Alpha', pinned: true, lastOpenedAt: 5 },
+    ];
+    expect(sortBookmarks(bookmarks).map((b) => b.path)).toEqual(['/a/file.conf', '/b/file.conf']);
+    expect(matchesBookmarkQuery(bookmarks[0]!, 'beta')).toBe(true);
+    expect(matchesBookmarkQuery(bookmarks[0]!, 'gamma')).toBe(false);
+
+    const store = new Map<string, string>();
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          store.set(k, v);
+        },
+        removeItem: (k: string) => {
+          store.delete(k);
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    writePendingOpenFile({ kind: 'tag', tag: 'work', ts: 123 });
+    expect(consumePendingOpenFile()).toEqual({ kind: 'tag', tag: 'work', ts: 123 });
+
+    writePendingOpenFile({ kind: 'action', actionId: 'window.newNote', ts: 456 });
+    expect(consumePendingOpenFile()).toEqual({
+      kind: 'action',
+      actionId: 'window.newNote',
+      ts: 456,
+    });
   });
 });

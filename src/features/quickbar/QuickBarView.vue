@@ -42,6 +42,10 @@ function getOpenBadgeTone(
   group: QuickBarOpenGroupId,
 ): 'neutral' | 'accent' | 'warning' | 'success' {
   switch (group) {
+    case 'action':
+      return 'neutral';
+    case 'tag':
+      return 'accent';
     case 'path_direct':
       return 'accent';
     case 'file_bookmark':
@@ -71,40 +75,14 @@ function handleOpenKeydown(event: KeyboardEvent): void {
     return;
   }
 
+  if (store.handleOpenKeydown(event)) {
+    return;
+  }
+
   if (event.key === 'Escape') {
     event.preventDefault();
     event.stopPropagation();
     void store.handleEscape();
-    return;
-  }
-
-  if (event.key === 'ArrowDown') {
-    event.preventDefault();
-    event.stopPropagation();
-    store.moveOpenSelection(1);
-    return;
-  }
-
-  if (event.key === 'ArrowUp') {
-    event.preventDefault();
-    event.stopPropagation();
-    store.moveOpenSelection(-1);
-    return;
-  }
-
-  if (event.key === 'Backspace') {
-    if (store.openQuery.length === 0 && store.activeOpenDirectoryScope !== null) {
-      event.preventDefault();
-      event.stopPropagation();
-      void store.exitOpenDirectory();
-    }
-    return;
-  }
-
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    event.stopPropagation();
-    void store.confirmOpenSelection();
   }
 }
 
@@ -452,7 +430,7 @@ function handleKeydown(event: KeyboardEvent): void {
           :placeholder="
             store.activeOpenDirectoryScope
               ? '筛选目录文件（含隐藏文件），空输入按 Backspace 返回上级…'
-              : '搜索笔记、外部书签，或输入 / 与 ~/ 路径直接回车打开…'
+              : '搜索笔记、书签；/ 路径、# 全文、@ 标签、> 动作'
           "
           @input="handleOpenInput"
           @keydown="handleOpenKeydown"
@@ -486,16 +464,20 @@ function handleKeydown(event: KeyboardEvent): void {
               v-for="(item, itemIdx) in group.items"
               :key="item.id"
               type="button"
+              :disabled="item.disabled"
               :class="[
                 'qn-quickbar__open-item',
                 {
                   'qn-quickbar__open-item--active':
-                    store.openSelectedIndex === getOpenItemFlatIndex(groupIdx, itemIdx),
+                    store.openSelectedIndex ===
+                    (item.rawIndex ?? getOpenItemFlatIndex(groupIdx, itemIdx)),
                 },
               ]"
               :data-testid="`quickbar-open-item-${item.group}-${itemIdx}`"
-              @mouseenter="store.openSelectedIndex = getOpenItemFlatIndex(groupIdx, itemIdx)"
-              @click="store.selectOpenItem(item)"
+              @mouseenter="
+                store.openSelectedIndex = item.rawIndex ?? getOpenItemFlatIndex(groupIdx, itemIdx)
+              "
+              @click="store.selectOpenItem(item, $event.metaKey ? 'newTab' : 'open')"
             >
               <div class="qn-quickbar__open-item-main">
                 <span class="qn-quickbar__open-item-title">{{ item.title }}</span>

@@ -187,6 +187,31 @@ function consumeAndOpenPendingFile(): boolean {
     return false;
   }
   lastPendingOpenAtMs = Date.now();
+  if (pending.kind === 'tag') {
+    const tagPromise = (async () => {
+      await notesStore.setActiveTab('tags');
+      if (!notesStore.selectedTags.includes(pending.tag)) {
+        await notesStore.toggleTag(pending.tag);
+      }
+    })().finally(() => {
+      if (pendingOpenInFlight === tagPromise) {
+        pendingOpenInFlight = null;
+      }
+    });
+    pendingOpenInFlight = tagPromise;
+    return true;
+  }
+  if (pending.kind === 'action') {
+    const actionPromise = actionRegistry
+      .executeById(pending.actionId, buildActionContext())
+      .finally(() => {
+        if (pendingOpenInFlight === actionPromise) {
+          pendingOpenInFlight = null;
+        }
+      });
+    pendingOpenInFlight = actionPromise;
+    return true;
+  }
   const openPromise = editorTabsStore
     .openNoteByAbsPath(pending.absPath, {
       preview: !pending.newTab,

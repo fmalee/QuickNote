@@ -65,11 +65,12 @@ export interface UseQuickOpenOptions {
   getActionItems?: () => QuickOpenActionItem[];
   onOpenItem?: (item: QuickOpenResultItem, mode: QuickOpenOpenMode) => void | Promise<void>;
   onExecuteAction?: (actionId: string) => void | Promise<void>;
+  onSelectTag?: (tagName: string) => void | Promise<void>;
   onRevealItem?: (item: QuickOpenResultItem) => void | Promise<void>;
   onClose?: () => void;
 }
 
-function getPathBaseName(rawPath: string): string {
+export function getPathBaseName(rawPath: string): string {
   const normalized = rawPath.replace(/\/+$/, '');
   if (!normalized) {
     return '/';
@@ -78,7 +79,9 @@ function getPathBaseName(rawPath: string): string {
   return idx >= 0 ? normalized.slice(idx + 1) : normalized;
 }
 
-function splitPartialExternalPath(raw: string): { parentDir: string; filterQuery: string } | null {
+export function splitPartialExternalPath(
+  raw: string,
+): { parentDir: string; filterQuery: string } | null {
   const lastSlash = raw.lastIndexOf('/');
   if (lastSlash < 0) {
     return null;
@@ -91,7 +94,7 @@ function splitPartialExternalPath(raw: string): { parentDir: string; filterQuery
   return { parentDir, filterQuery };
 }
 
-function matchesBookmarkQuery(bookmark: ExternalBookmark, lowerQuery: string): boolean {
+export function matchesBookmarkQuery(bookmark: ExternalBookmark, lowerQuery: string): boolean {
   if (!lowerQuery) {
     return true;
   }
@@ -103,7 +106,7 @@ function matchesBookmarkQuery(bookmark: ExternalBookmark, lowerQuery: string): b
   );
 }
 
-function sortBookmarks(items: ExternalBookmark[]): ExternalBookmark[] {
+export function sortBookmarks(items: ExternalBookmark[]): ExternalBookmark[] {
   return [...items].sort((a, b) => {
     const pinnedDiff = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
     if (pinnedDiff !== 0) {
@@ -207,6 +210,17 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
 
   let activeRequestId = 0;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingSearchPromise: Promise<void> = Promise.resolve();
+
+  function trackSearch(reqId: number): Promise<void> {
+    const run = executeSearch(reqId);
+    pendingSearchPromise = run;
+    return run;
+  }
+
+  function waitForPendingSearch(): Promise<void> {
+    return pendingSearchPromise;
+  }
 
   function clearDebounceTimer(): void {
     if (debounceTimer !== null) {
@@ -566,13 +580,13 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
       immediate ||
       (!activeDirectoryScope.value && parseQuickOpenQuery(nextQuery).mode === 'action')
     ) {
-      void executeSearch(reqId);
+      void trackSearch(reqId);
       return;
     }
 
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
-      void executeSearch(reqId);
+      void trackSearch(reqId);
     }, debounceMs);
   }
 
@@ -681,7 +695,11 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
       return;
     }
     if (target.kind === 'tag' && target.tagName) {
-      setQuery(`@${target.tagName}`, true);
+      if (options.onSelectTag) {
+        await options.onSelectTag(target.tagName);
+      } else {
+        setQuery(`@${target.tagName}`, true);
+      }
       return;
     }
     if (target.kind === 'dir' && target.absPath) {
@@ -777,6 +795,7 @@ export function useQuickOpen(options: UseQuickOpenOptions = {}) {
     revealItem,
     confirmItem,
     handleKeydown,
+    waitForPendingSearch,
     dispose,
   };
 }

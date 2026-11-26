@@ -26,12 +26,28 @@ import {
 
 export const PENDING_OPEN_FILE_STORAGE_KEY = 'quicknote:pending-open-file-v1';
 
-export interface PendingOpenFilePayload {
+export interface PendingOpenFileItemPayload {
+  kind?: 'file';
   absPath: string;
   newTab: boolean;
   line?: number | null;
   ts: number;
 }
+
+export interface PendingOpenTagPayload {
+  kind: 'tag';
+  tag: string;
+  ts: number;
+}
+
+export interface PendingOpenActionPayload {
+  kind: 'action';
+  actionId: string;
+  ts: number;
+}
+
+export type PendingOpenFilePayload =
+  PendingOpenFileItemPayload | PendingOpenTagPayload | PendingOpenActionPayload;
 
 export function fetchQuickOpenNotesAndFiles(args: SearchQueryArgs): Promise<SearchResponse> {
   return searchNotesAndFiles(args);
@@ -107,14 +123,36 @@ export function consumePendingOpenFile(): PendingOpenFilePayload | null {
       return null;
     }
     const candidate = parsed as Record<string, unknown>;
+    const ts = typeof candidate.ts === 'number' ? candidate.ts : Date.now();
+    if (candidate.kind === 'tag') {
+      if (typeof candidate.tag !== 'string' || !candidate.tag) {
+        return null;
+      }
+      return {
+        kind: 'tag',
+        tag: candidate.tag,
+        ts,
+      };
+    }
+    if (candidate.kind === 'action') {
+      if (typeof candidate.actionId !== 'string' || !candidate.actionId) {
+        return null;
+      }
+      return {
+        kind: 'action',
+        actionId: candidate.actionId,
+        ts,
+      };
+    }
     if (typeof candidate.absPath !== 'string' || !candidate.absPath) {
       return null;
     }
     return {
+      kind: 'file',
       absPath: candidate.absPath,
       newTab: Boolean(candidate.newTab),
       line: typeof candidate.line === 'number' ? candidate.line : null,
-      ts: typeof candidate.ts === 'number' ? candidate.ts : Date.now(),
+      ts,
     };
   } catch {
     return null;
