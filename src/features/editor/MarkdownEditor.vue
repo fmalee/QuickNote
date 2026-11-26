@@ -42,6 +42,7 @@ import {
   getStreamLanguageExtension,
 } from './extensions/codeLanguages';
 import { EDITOR_FORMAT_ACTION_IDS, executeEditorFormatAction } from './extensions/markdownFormat';
+import { createSearchExtensions, openFindPanel, openReplacePanel } from './extensions/search';
 import {
   extractImageFileFromDataTransfer,
   handleImageInsert,
@@ -649,6 +650,7 @@ function createEditorState(tab: EditorTab): EditorState {
       EditorView.lineWrapping,
       keymapCompartment.of(cfg.keymapExt),
       keymap.of([...defaultKeymap, ...historyKeymap]),
+      ...createSearchExtensions(),
       EditorView.updateListener.of((update) => {
         if (suppressUpdate || !currentTabKey) {
           return;
@@ -1055,6 +1057,20 @@ onMounted(() => {
       }),
     );
   }
+  actionDisposers.push(
+    actionRegistry.bindHandler('editor.find', () => {
+      if (!view || !buildEditorActionContext().hasActiveDoc) {
+        return;
+      }
+      openFindPanel(view);
+    }),
+    actionRegistry.bindHandler('editor.replace', () => {
+      if (!view || !buildEditorActionContext().hasActiveDoc) {
+        return;
+      }
+      openReplacePanel(view);
+    }),
+  );
   if (typeof window !== 'undefined') {
     window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('keydown', handleKeyDown);

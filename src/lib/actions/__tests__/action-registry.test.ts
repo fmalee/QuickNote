@@ -444,4 +444,23 @@ describe('ActionRegistry 作用域优先级、显式吞键与冲突矩阵', () =
     expect(cmdB.preventDefault).not.toHaveBeenCalled();
     expect(boldRun).not.toHaveBeenCalled();
   });
+
+  it('8. editor.find 与 editor.replace 注册默认快捷键且无冲突，⌥⌘F 正确识别为 alt+cmd+f', () => {
+    const { event: optCmdF } = createFakeKeyboardEvent({
+      key: 'ƒ',
+      code: 'KeyF',
+      altKey: true,
+      metaKey: true,
+    });
+    expect(keyboardEventToCombo(optCmdF)).toBe('alt+cmd+f');
+
+    const registry = createActionRegistry({ storage: null });
+    registerDefaultActionCatalog(registry);
+
+    expect(registry.getEffectiveKeys('editor.find')).toBe('cmd+f');
+    expect(registry.getEffectiveKeys('editor.replace')).toBe('alt+cmd+f');
+
+    expect(registry.detectConflicts('editor.find', 'cmd+f')).toEqual([]);
+    expect(registry.detectConflicts('editor.replace', 'alt+cmd+f')).toEqual([]);
+  });
 });

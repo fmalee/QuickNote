@@ -132,6 +132,16 @@ fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
         .item(&PredefinedMenuItem::cut(app, Some("剪切"))?)
         .item(&PredefinedMenuItem::copy(app, Some("复制"))?)
         .item(&MenuItemBuilder::with_id("editor.copyRichText", "复制为富文本").build(app)?)
+        .item(
+            &MenuItemBuilder::with_id("editor.find", "查找…")
+                .accelerator("CmdOrCtrl+F")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("editor.replace", "查找并替换…")
+                .accelerator("Alt+CmdOrCtrl+F")
+                .build(app)?,
+        )
         .item(&PredefinedMenuItem::paste(app, Some("粘贴"))?)
         .item(&PredefinedMenuItem::select_all(app, Some("全选"))?)
         .build()?;
@@ -421,6 +431,8 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
             | "editor.heading5"
             | "editor.heading6"
             | "editor.copyRichText"
+            | "editor.find"
+            | "editor.replace"
             | "editor.exportPdf"
             | "panel.toggle.outline"
             | "panel.toggle.related"
