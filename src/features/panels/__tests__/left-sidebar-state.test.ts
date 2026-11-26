@@ -103,12 +103,12 @@ describe('panels store leftSidebar & terminalPanel state', () => {
     store.dispose();
   });
 
-  it('clamps leftSidebar width minimum to 280', () => {
+  it('clamps leftSidebar width minimum to 260', () => {
     const store = usePanelsStore();
 
     store.setLeftSidebarWidth(50);
-    expect(store.leftSidebar.width).toBe(280);
-    expect(store.leftSidebarWidth).toBe(280);
+    expect(store.leftSidebar.width).toBe(260);
+    expect(store.leftSidebarWidth).toBe(260);
 
     store.dispose();
   });
