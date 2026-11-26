@@ -42,7 +42,7 @@ pub fn window_toggle_auxiliary_sidebar(
     pm: State<'_, Arc<PersistenceManager>>,
 ) -> Result<WindowState, AppError> {
     let aux_pct = resolve_auxiliary_width_percent(&pm);
-    wm.toggle_auxiliary_sidebar_45(&app, aux_pct)
+    wm.toggle_auxiliary_sidebar_mode(&app, aux_pct)
 }
 
 /// Hides the main workspace window and switches activation policy to `.accessory` if settings is also closed (`C4.2`, `D-0003`).

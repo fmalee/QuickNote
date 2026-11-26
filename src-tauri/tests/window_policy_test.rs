@@ -340,3 +340,21 @@ fn hotkey_update_preserves_corrupt_settings_yaml_and_startup_falls_back_on_inval
 
     let _ = fs::remove_dir_all(temp_dir);
 }
+
+#[test]
+fn auxiliary_mode_survives_async_exit_fullscreen_resize_events() {
+    let mut state = WindowPolicyState::with_initial(true, WindowMode::Fullscreen);
+
+    // User triggers 45% auxiliary sidebar while main window is native fullscreen.
+    let (aux_state, _) = state.show_main(Some(WindowMode::Auxiliary));
+    assert_eq!(aux_state.mode, Some(WindowMode::Auxiliary));
+
+    // During async native exit-fullscreen animation, resize callbacks still report is_fullscreen=true,
+    // then report is_fullscreen=false once animation completes; neither may clobber Auxiliary.
+    let mid_anim = state.set_main_fullscreen(true);
+    assert_eq!(mid_anim.mode, Some(WindowMode::Auxiliary));
+
+    let post_anim = state.set_main_fullscreen(false);
+    assert_eq!(post_anim.mode, Some(WindowMode::Auxiliary));
+    assert!(!post_anim.fullscreen);
+}

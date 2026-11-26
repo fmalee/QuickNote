@@ -1,23 +1,13 @@
 # M5-02e：修复 45% 侧栏在全屏 Space 下顶部未贴边（R35）
 
-> **状态：暂缓（2026-11-26）。本卡按下文施工后实机不成立，分支存档不合入 `dev`，等待重新拆卡。新会话不要执行本卡。**
+> **状态：已完成并实机通过（2026-11-26）。**
 >
-> 暂缓原因（施工会话用独立 AppKit 测试程序实测得出，未经主控会话复核）：
->
-> 1. **上屏时被 AppKit 截断**。`setFrame:` 之后 `win.frame` 确实到了屏幕顶边，但紧接着
->    `orderFrontRegardless:` / `makeKeyAndOrderFront:` 会触发 `-[NSWindow constrainFrameRect:toScreen:]`，
->    带 `NSWindowStyleMaskTitled` 的窗口高度被强制截回 `screen.visibleFrame`。所以本卡 3.2 的 frame 改法实际无效。
-> 2. **全屏 Space 判定不可靠**。`[NSApp currentSystemPresentationOptions]` 与 `[NSMenu menuBarVisible]`
->    在托盘 / Quick Bar / 热键三种入口下都不能稳定区分「桌面 Space」与「另一个应用的全屏 Space」。
-> 3. **切换 Space 不重算**。窗口带 `CanJoinAllSpaces` 会跟到全屏 Space，但高度仍是桌面时的值。
-> 4. **附带发现一个既有缺陷**：在另一个应用的全屏 Space 里退出侧栏辅助，
->    `qn_exit_auxiliary_mode_locked` 直接去掉 `CanJoinAllSpaces`，窗口会被留在该全屏 Space 里出不来。
->
-> 重新拆卡前需要用户先定三件事：
->
-> - 45% 模式下是否接受无标题栏窗口（去掉红绿灯按钮），以绕开 `visibleFrame` 截断；
-> - 处于 45% 模式时用户切换 Space，是否自动重算高度；
-> - 在全屏 Space 里退出侧栏辅助后，主窗口应该回到哪里。
+> 最终落地设计（已与用户确认并完成全场景实机验证）：
+> 1. **临时去标题栏并放行键焦点**：进入 45% 侧栏时保存原 `styleMask` 并移除 `NSWindowStyleMaskTitled`（隐藏红绿灯），同时在辅助模式期间放行 `canBecomeKeyWindow` 返回 `YES`，以绕过 AppKit `constrainFrameRect:toScreen:` 对 `visibleFrame` 的顶部截断；退出时恢复原 `styleMask`（并兜底保证补回 `NSWindowStyleMaskTitled`）。
+> 2. **跨进程全屏 Space 判定**：通过 `CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, ...)` 检查当前屏幕是否存在覆盖整块 `screen.frame` 的其他进程 `layer == 0` 窗口，在托盘 / Quick Bar / 热键三种入口下均稳定区分桌面与全屏 Space。
+> 3. **Space 切换自动重算**：监听 `NSWorkspaceActiveSpaceDidChangeNotification`，在桌面与全屏 Space 之间切换时自动重算并调整侧栏高度。
+> 4. **全屏 Space 退出侧栏回桌面不回弹**：`window.rs` 在 macOS 退出辅助模式时交由原生层控制上屏；`qn_exit_auxiliary_mode_locked` 先 `orderOut` 并保留 `CanJoinAllSpaces`（去掉 `FullScreenAuxiliary`），切 `.regular` 触发系统回到桌面 Space，待 `NSWorkspaceActiveSpaceDidChangeNotification` 后在桌面 Space 上屏再剥离 `CanJoinAllSpaces`，彻底避免窗口被绑定在原全屏 Space。
+> 5. **全屏主窗口切侧栏状态竞态修复**：`domain/window.rs` 的 `set_main_fullscreen` 在 `main_mode == Auxiliary` 时不再被退全屏动画中的 `Resized` 事件覆盖；`NSWindowDidExitFullScreenNotification` 退全屏完成后补存标准窗口 `frame` / `styleMask`，退出侧栏时经 `qn_clamp_rect_to_visible` 兜底约束在 `visibleFrame` 内。
 
 - 所属里程碑：M5
 - 关联方案与契约：`v5` §6；C2.4、C9.1、C9.3；D-0011、D-0012

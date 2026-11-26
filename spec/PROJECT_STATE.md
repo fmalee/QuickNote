@@ -4,9 +4,9 @@
 
 ## 1. 当前精确进度
 
-- **当前状态**：**`M5 Completed`（M5 迭代收官，R35 暂缓单列，可选卡 `M5-06f` 已完成）**
-- **本轮概述**：完成 M5 全量缺陷修复与体验升级——修复启动标签恢复、自写回声假冲突、标签列表同步、滚动橡皮筋与终端字距；接入系统废纸篓删除与备份原生文件选择框；重构主窗口单栏左侧栏（目录/标签/最近/相关/大纲）+ 底部终端布局与状态栏；补齐编辑器查找/替换与标签页交互；实现 Quick Bar 失焦关闭、图钉固定、`⌘N` 切换与混合打开引擎复用；彻底移除 Spotlight 死代码并完成四份记录类文档同步。
-- **阶段结论**：除 R35（45% 侧栏在全屏 Space 下顶部未贴边）因 AppKit 机制限制暂缓外，M5 其余全部卡片均已完成并过 `pnpm check:all` 全量门禁。
+- **当前状态**：**`M5 Completed`（M5 迭代全量收官，含 R35 与可选卡 `M5-06f`）**
+- **本轮概述**：完成 M5 全量缺陷修复与体验升级——修复启动标签恢复、自写回声假冲突、标签列表同步、滚动橡皮筋、45% 侧栏全屏 Space 顶边贴靠与退出回桌面、以及终端字距；接入系统废纸篓删除与备份原生文件选择框；重构主窗口单栏左侧栏（目录/标签/最近/相关/大纲）+ 底部终端布局与状态栏；补齐编辑器查找/替换与标签页交互；实现 Quick Bar 失焦关闭、图钉固定、`⌘N` 切换与混合打开引擎复用；彻底移除 Spotlight 死代码并完成记录类文档同步。
+- **阶段结论**：M5 全部卡片（含 R35 与可选卡 `M5-06f`）均已完成并过 `pnpm check:all` 全量门禁。
 
 ## 2. M5 迭代任务清单（2026-11-26）
 
@@ -18,7 +18,7 @@
 | 4 | `M5-02b-r01-self-write-echo.md` | 「检测到外部修改冲突」假弹窗 | [x] |
 | 5 | `M5-02c-r21-tag-sync.md` | 改标签后列表不同步 | [x] |
 | 6 | `M5-02d-r36-overscroll.md` | 滚动橡皮筋 | [x] |
-| 7 | `M5-02e-r35-aux-frame.md` | 45% 侧栏全屏 Space 顶部留白（R35） | 暂缓，未解决 |
+| 7 | `M5-02e-r35-aux-frame.md` | 45% 侧栏全屏 Space 顶部留白（R35） | [x] |
 | 8 | `M5-02f-r41-terminal-font.md` | 终端字距过大 | [x] |
 | 9 | `M5-03a-r26-trash-delete.md` | 删除到系统废纸篓 | [x] |
 | 10 | `M5-03b1-r28-dialog-backend.md` | 文件选择窗口（依赖与后端） | [x] |
@@ -74,8 +74,8 @@
 | 前端全量单元测试 | `pnpm test:unit --run` | 通过（40/40 测试文件，221/221 用例） |
 | Rust 全量单元与集成测试 | `cargo test --manifest-path src-tauri/Cargo.toml --all-features` | 通过（102 条通过，0 失败；1 条 10k 压测默认 `#[ignore]`，可 `--ignored` 单独运行） |
 
-> **已知遗留与暂缓项**：
-> - **R35（45% 侧栏在全屏 Space 下顶部未贴边）**：本轮**未解决（暂缓）**。原因：`NSWindow` 带标题栏时上屏会被 AppKit `constrainFrameRect:toScreen:` 截断至 `visibleFrame`，且全屏 Space 判定与切换重算存在系统机制限制，需先确认产品交互取舍后再重新拆卡（详见 `spec/cards/M5-02e-r35-aux-frame.md` 顶部状态说明）。
+> **实机专项约定（R35）**：
+> - **45% 侧栏辅助模式**：进入时临时去掉 `NSWindowStyleMaskTitled` 并放行 `canBecomeKeyWindow`，通过 `CGWindowListCopyWindowInfo` 区分桌面与全屏 Space，并监听 `NSWorkspaceActiveSpaceDidChangeNotification` 自动重算高度；全屏 Space 下退出侧栏先 `orderOut` 保留 `CanJoinAllSpaces` 切回桌面 Space 上屏后再剥离 `CanJoinAllSpaces`；原生全屏主窗口异步退全屏进入侧栏期间不覆盖 `Auxiliary` 状态并在退全屏完成后补存标准窗口状态。
 
 ## 4. 已验证实机约定（摘要）
 

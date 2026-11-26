@@ -357,6 +357,11 @@ impl WindowManager {
                 }
             }
         } else {
+            let exiting_auxiliary = layout_transition.as_ref().is_some_and(|t| {
+                t.previous_mode == MainWindowLayoutMode::AuxiliarySidebar45
+                    && t.target_mode == MainWindowLayoutMode::Regular
+            });
+
             if let (Some(win), Some(transition)) = (main_win.as_ref(), layout_transition) {
                 self.apply_main_layout_transition(app, win, transition, policy);
             }
@@ -364,9 +369,12 @@ impl WindowManager {
             self.apply_activation_policy(app, policy);
 
             if let Some(win) = main_win {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
+                let native_handles_show = cfg!(target_os = "macos") && exiting_auxiliary;
+                if !native_handles_show {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
 
                 if effective_mode == WindowMode::Fullscreen {
                     if let Ok(ns_ptr) = window_ns_ptr_from_window(&win) {
@@ -411,15 +419,6 @@ impl WindowManager {
         };
 
         self.set_main_layout_mode(app, target_layout, auxiliary_width_percent)
-    }
-
-    /// Compatibility alias forwarding to `toggle_auxiliary_sidebar_mode`.
-    pub fn toggle_auxiliary_sidebar_45(
-        &self,
-        app: &AppHandle,
-        auxiliary_width_percent: u8,
-    ) -> Result<WindowState, AppError> {
-        self.toggle_auxiliary_sidebar_mode(app, auxiliary_width_percent)
     }
 
     /// Switches the resident main window to an explicit `Regular` or `AuxiliarySidebar45` layout.

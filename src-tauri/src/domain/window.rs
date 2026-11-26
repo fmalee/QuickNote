@@ -156,7 +156,11 @@ impl WindowPolicyState {
     pub fn set_main_fullscreen(&mut self, fullscreen: bool) -> WindowState {
         self.main_fullscreen = fullscreen;
         if fullscreen {
-            self.main_mode = WindowMode::Fullscreen;
+            // Do not clobber `Auxiliary` while the window is completing an async
+            // exit-fullscreen transition toward the 45% auxiliary sidebar.
+            if self.main_mode != WindowMode::Auxiliary {
+                self.main_mode = WindowMode::Fullscreen;
+            }
         } else if self.main_mode == WindowMode::Fullscreen {
             self.main_mode = WindowMode::Standard;
         }
