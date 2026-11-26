@@ -219,7 +219,7 @@ describe('QnContextMenu (M5-05c)', () => {
           {
             type: 'item',
             id: 'tab.deleteFile',
-            title: '删除文件（移到废纸篓）',
+            title: '删除文件',
             danger: true,
           },
         ],
@@ -251,7 +251,7 @@ describe('QnContextMenu (M5-05c)', () => {
         (el) =>
           el.tagName === 'BUTTON' &&
           el.collectText().includes('删除') &&
-          !el.collectText().includes('删除文件（移到废纸篓）'),
+          !el.collectText().includes('删除文件'),
       )[0];
       expect(submenuTrigger).toBeDefined();
 
@@ -262,7 +262,7 @@ describe('QnContextMenu (M5-05c)', () => {
       await nextTick();
 
       const subItemBtn = host.findAll(
-        (el) => el.tagName === 'BUTTON' && el.collectText().includes('删除文件（移到废纸篓）'),
+        (el) => el.tagName === 'BUTTON' && el.collectText().includes('删除文件'),
       )[0];
       expect(subItemBtn).toBeDefined();
 
