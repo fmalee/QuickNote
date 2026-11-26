@@ -1,3 +1,4 @@
+export { default as DirTreeSection } from './DirTreeSection.vue';
 export { default as DirWorkspaceBindModal } from './DirWorkspaceBindModal.vue';
 export { default as NewNoteTemplateModal } from './NewNoteTemplateModal.vue';
 export { default as NotesSidebar } from './NotesSidebar.vue';
