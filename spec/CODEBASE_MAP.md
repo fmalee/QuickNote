@@ -37,9 +37,9 @@ src/
     │                        # SiblingFilesPopover.vue, EditorConflictBanner.vue, EditorMergeView.vue,
     │                        # InboxBloatBanner.vue, InboxExtractModal.vue, ExportPdfModal.vue,
     │                        # useExternalActions.ts, store.ts, api.ts
-    │                        # core/{docSession.ts, editorPool.ts} · export/markdownExport.ts · extensions/* (含 search.ts)
-    ├── notes/               # NotesSidebar.vue, DirWorkspaceBindModal.vue, TagRenameModal.vue, useDirectoryWorkspaces.ts,
-    │                        # NewNoteTemplateModal.vue, templateUtils.ts, store.ts, api.ts
+    │                        # core/{docSession.ts, editorPool.ts, tabModel.ts} · export/markdownExport.ts · extensions/* (含 search.ts)
+    ├── notes/               # NotesSidebar.vue, TagCloudSection.vue, PinnedExternalFilesSection.vue, DirWorkspaceBindModal.vue,
+    │                        # TagRenameModal.vue, useDirectoryWorkspaces.ts, NewNoteTemplateModal.vue, templateUtils.ts, store.ts, api.ts
     ├── onboarding/          # OnboardingView.vue, store.ts, api.ts
     ├── panels/              # OutlinePanel.vue, RelatedNotesPanel.vue, outlineExtractor.ts, registry.ts, store.ts, api.ts
     ├── quickbar/            # QuickBarView.vue, QuickBarTargetPicker.vue, store.ts, api.ts
