@@ -2,22 +2,12 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type {
   DirNode,
-  DirectoryWorkspaceConfig,
-  DirectoryWorkspaceConfigEntry,
   ExternalActionState,
   NoteSummary,
   SearchResultItem,
   TagNode,
 } from '@/bindings/types';
-import {
-  type ContextMenuEntry,
-  QnBadge,
-  QnBanner,
-  QnButton,
-  QnContextMenu,
-  QnInput,
-  QnModalShell,
-} from '@/components';
+import { type ContextMenuEntry, QnBadge, QnBanner, QnButton, QnContextMenu } from '@/components';
 import {
   appendExternalContextMenuItems,
   isExternalActionId,
@@ -26,13 +16,10 @@ import {
 } from '@/features/editor';
 import { OutlinePanel, RelatedNotesPanel, usePanelsStore } from '@/features/panels';
 import { type ActionContext, actionRegistry } from '@/lib/actions';
-import {
-  extractNotesErrorMessage,
-  fetchDirectoryWorkspaceConfigMap,
-  openDirectoryWorkspaceInVscode,
-  saveDirectoryWorkspaceConfig,
-} from './api';
+import DirWorkspaceBindModal from './DirWorkspaceBindModal.vue';
 import { type NavTab, useNotesStore } from './store';
+import TagRenameModal from './TagRenameModal.vue';
+import { useDirectoryWorkspaces } from './useDirectoryWorkspaces';
 
 interface FlatDirItem {
   node: DirNode;
@@ -92,7 +79,6 @@ const tagCtxMenuItems: ContextMenuEntry[] = [
 
 const tagRenameModalOpen = ref<boolean>(false);
 const tagRenameOld = ref<string>('');
-const tagRenameDraft = ref<string>('');
 const tagRenameNotice = ref<string | null>(null);
 
 const FOLDER_CONTEXT_ACTION_IDS = [
@@ -100,7 +86,17 @@ const FOLDER_CONTEXT_ACTION_IDS = [
   'folder.openWorkspaceInVscode',
 ] as const;
 
-const dirWorkspaceMap = ref<Record<string, DirectoryWorkspaceConfigEntry>>({});
+const {
+  dirWorkspaceMap,
+  getBoundDirWorkspaceEntry,
+  hasDirWorkspaceTarget,
+  formatDirWorkspaceTooltip,
+  loadDirectoryWorkspaceConfigs,
+  handleOpenDirWorkspaceInVscode,
+} = useDirectoryWorkspaces((message) => {
+  notesStore.errorMessage = message;
+});
+
 const dirCtxOpen = ref<boolean>(false);
 const dirCtxPos = ref<{ x: number; y: number }>({ x: 0, y: 0 });
 const dirCtxTarget = ref<DirNode | null>(null);
@@ -108,85 +104,10 @@ const dirCtxTarget = ref<DirNode | null>(null);
 const dirWsModalOpen = ref<boolean>(false);
 const dirWsRelDir = ref<string>('');
 const dirWsDirName = ref<string>('');
-const dirWsVscodePath = ref<string>('');
-const dirWsProjectRoot = ref<string>('');
-const dirWsTerminalCwd = ref<string>('');
-const dirWsSaving = ref<boolean>(false);
-const dirWsError = ref<string | null>(null);
-const dirWsParseError = ref<string | null>(null);
 
-interface NormalizedDirWorkspaceFields {
-  vscodeWorkspacePath: string;
-  projectRoot: string;
-  defaultTerminalCwd: string;
-}
-
-function extractDirWorkspaceFields(
-  config: DirectoryWorkspaceConfig | null | undefined,
-): NormalizedDirWorkspaceFields {
-  return {
-    vscodeWorkspacePath: (
-      config?.vscodeWorkspacePath ??
-      config?.vscode_workspace_path ??
-      ''
-    ).trim(),
-    projectRoot: (config?.projectRoot ?? config?.project_root ?? '').trim(),
-    defaultTerminalCwd: (config?.defaultTerminalCwd ?? config?.default_terminal_cwd ?? '').trim(),
-  };
-}
-
-function hasBoundDirWorkspaceConfig(
-  entry: DirectoryWorkspaceConfigEntry | undefined,
-): entry is DirectoryWorkspaceConfigEntry {
-  if (!entry) {
-    return false;
-  }
-  if (entry.parseError) {
-    return true;
-  }
-  const fields = extractDirWorkspaceFields(entry.config);
-  return Boolean(fields.vscodeWorkspacePath || fields.projectRoot || fields.defaultTerminalCwd);
-}
-
-function getBoundDirWorkspaceEntry(relPath: string): DirectoryWorkspaceConfigEntry | null {
-  const entry = dirWorkspaceMap.value[relPath];
-  return hasBoundDirWorkspaceConfig(entry) ? entry : null;
-}
-
-function hasDirWorkspaceTarget(relPath: string): boolean {
-  const entry = dirWorkspaceMap.value[relPath];
-  if (!entry || entry.parseError || !entry.config) {
-    return false;
-  }
-  const fields = extractDirWorkspaceFields(entry.config);
-  return Boolean(fields.vscodeWorkspacePath || fields.projectRoot || fields.defaultTerminalCwd);
-}
-
-function formatDirWorkspaceTooltip(entry: DirectoryWorkspaceConfigEntry): string {
-  if (entry.parseError) {
-    return `工作区配置解析异常: ${entry.parseError}`;
-  }
-  const fields = extractDirWorkspaceFields(entry.config);
-  const lines: string[] = [];
-  if (fields.vscodeWorkspacePath) {
-    lines.push(`VS Code 工作区: ${fields.vscodeWorkspacePath}`);
-  }
-  if (fields.projectRoot) {
-    lines.push(`项目根目录: ${fields.projectRoot}`);
-  }
-  if (fields.defaultTerminalCwd) {
-    lines.push(`默认终端目录: ${fields.defaultTerminalCwd}`);
-  }
-  return lines.join('\n') || '已绑定目录工作区配置';
-}
-
-async function loadDirectoryWorkspaceConfigs(): Promise<void> {
-  try {
-    dirWorkspaceMap.value = await fetchDirectoryWorkspaceConfigMap();
-  } catch {
-    // 忽略目录工作区映射加载失败，避免阻断侧栏主渲染
-  }
-}
+const dirWsExistingEntry = computed(() =>
+  dirWsRelDir.value ? (dirWorkspaceMap.value[dirWsRelDir.value] ?? null) : null,
+);
 
 function buildDirActionContext(node: DirNode | null): ActionContext {
   return {
@@ -224,10 +145,6 @@ const dirCtxMenuItems = computed<ContextMenuEntry[]>(() => {
   return entries;
 });
 
-const dirWsHasExistingConfig = computed<boolean>(() =>
-  Boolean(dirWsRelDir.value && getBoundDirWorkspaceEntry(dirWsRelDir.value)),
-);
-
 function openDirContextMenu(event: MouseEvent, node: DirNode): void {
   dirCtxTarget.value = node;
   dirCtxPos.value = { x: event.clientX, y: event.clientY };
@@ -244,81 +161,13 @@ async function handleDirContextSelect(id: string): Promise<void> {
 }
 
 function openDirWorkspaceModal(vaultRelDir: string, dirName: string): void {
-  const entry = dirWorkspaceMap.value[vaultRelDir];
-  const fields = extractDirWorkspaceFields(entry?.config);
   dirWsRelDir.value = vaultRelDir;
   dirWsDirName.value = dirName;
-  dirWsVscodePath.value = fields.vscodeWorkspacePath;
-  dirWsProjectRoot.value = fields.projectRoot;
-  dirWsTerminalCwd.value = fields.defaultTerminalCwd;
-  dirWsParseError.value = entry?.parseError ?? null;
-  dirWsError.value = null;
   dirWsModalOpen.value = true;
 }
 
 function closeDirWorkspaceModal(): void {
-  if (dirWsSaving.value) {
-    return;
-  }
   dirWsModalOpen.value = false;
-}
-
-async function submitDirWorkspaceConfig(): Promise<void> {
-  if (dirWsSaving.value || !dirWsRelDir.value) {
-    return;
-  }
-  const vscodeWorkspacePath = dirWsVscodePath.value.trim();
-  const projectRoot = dirWsProjectRoot.value.trim();
-  const defaultTerminalCwd = dirWsTerminalCwd.value.trim();
-  const payload: DirectoryWorkspaceConfig | null =
-    vscodeWorkspacePath || projectRoot || defaultTerminalCwd
-      ? {
-          vscodeWorkspacePath: vscodeWorkspacePath || null,
-          projectRoot: projectRoot || null,
-          defaultTerminalCwd: defaultTerminalCwd || null,
-        }
-      : null;
-
-  dirWsSaving.value = true;
-  dirWsError.value = null;
-  try {
-    await saveDirectoryWorkspaceConfig(dirWsRelDir.value, payload);
-    await loadDirectoryWorkspaceConfigs();
-    dirWsModalOpen.value = false;
-  } catch (error) {
-    dirWsError.value = extractNotesErrorMessage(error);
-  } finally {
-    dirWsSaving.value = false;
-  }
-}
-
-async function clearDirWorkspaceConfig(): Promise<void> {
-  if (dirWsSaving.value || !dirWsRelDir.value) {
-    return;
-  }
-  dirWsSaving.value = true;
-  dirWsError.value = null;
-  try {
-    await saveDirectoryWorkspaceConfig(dirWsRelDir.value, null);
-    await loadDirectoryWorkspaceConfigs();
-    dirWsModalOpen.value = false;
-  } catch (error) {
-    dirWsError.value = extractNotesErrorMessage(error);
-  } finally {
-    dirWsSaving.value = false;
-  }
-}
-
-async function handleOpenDirWorkspaceInVscode(vaultRelDir: string): Promise<void> {
-  const entry = dirWorkspaceMap.value[vaultRelDir];
-  if (!entry?.config) {
-    return;
-  }
-  try {
-    await openDirectoryWorkspaceInVscode(entry.config);
-  } catch (error) {
-    notesStore.errorMessage = extractNotesErrorMessage(error);
-  }
 }
 
 let unbindFolderActions: Array<() => void> = [];
@@ -378,18 +227,6 @@ const allExistingTags = computed<Set<string>>(() => {
   return set;
 });
 
-const normalizedTagDraft = computed<string>(() => tagRenameDraft.value.trim().replace(/^#+/, ''));
-
-const isTagMergeTarget = computed<boolean>(() => {
-  const target = normalizedTagDraft.value;
-  return Boolean(target && target !== tagRenameOld.value && allExistingTags.value.has(target));
-});
-
-const canSubmitTagRename = computed<boolean>(() => {
-  const target = normalizedTagDraft.value;
-  return Boolean(target && target !== tagRenameOld.value && !notesStore.mutating);
-});
-
 function openTagContextMenu(event: MouseEvent, tag: string): void {
   tagCtxTarget.value = tag;
   tagCtxPos.value = { x: event.clientX, y: event.clientY };
@@ -406,7 +243,6 @@ function handleTagContextSelect(id: string): void {
 
 function openTagRenameModal(tag: string): void {
   tagRenameOld.value = tag;
-  tagRenameDraft.value = tag;
   tagRenameModalOpen.value = true;
 }
 
@@ -414,14 +250,8 @@ function closeTagRenameModal(): void {
   tagRenameModalOpen.value = false;
 }
 
-async function submitTagRename(): Promise<void> {
-  if (!canSubmitTagRename.value) {
-    return;
-  }
-  const updatedFiles = await notesStore.renameOrMergeTag(
-    tagRenameOld.value,
-    normalizedTagDraft.value,
-  );
+async function submitTagRename(oldTag: string, newTag: string): Promise<void> {
+  const updatedFiles = await notesStore.renameOrMergeTag(oldTag, newTag);
   if (!notesStore.errorMessage) {
     tagRenameModalOpen.value = false;
     tagRenameNotice.value = `已更新 ${updatedFiles} 篇笔记的标签`;
@@ -1150,130 +980,23 @@ function handleCollapsedStripClick(id: string): void {
     />
   </aside>
 
-  <QnModalShell
+  <TagRenameModal
     :open="tagRenameModalOpen"
-    title="重命名 / 合并标签"
-    max-width="sm"
-    data-testid="tag-rename-modal"
+    :old-tag="tagRenameOld"
+    :existing-tags="allExistingTags"
+    :mutating="notesStore.mutating"
     @close="closeTagRenameModal"
-  >
-    <div class="qn-tag-rename-modal__body">
-      <div class="qn-tag-rename-modal__row">
-        <span class="qn-tag-rename-modal__label">原标签</span>
-        <code class="qn-tag-rename-modal__old">#{{ tagRenameOld }}</code>
-      </div>
-      <div class="qn-tag-rename-modal__row">
-        <label class="qn-tag-rename-modal__label" for="qn-tag-rename-input">新标签</label>
-        <QnInput
-          id="qn-tag-rename-input"
-          v-model="tagRenameDraft"
-          placeholder="输入新标签名（不含 #）"
-          data-testid="tag-rename-input"
-          @keydown.enter.prevent="submitTagRename"
-        />
-      </div>
-      <QnBanner v-if="isTagMergeTarget" tone="warning" data-testid="tag-merge-warning">
-        目标标签
-        <code>#{{ normalizedTagDraft }}</code>
-        已存在，确认后将把原标签下的全部笔记<strong>合并</strong>到该标签下（自动去重，不覆盖注释与未知字段）。
-      </QnBanner>
-    </div>
-    <template #footer>
-      <QnButton size="sm" variant="ghost" @click="closeTagRenameModal">取消</QnButton>
-      <QnButton
-        size="sm"
-        variant="primary"
-        :disabled="!canSubmitTagRename"
-        data-testid="tag-rename-submit-btn"
-        @click="submitTagRename"
-      >
-        {{ isTagMergeTarget ? '确认合并' : '确认重命名' }}
-      </QnButton>
-    </template>
-  </QnModalShell>
+    @submit="submitTagRename"
+  />
 
-  <QnModalShell
+  <DirWorkspaceBindModal
     :open="dirWsModalOpen"
-    :title="`绑定目录工作区配置 · ${dirWsDirName || dirWsRelDir}`"
-    max-width="md"
-    data-testid="dir-workspace-modal"
+    :vault-rel-dir="dirWsRelDir"
+    :dir-name="dirWsDirName"
+    :existing-entry="dirWsExistingEntry"
     @close="closeDirWorkspaceModal"
-  >
-    <div class="qn-dir-ws-modal__body">
-      <div class="qn-dir-ws-modal__row">
-        <span class="qn-dir-ws-modal__label">目标目录</span>
-        <code class="qn-dir-ws-modal__path">{{ dirWsRelDir }}</code>
-      </div>
-      <QnBanner v-if="dirWsParseError" tone="warning" data-testid="dir-workspace-parse-warning">
-        当前目录 `.quicknote.yaml` 解析失败（{{ dirWsParseError }}），保存新配置或清除后可恢复正常。
-      </QnBanner>
-      <div class="qn-dir-ws-modal__row">
-        <label class="qn-dir-ws-modal__label" for="qn-dir-ws-vscode-input">
-          VS Code 工作区文件（可选）
-        </label>
-        <QnInput
-          id="qn-dir-ws-vscode-input"
-          v-model="dirWsVscodePath"
-          placeholder="例如：/Users/you/Projects/app.code-workspace"
-          data-testid="dir-workspace-vscode-input"
-        />
-      </div>
-      <div class="qn-dir-ws-modal__row">
-        <label class="qn-dir-ws-modal__label" for="qn-dir-ws-root-input">
-          项目根目录（可选）
-        </label>
-        <QnInput
-          id="qn-dir-ws-root-input"
-          v-model="dirWsProjectRoot"
-          placeholder="例如：/Users/you/Projects/app"
-          data-testid="dir-workspace-root-input"
-        />
-      </div>
-      <div class="qn-dir-ws-modal__row">
-        <label class="qn-dir-ws-modal__label" for="qn-dir-ws-cwd-input">
-          默认终端目录（可选）
-        </label>
-        <QnInput
-          id="qn-dir-ws-cwd-input"
-          v-model="dirWsTerminalCwd"
-          placeholder="例如：/Users/you/Projects/app"
-          data-testid="dir-workspace-cwd-input"
-          @keydown.enter.prevent="submitDirWorkspaceConfig"
-        />
-      </div>
-      <p class="qn-dir-ws-modal__hint">
-        保存后将写入该目录下的 <code>.quicknote.yaml</code>；全部留空或点击清除将移除配置文件。
-      </p>
-      <QnBanner v-if="dirWsError" tone="danger" data-testid="dir-workspace-error-banner">
-        {{ dirWsError }}
-      </QnBanner>
-    </div>
-    <template #footer>
-      <QnButton
-        v-if="dirWsHasExistingConfig"
-        size="sm"
-        variant="danger"
-        :loading="dirWsSaving"
-        data-testid="dir-workspace-clear-btn"
-        @click="clearDirWorkspaceConfig"
-      >
-        清除配置
-      </QnButton>
-      <span class="qn-dir-ws-modal__footer-spacer" />
-      <QnButton size="sm" variant="ghost" :disabled="dirWsSaving" @click="closeDirWorkspaceModal">
-        取消
-      </QnButton>
-      <QnButton
-        size="sm"
-        variant="primary"
-        :loading="dirWsSaving"
-        data-testid="dir-workspace-save-btn"
-        @click="submitDirWorkspaceConfig"
-      >
-        保存配置
-      </QnButton>
-    </template>
-  </QnModalShell>
+    @saved="loadDirectoryWorkspaceConfigs"
+  />
 </template>
 
 <style scoped>
@@ -1767,66 +1490,7 @@ function handleCollapsedStripClick(id: string): void {
   font-weight: 600;
 }
 
-.qn-tag-rename-modal__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--qn-space-3);
-}
-
-.qn-tag-rename-modal__row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--qn-space-1);
-}
-
-.qn-tag-rename-modal__label {
-  font-size: var(--qn-text-xs);
-  color: var(--qn-text-secondary);
-}
-
-.qn-tag-rename-modal__old {
-  font-family: var(--qn-font-mono);
-  font-size: var(--qn-text-sm);
-  color: var(--qn-text-primary);
-}
-
 .qn-notes-sidebar__ws-badge {
   flex-shrink: 0;
-}
-
-.qn-dir-ws-modal__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--qn-space-3);
-}
-
-.qn-dir-ws-modal__row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--qn-space-1);
-}
-
-.qn-dir-ws-modal__label {
-  font-size: var(--qn-text-xs);
-  color: var(--qn-text-secondary);
-}
-
-.qn-dir-ws-modal__path {
-  font-family: var(--qn-font-mono);
-  font-size: var(--qn-text-xs);
-  color: var(--qn-text-primary);
-  background-color: var(--qn-bg-sidebar);
-  padding: var(--qn-space-1) var(--qn-space-2);
-  border-radius: var(--qn-radius-sm);
-}
-
-.qn-dir-ws-modal__hint {
-  margin: 0;
-  font-size: var(--qn-text-xs);
-  color: var(--qn-text-muted);
-}
-
-.qn-dir-ws-modal__footer-spacer {
-  flex: 1;
 }
 </style>
