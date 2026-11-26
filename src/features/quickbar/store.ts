@@ -29,7 +29,8 @@ import {
   inferDefaultTemplateName,
 } from '@/features/notes';
 import { writePendingOpenFile } from '@/features/quickopen';
-import { windowShowMain } from '@/lib/ipc/commands';
+import { useSettingsStore } from '@/features/settings';
+import { windowSetQuickBarPinned, windowShowMain } from '@/lib/ipc/commands';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import {
   appendQuickBarNote,
@@ -304,6 +305,7 @@ function removeDraftStorage(): void {
 }
 
 export const useQuickBarStore = defineStore('quickbar', () => {
+  const settingsStore = useSettingsStore();
   const libraryInfo = ref<LibraryInfo | null>(null);
   const settingsSnapshot = ref<SettingsSnapshot | null>(null);
   const uiState = ref<UiState>(createFallbackUiState());
@@ -313,6 +315,18 @@ export const useQuickBarStore = defineStore('quickbar', () => {
   const loading = ref<boolean>(false);
   const submitting = ref<boolean>(false);
   const errorMessage = ref<string | null>(null);
+  const isPinned = computed<boolean>(
+    () => settingsStore.snapshot?.settings.quickBar.pinned ?? false,
+  );
+
+  async function togglePin(): Promise<void> {
+    errorMessage.value = null;
+    try {
+      await windowSetQuickBarPinned(!isPinned.value);
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : '切换 Quick Bar 固定状态失败。';
+    }
+  }
   const focusTick = ref<number>(0);
   const mainWindowMode = ref<WindowMode>('standard');
   const mainWindowVisible = ref<boolean>(false);
@@ -1444,6 +1458,8 @@ export const useQuickBarStore = defineStore('quickbar', () => {
     loading,
     submitting,
     errorMessage,
+    isPinned,
+    togglePin,
     focusTick,
     mainWindowMode,
     mainWindowVisible,

@@ -35,6 +35,7 @@ import {
   terminalSetVisibility,
   terminalSpawn,
   terminalWrite,
+  windowSetQuickBarPinned,
 } from '@/lib/ipc/commands';
 import { listenEvent } from '@/lib/ipc/events';
 
@@ -233,6 +234,15 @@ describe('IPC smoke wrapper', () => {
         htmlDocument: '<html><body><h1>Hello</h1></body></html>',
         destPath: '~/Desktop/note.pdf',
       },
+    });
+  });
+
+  it('invokes windowSetQuickBarPinned wrapper', async () => {
+    mockInvoke.mockResolvedValueOnce(true);
+    const pinned = await windowSetQuickBarPinned(true);
+    expect(pinned).toBe(true);
+    expect(mockInvoke).toHaveBeenCalledWith('window_set_quick_bar_pinned', {
+      args: { pinned: true },
     });
   });
 });

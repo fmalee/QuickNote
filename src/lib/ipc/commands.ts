@@ -165,6 +165,10 @@ export function windowOpenSettings(): Promise<WindowState> {
   return invoke<WindowState>('window_open_settings');
 }
 
+export function windowSetQuickBarPinned(pinned: boolean): Promise<boolean> {
+  return invoke<boolean>('window_set_quick_bar_pinned', { args: { pinned } });
+}
+
 export function hotkeyUpdate(args: HotkeyUpdateArgs): Promise<HotkeyStatus> {
   return invoke<HotkeyStatus>('hotkey_update', { args });
 }

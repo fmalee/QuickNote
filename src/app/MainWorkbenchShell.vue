@@ -36,7 +36,13 @@ import {
   type ActionContext,
   type ActionScope,
 } from '@/lib/actions';
-import { appSetMenuAccelerators, uiStateGet, uiStateSet, windowShowMain } from '@/lib/ipc/commands';
+import {
+  appSetMenuAccelerators,
+  uiStateGet,
+  uiStateSet,
+  windowSetQuickBarPinned,
+  windowShowMain,
+} from '@/lib/ipc/commands';
 import { onMenuAction, onToastAppendUndo, onWindowState, type UnlistenFn } from '@/lib/ipc/events';
 
 const onboardingStore = useOnboardingStore();
@@ -249,6 +255,9 @@ function bindMainWindowActions(): void {
     }),
     actionRegistry.bindHandler('window.toggleAuxiliary', () => {
       void toggleAuxiliaryMode();
+    }),
+    actionRegistry.bindHandler('window.pinQuickBar', () => {
+      void windowSetQuickBarPinned(!(settingsStore.snapshot?.settings.quickBar.pinned ?? false));
     }),
     actionRegistry.bindHandler('panel.toggle.outline', () => {
       panelsStore.toggleLeftView('outline');

@@ -111,6 +111,14 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     scope: 'quickbar',
     run: noopAction,
   },
+  {
+    id: 'quickbar.togglePin',
+    title: '固定 / 取消固定 Quick Bar',
+    category: 'quickbar',
+    defaultKeys: null,
+    scope: 'quickbar',
+    run: noopAction,
+  },
 
   // window.*
   {
@@ -186,6 +194,14 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     defaultKeys: 'ctrl+shift+tab',
     scope: 'main-window',
     when: (ctx) => Boolean(ctx.hasActiveDoc),
+    run: noopAction,
+  },
+  {
+    id: 'window.pinQuickBar',
+    title: '固定 Quick Bar',
+    category: 'window',
+    defaultKeys: null,
+    scope: 'main-window',
     run: noopAction,
   },
 

@@ -202,6 +202,9 @@ function bindQuickBarActions(): void {
       },
       { when: canActInCapture },
     ),
+    actionRegistry.bindHandler('quickbar.togglePin', () => {
+      void store.togglePin();
+    }),
   );
 }
 
@@ -374,6 +377,18 @@ function handleKeydown(event: KeyboardEvent): void {
           @click="store.toggleAuxiliarySidebarMode()"
         >
           45% 侧栏
+        </button>
+
+        <button
+          type="button"
+          class="qn-quickbar__chip-btn"
+          :class="{ 'qn-quickbar__pin-btn--active': store.isPinned }"
+          :title="store.isPinned ? '已固定：失焦不关闭' : '固定后失焦不关闭'"
+          :aria-pressed="store.isPinned"
+          data-testid="quickbar-pin-toggle"
+          @click="store.togglePin()"
+        >
+          📌
         </button>
 
         <QnButton variant="ghost" size="sm" @click="store.handleEscape()">Esc</QnButton>
@@ -731,6 +746,12 @@ function handleKeydown(event: KeyboardEvent): void {
   border: none;
   background: transparent;
   cursor: pointer;
+}
+
+.qn-quickbar__pin-btn--active {
+  background-color: var(--qn-accent-soft);
+  border: 1px solid var(--qn-accent);
+  border-radius: var(--qn-radius-sm);
 }
 
 .qn-quickbar__clear-target {
