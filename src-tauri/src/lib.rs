@@ -859,6 +859,7 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::notes::note_save_image,
             commands::notes::notes_get_related,
             commands::notes::tags_batch_rename,
+            commands::notes::notes_backfill_missing_ids,
             commands::notes::note_export_pdf,
             commands::search::search_notes_and_files,
             commands::search::commands_search,

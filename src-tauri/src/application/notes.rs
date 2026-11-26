@@ -5,8 +5,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{Local, Utc};
+use tauri::{AppHandle, Emitter};
 
-use crate::application::index::index_single_note;
+use crate::application::index::{index_get_status, index_single_note};
 use crate::application::persistence::PersistenceManager;
 use crate::domain::backup::format_backup_filename;
 use crate::domain::command_book::{filter_and_rank_commands, CommandEntry, CommandSearchArgs};
@@ -18,9 +19,9 @@ use crate::domain::frontmatter::{
 use crate::domain::markdown::{decode_base64_image, normalize_image_ext};
 use crate::domain::note::{
     compose_note, compute_body_hash, format_ulid, meta_patch_ops, normalize_tag_name, parse_note,
-    rewrite_tags_for_rename, score_related_notes, tag_matches, ConflictInfo, CreateNoteArgs,
-    DirNode, NavTreeSnapshot, NoteDoc, NoteMeta, NoteMetaPatch, NoteSummary, NoteType,
-    NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs, RelPathArgs, RelatedNoteCandidate,
+    rewrite_tags_for_rename, score_related_notes, tag_matches, BackfillIdsResult, ConflictInfo,
+    CreateNoteArgs, DirNode, NavTreeSnapshot, NoteDoc, NoteMeta, NoteMetaPatch, NoteSummary,
+    NoteType, NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs, RelPathArgs, RelatedNoteCandidate,
     RelatedNoteItem, RenameNoteArgs, SaveImageArgs, SavedImageResult, SearchItemKind,
     SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode, TagRenameArgs,
     TagRenameResult, WriteNoteArgs, WriteResult, INBOX_REL_PATH,
@@ -1231,4 +1232,147 @@ pub fn tags_batch_rename(
     }
 
     Ok(TagRenameResult { updated_files })
+}
+
+fn collect_backfill_markdown_files(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<(String, PathBuf)>,
+) -> Result<(), AppError> {
+    let entries = fs::read_dir(dir).map_err(|e| map_io_error(e, "Failed to read directory"))?;
+    for entry_res in entries {
+        let entry = entry_res.map_err(|e| map_io_error(e, "Failed to read directory entry"))?;
+        let name_os = entry.file_name();
+        let name = name_os.to_string_lossy();
+        if name.starts_with('.') || name.contains(".tmp.") {
+            continue;
+        }
+        let path = entry.path();
+        let rel = path.strip_prefix(root).map_err(|e| {
+            AppError::with_detail(ErrorCode::InternalError, "Path strip failed", e.to_string())
+        })?;
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+
+        if path.is_dir() {
+            if rel_str == "_templates"
+                || rel_str.starts_with("_templates/")
+                || rel_str == "assets"
+                || rel_str.starts_with("assets/")
+            {
+                continue;
+            }
+            collect_backfill_markdown_files(root, &path, out)?;
+        } else if path.is_file()
+            && path
+                .extension()
+                .and_then(|s| s.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+        {
+            out.push((rel_str, path));
+        }
+    }
+    Ok(())
+}
+
+/// Scans `library_root` and safely back-fills ULID `id` fields for notes missing an ID (`D-0006`).
+///
+/// - Excludes `_templates/`, hidden entries (`.` prefix), `assets/`, and `.tmp.` files.
+/// - Skips notes that already have a non-empty `meta.id`.
+/// - Never mutates notes with broken or unterminated YAML frontmatter.
+/// - Preserves comments and unknown fields via `apply_yaml_patch` for valid frontmatter,
+///   or prepends a minimal `id`-only frontmatter block when no frontmatter exists.
+/// - Writes atomically with self-write suppression and syncs SQLite via `index_single_note`.
+pub fn notes_backfill_missing_ids(
+    pm: &PersistenceManager,
+    app: Option<&AppHandle>,
+) -> Result<BackfillIdsResult, AppError> {
+    let root = require_library_root(pm)?;
+    if !root.is_dir() {
+        return Err(AppError::with_detail(
+            ErrorCode::NotFound,
+            "Library root directory does not exist",
+            root.to_string_lossy().to_string(),
+        ));
+    }
+
+    let mut files = Vec::new();
+    collect_backfill_markdown_files(&root, &root, &mut files)?;
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut result = BackfillIdsResult::default();
+
+    for (rel_path, abs_path) in files {
+        result.scanned += 1;
+
+        let Ok(raw) = fs::read_to_string(&abs_path) else {
+            result.failed += 1;
+            continue;
+        };
+        let stem = abs_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("untitled");
+        let parsed = parse_note(&raw, stem);
+
+        if parsed
+            .meta
+            .id
+            .as_deref()
+            .is_some_and(|id| !id.trim().is_empty())
+        {
+            result.skipped_existing += 1;
+            continue;
+        }
+
+        if (!parsed.yaml_patchable && parsed.block.is_some())
+            || (parsed.block.is_none() && parsed.meta.meta_error.is_some())
+        {
+            result.skipped_broken_yaml += 1;
+            continue;
+        }
+
+        let new_id = generate_ulid();
+        let new_content = if parsed.block.is_some() {
+            let base_yaml = parsed.yaml.as_deref().unwrap_or("");
+            let ops = vec![YamlPatchOp::set("id", YamlPatchValue::Str(new_id))];
+            let Ok(patched_yaml) = apply_yaml_patch(base_yaml, &ops) else {
+                result.failed += 1;
+                continue;
+            };
+            replace_frontmatter_yaml(&raw, &patched_yaml)
+        } else {
+            let minimal_yaml = format!("id: {new_id}\n");
+            let block = build_frontmatter_block(&minimal_yaml);
+            compose_note(Some(&block), &parsed.body)
+        };
+
+        let updated_parsed = parse_note(&new_content, stem);
+        pm.record_self_write(&abs_path, &compute_body_hash(&updated_parsed.body));
+        if atomic_write_str(&abs_path, &new_content).is_err() {
+            pm.clear_self_write(&abs_path);
+            result.failed += 1;
+            continue;
+        }
+
+        let Ok((mtime_ms, size_bytes)) = file_mtime_and_size(&abs_path) else {
+            result.failed += 1;
+            continue;
+        };
+        if index_single_note(pm, &rel_path, &new_content, mtime_ms, size_bytes as i64).is_err() {
+            result.failed += 1;
+            continue;
+        }
+
+        result.updated += 1;
+    }
+
+    if result.updated > 0 {
+        if let Some(handle) = app {
+            if let Ok(status) = index_get_status(pm) {
+                let _ = handle.emit("index:status", &status);
+            }
+        }
+    }
+
+    Ok(result)
 }

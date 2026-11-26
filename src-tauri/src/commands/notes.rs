@@ -1,20 +1,22 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::application::notes::{
     note_create as create_uc, note_delete as delete_uc, note_read as read_uc,
     note_rename as rename_uc, note_save_image as save_image_uc, note_update_meta as update_meta_uc,
-    note_write as write_uc, notes_get_related as related_uc, notes_get_tree_and_tags as tree_uc,
-    notes_list as list_uc, tags_batch_rename as tag_rename_uc,
+    note_write as write_uc, notes_backfill_missing_ids as backfill_ids_uc,
+    notes_get_related as related_uc, notes_get_tree_and_tags as tree_uc, notes_list as list_uc,
+    tags_batch_rename as tag_rename_uc,
 };
 use crate::application::persistence::PersistenceManager;
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::note::{
-    CreateNoteArgs, ExportPdfArgs, NavTreeSnapshot, NoteDoc, NoteSummary, NoteUpdateMetaArgs,
-    NotesFilterArgs, ReadNoteArgs, RelPathArgs, RelatedNoteItem, RenameNoteArgs, SaveImageArgs,
-    SavedImageResult, TagRenameArgs, TagRenameResult, WriteNoteArgs, WriteResult,
+    BackfillIdsResult, CreateNoteArgs, ExportPdfArgs, NavTreeSnapshot, NoteDoc, NoteSummary,
+    NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs, RelPathArgs, RelatedNoteItem,
+    RenameNoteArgs, SaveImageArgs, SavedImageResult, TagRenameArgs, TagRenameResult, WriteNoteArgs,
+    WriteResult,
 };
 use crate::infra::fs::{expand_tilde, map_io_error};
 use crate::infra::macos::NativeWindowBridge;
@@ -106,6 +108,14 @@ pub fn tags_batch_rename(
     args: TagRenameArgs,
 ) -> Result<TagRenameResult, AppError> {
     tag_rename_uc(&pm, args)
+}
+
+#[tauri::command]
+pub fn notes_backfill_missing_ids(
+    app: AppHandle,
+    pm: State<'_, Arc<PersistenceManager>>,
+) -> Result<BackfillIdsResult, AppError> {
+    backfill_ids_uc(&pm, Some(&app))
 }
 
 /// Validates and exports an HTML document to PDF via the native bridge (`C4.2`, `C2.3`).

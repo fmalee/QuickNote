@@ -36,6 +36,15 @@ export type AppendResult = {
 	undoAvailable: boolean,
 };
 
+/**  Summary statistics returned by `notes_backfill_missing_ids` (`C3.4`, `D-0006`). */
+export type BackfillIdsResult = {
+	scanned: number,
+	updated: number,
+	skippedExisting: number,
+	skippedBrokenYaml: number,
+	failed: number,
+};
+
 /**  Remembered paths for settings backup file dialogs (`C6.3`). */
 export type BackupPathsUiState = {
 	lastExportPath: string | null,

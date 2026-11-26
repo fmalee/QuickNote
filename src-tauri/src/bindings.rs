@@ -20,12 +20,12 @@ use crate::domain::external::{
 };
 use crate::domain::hotkey::HotkeyUpdateArgs;
 use crate::domain::note::{
-    ConflictInfo, CreateNoteArgs, DirNode, ExportPdfArgs, IndexPhase, IndexStatus, NavTreeSnapshot,
-    NoteDoc, NoteMeta, NoteMetaPatch, NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs,
-    PathCompleteArgs, PathEntry, ReadNoteArgs, RelPathArgs, RelatedNoteItem, RelatedReason,
-    RenameNoteArgs, SaveImageArgs, SavedImageResult, SearchItemKind, SearchQueryArgs,
-    SearchResponse, SearchResultItem, SearchSource, TagNode, TagRenameArgs, TagRenameResult,
-    WriteNoteArgs, WriteResult,
+    BackfillIdsResult, ConflictInfo, CreateNoteArgs, DirNode, ExportPdfArgs, IndexPhase,
+    IndexStatus, NavTreeSnapshot, NoteDoc, NoteMeta, NoteMetaPatch, NoteSummary, NoteType,
+    NoteUpdateMetaArgs, NotesFilterArgs, PathCompleteArgs, PathEntry, ReadNoteArgs, RelPathArgs,
+    RelatedNoteItem, RelatedReason, RenameNoteArgs, SaveImageArgs, SavedImageResult,
+    SearchItemKind, SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode,
+    TagRenameArgs, TagRenameResult, WriteNoteArgs, WriteResult,
 };
 use crate::domain::settings::{
     EditorSettings, EditorSettingsPatch, EditorTheme, EditorsSettings, EditorsSettingsPatch,
@@ -165,6 +165,7 @@ pub fn collect_types() -> Types {
         .register::<RelatedNoteItem>()
         .register::<TagRenameArgs>()
         .register::<TagRenameResult>()
+        .register::<BackfillIdsResult>()
         .register::<TargetKind>()
         .register::<TargetResolveInput>()
         .register::<ResolvedTarget>()

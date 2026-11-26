@@ -7,6 +7,7 @@ import type {
   AppInfo,
   AppendNoteArgs,
   AppendResult,
+  BackfillIdsResult,
   CommandEntry,
   CommandSearchArgs,
   CreateNoteArgs,
@@ -246,6 +247,10 @@ export function notesGetRelated(args: RelPathArgs): Promise<RelatedNoteItem[]> {
 
 export function tagsBatchRename(args: TagRenameArgs): Promise<TagRenameResult> {
   return invoke<TagRenameResult>('tags_batch_rename', { args });
+}
+
+export function notesBackfillMissingIds(): Promise<BackfillIdsResult> {
+  return invoke<BackfillIdsResult>('notes_backfill_missing_ids');
 }
 
 export function pathComplete(args: PathCompleteArgs): Promise<PathEntry[]> {

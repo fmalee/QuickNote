@@ -7,7 +7,7 @@ use quicknote_lib::application::index::{index_get_status, index_rebuild};
 use quicknote_lib::application::library::set_library_root;
 use quicknote_lib::application::notes::{
     note_create, note_delete_with, note_read, note_rename, note_update_meta, note_write,
-    notes_get_tree_and_tags, notes_list, search_notes_and_files,
+    notes_backfill_missing_ids, notes_get_tree_and_tags, notes_list, search_notes_and_files,
 };
 use quicknote_lib::application::persistence::PersistenceManager;
 use quicknote_lib::application::reconciler::{
@@ -688,4 +688,160 @@ fn test_projects_tab_root_only_with_inbox_first_and_subdir_filter() {
             .is_some_and(|p| p.starts_with(&prefix))),
         "selected subdir must only return notes under that subdir"
     );
+}
+
+#[test]
+fn test_notes_backfill_missing_ids_mixed_vault_and_idempotency() {
+    let tmp = TempDir::new().expect("tempdir");
+    let app_data = tmp.path().join("app_data");
+    let pm = PersistenceManager::open(app_data).expect("open persistence");
+
+    // 1. Unconfigured library root must return LibraryNotConfigured.
+    let err = notes_backfill_missing_ids(&pm, None).expect_err("unconfigured library");
+    assert_eq!(err.code, ErrorCode::LibraryNotConfigured);
+
+    // 2. Prepare a controlled mixed vault.
+    let vault = tmp.path().join("vault");
+    fs::create_dir_all(vault.join("nested")).expect("create nested");
+    fs::create_dir_all(vault.join("_templates")).expect("create _templates");
+    fs::create_dir_all(vault.join(".hidden")).expect("create .hidden");
+    fs::create_dir_all(vault.join("assets")).expect("create assets");
+
+    let has_id_raw = "---\nid: 01JEXISTING000000000000001\ntitle: 已有 ID 笔记\n---\n\n正文。\n";
+    let valid_missing_raw = "---\n# 保留注释\ntitle: 缺 ID 合法笔记\ncustom_owner: joey\ntags:\n  - rust\n---\n\n# 缺 ID 合法笔记\n\n正文段落。\n";
+    let no_fm_raw = "# 纯正文笔记\n\n没有 frontmatter 的内容。\n";
+    let broken_yaml_raw = "---\ntitle: [unterminated\n---\n\n# 损坏 YAML\n";
+    let unterminated_fm_raw = "---\ntitle: 未闭合 frontmatter\n\n正文内容。\n";
+    let template_raw = "---\ntitle: \"{{title}}\"\ntype: template\n---\n\n模板正文。\n";
+    let hidden_raw = "# 隐藏目录笔记\n";
+    let assets_raw = "# 资源目录说明\n";
+    let tmp_raw = "# 临时文件\n";
+
+    fs::write(vault.join("has-id.md"), has_id_raw).expect("write has-id.md");
+    fs::write(vault.join("valid-missing-id.md"), valid_missing_raw)
+        .expect("write valid-missing-id.md");
+    fs::write(vault.join("nested/no-frontmatter.md"), no_fm_raw).expect("write no-frontmatter.md");
+    fs::write(vault.join("broken-yaml.md"), broken_yaml_raw).expect("write broken-yaml.md");
+    fs::write(vault.join("unterminated-fm.md"), unterminated_fm_raw)
+        .expect("write unterminated-fm.md");
+    fs::write(vault.join("_templates/meeting.md"), template_raw).expect("write template");
+    fs::write(vault.join(".hidden/secret.md"), hidden_raw).expect("write hidden");
+    fs::write(vault.join("assets/readme.md"), assets_raw).expect("write assets");
+    fs::write(vault.join("draft.tmp.md"), tmp_raw).expect("write tmp");
+
+    set_library_root(
+        &pm,
+        SetRootArgs {
+            root: vault.to_string_lossy().to_string(),
+            create_if_missing: false,
+        },
+    )
+    .expect("set_library_root");
+    index_rebuild(&pm, None).expect("initial index_rebuild");
+
+    // Before backfill, notes without id are indexed under path:<rel_path>.
+    let pre_key = pm
+        .with_db(|conn| get_note_key_by_rel_path(conn, "valid-missing-id.md"))
+        .expect("pre query valid-missing-id");
+    assert_eq!(pre_key.as_deref(), Some("path:valid-missing-id.md"));
+
+    // 3. First backfill execution.
+    let res1 = notes_backfill_missing_ids(&pm, None).expect("first backfill");
+    assert_eq!(res1.scanned, 5);
+    assert_eq!(res1.updated, 2);
+    assert_eq!(res1.skipped_existing, 1);
+    assert_eq!(res1.skipped_broken_yaml, 2);
+    assert_eq!(res1.failed, 0);
+
+    // 4. Verify untouched files remain byte-for-byte identical.
+    assert_eq!(
+        fs::read_to_string(vault.join("has-id.md")).expect("read has-id"),
+        has_id_raw
+    );
+    assert_eq!(
+        fs::read_to_string(vault.join("broken-yaml.md")).expect("read broken-yaml"),
+        broken_yaml_raw
+    );
+    assert_eq!(
+        fs::read_to_string(vault.join("unterminated-fm.md")).expect("read unterminated-fm"),
+        unterminated_fm_raw
+    );
+    assert_eq!(
+        fs::read_to_string(vault.join("_templates/meeting.md")).expect("read template"),
+        template_raw
+    );
+    assert_eq!(
+        fs::read_to_string(vault.join(".hidden/secret.md")).expect("read hidden"),
+        hidden_raw
+    );
+    assert_eq!(
+        fs::read_to_string(vault.join("assets/readme.md")).expect("read assets"),
+        assets_raw
+    );
+    assert_eq!(
+        fs::read_to_string(vault.join("draft.tmp.md")).expect("read tmp"),
+        tmp_raw
+    );
+
+    // 5. Verify valid-missing-id.md preserved comments & unknown keys and synced SQLite.
+    let patched_disk =
+        fs::read_to_string(vault.join("valid-missing-id.md")).expect("read valid-missing-id");
+    assert!(
+        patched_disk.contains("# 保留注释"),
+        "existing YAML comment must be preserved"
+    );
+    assert!(
+        patched_disk.contains("custom_owner: joey"),
+        "unknown YAML key must be preserved"
+    );
+    let patched_doc = note_read(
+        &pm,
+        ReadNoteArgs {
+            abs_path: vault
+                .join("valid-missing-id.md")
+                .to_string_lossy()
+                .to_string(),
+        },
+    )
+    .expect("read valid-missing-id doc");
+    let patched_id = patched_doc.meta.id.clone().expect("patched ULID");
+    assert_eq!(patched_id.len(), 26);
+    assert_eq!(
+        pm.with_db(|conn| get_note_key_by_rel_path(conn, "valid-missing-id.md"))
+            .expect("sqlite key valid-missing-id")
+            .as_deref(),
+        Some(patched_id.as_str())
+    );
+
+    // 6. Verify nested/no-frontmatter.md synthesized minimal frontmatter and synced SQLite.
+    let no_fm_disk =
+        fs::read_to_string(vault.join("nested/no-frontmatter.md")).expect("read no-frontmatter");
+    let no_fm_doc = note_read(
+        &pm,
+        ReadNoteArgs {
+            abs_path: vault
+                .join("nested/no-frontmatter.md")
+                .to_string_lossy()
+                .to_string(),
+        },
+    )
+    .expect("read no-frontmatter doc");
+    let no_fm_id = no_fm_doc.meta.id.clone().expect("no_fm ULID");
+    assert_eq!(no_fm_id.len(), 26);
+    assert_ne!(no_fm_id, patched_id);
+    assert_eq!(no_fm_disk, format!("---\nid: {no_fm_id}\n---\n{no_fm_raw}"));
+    assert_eq!(
+        pm.with_db(|conn| get_note_key_by_rel_path(conn, "nested/no-frontmatter.md"))
+            .expect("sqlite key no-frontmatter")
+            .as_deref(),
+        Some(no_fm_id.as_str())
+    );
+
+    // 7. Second execution must be idempotent (updated == 0).
+    let res2 = notes_backfill_missing_ids(&pm, None).expect("second backfill");
+    assert_eq!(res2.scanned, 5);
+    assert_eq!(res2.updated, 0);
+    assert_eq!(res2.skipped_existing, 3);
+    assert_eq!(res2.skipped_broken_yaml, 2);
+    assert_eq!(res2.failed, 0);
 }

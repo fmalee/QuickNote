@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue';
 import { QnBadge, QnButton, QnInput, QnPanelCard } from '@/components';
-import { indexRebuild } from '@/lib/ipc/commands';
+import { indexRebuild, notesBackfillMissingIds } from '@/lib/ipc/commands';
 import { extractSettingsErrorMessage } from './api';
 import { useSettingsStore } from './store';
 
@@ -18,6 +18,9 @@ const maxActiveEditorRendersInput = ref(DEFAULT_ACTIVE_EDITOR_RENDERS);
 const rebuildingIndex = ref(false);
 const rebuildIndexFeedback = ref<string | null>(null);
 const rebuildIndexError = ref<string | null>(null);
+const backfillingIds = ref(false);
+const backfillIdsFeedback = ref<string | null>(null);
+const backfillIdsError = ref<string | null>(null);
 
 const inboxForm = reactive({
   bloatThresholdLines: 500,
@@ -63,6 +66,9 @@ async function commitMaxActiveEditorRenders(): Promise<void> {
 }
 
 async function handleRebuildIndex(): Promise<void> {
+  if (rebuildingIndex.value || backfillingIds.value) {
+    return;
+  }
   rebuildingIndex.value = true;
   rebuildIndexFeedback.value = null;
   rebuildIndexError.value = null;
@@ -73,6 +79,24 @@ async function handleRebuildIndex(): Promise<void> {
     rebuildIndexError.value = extractSettingsErrorMessage(error);
   } finally {
     rebuildingIndex.value = false;
+  }
+}
+
+async function handleBackfillMissingIds(): Promise<void> {
+  if (backfillingIds.value || rebuildingIndex.value) {
+    return;
+  }
+  backfillingIds.value = true;
+  backfillIdsFeedback.value = null;
+  backfillIdsError.value = null;
+  try {
+    const result = await notesBackfillMissingIds();
+    const failedSuffix = result.failed > 0 ? `，失败 ${result.failed} 篇` : '';
+    backfillIdsFeedback.value = `扫描 ${result.scanned} 篇：已补全 ${result.updated} 篇，已有 ID 跳过 ${result.skippedExisting} 篇，YAML 异常跳过 ${result.skippedBrokenYaml} 篇${failedSuffix}。`;
+  } catch (error) {
+    backfillIdsError.value = extractSettingsErrorMessage(error);
+  } finally {
+    backfillingIds.value = false;
   }
 }
 
@@ -187,17 +211,29 @@ async function handleCreateTemplate(): Promise<void> {
           </label>
 
           <div class="qn-library-panel__cache-action">
-            <span class="qn-library-panel__label">本地 SQLite 派生缓存索引</span>
-            <QnButton
-              variant="secondary"
-              size="sm"
-              :loading="rebuildingIndex"
-              :disabled="rebuildingIndex"
-              data-testid="rebuild-index-btn"
-              @click="handleRebuildIndex"
-            >
-              一键清空重建缓存索引
-            </QnButton>
+            <span class="qn-library-panel__label">本地 SQLite 派生缓存索引与笔记 ULID</span>
+            <div class="qn-library-panel__action-group">
+              <QnButton
+                variant="secondary"
+                size="sm"
+                :loading="rebuildingIndex"
+                :disabled="rebuildingIndex || backfillingIds"
+                data-testid="rebuild-index-btn"
+                @click="handleRebuildIndex"
+              >
+                一键清空重建缓存索引
+              </QnButton>
+              <QnButton
+                variant="secondary"
+                size="sm"
+                :loading="backfillingIds"
+                :disabled="backfillingIds || rebuildingIndex"
+                data-testid="backfill-ids-btn"
+                @click="handleBackfillMissingIds"
+              >
+                为缺失 ID 的笔记补全 ULID
+              </QnButton>
+            </div>
           </div>
         </div>
 
@@ -215,6 +251,21 @@ async function handleCreateTemplate(): Promise<void> {
           data-testid="rebuild-index-error"
         >
           {{ rebuildIndexError }}
+        </p>
+        <p
+          v-if="backfillIdsFeedback"
+          class="qn-library-panel__feedback"
+          data-testid="backfill-ids-feedback"
+        >
+          {{ backfillIdsFeedback }}
+        </p>
+        <p
+          v-if="backfillIdsError"
+          class="qn-library-panel__error"
+          role="alert"
+          data-testid="backfill-ids-error"
+        >
+          {{ backfillIdsError }}
         </p>
       </div>
     </QnPanelCard>
@@ -352,6 +403,13 @@ async function handleCreateTemplate(): Promise<void> {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--qn-space-1);
+}
+
+.qn-library-panel__action-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--qn-space-2);
 }
 
 .qn-library-panel__label {

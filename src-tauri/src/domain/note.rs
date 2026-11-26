@@ -978,3 +978,14 @@ pub struct ExportPdfArgs {
     pub html_document: String,
     pub dest_path: String,
 }
+
+/// Summary statistics returned by `notes_backfill_missing_ids` (`C3.4`, `D-0006`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BackfillIdsResult {
+    pub scanned: u32,
+    pub updated: u32,
+    pub skipped_existing: u32,
+    pub skipped_broken_yaml: u32,
+    pub failed: u32,
+}
