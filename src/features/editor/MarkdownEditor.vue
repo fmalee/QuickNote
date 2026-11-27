@@ -1372,6 +1372,7 @@ onUnmounted(() => {
   height: 0;
   overflow: visible;
   display: flex;
+  align-items: flex-start;
   justify-content: flex-end;
   pointer-events: none;
 }

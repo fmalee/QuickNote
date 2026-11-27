@@ -406,6 +406,7 @@ onUnmounted(() => {
 <style scoped>
 .qn-find-bar {
   position: relative;
+  align-self: flex-start;
   pointer-events: auto;
   display: flex;
   align-items: stretch;
