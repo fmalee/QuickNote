@@ -662,6 +662,7 @@ function handleCollapsedStripClick(id: string): void {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: var(--qn-space-2);
 }
 
 .qn-notes-sidebar-strip__btn {
