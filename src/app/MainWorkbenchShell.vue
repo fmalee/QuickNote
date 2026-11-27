@@ -394,7 +394,6 @@ watch(
     const doc = editorTabsStore.activeDoc;
     return [
       doc?.absPath ?? null,
-      doc?.meta.project ?? null,
       doc?.meta.openDir ?? null,
       doc?.meta.terminalDir ?? null,
       doc?.meta.codeWorkspace ?? null,

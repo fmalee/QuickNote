@@ -82,7 +82,6 @@ impl CaptureManager {
                 key: row.key,
                 rel_path: row.rel_path,
                 title: row.title,
-                project: row.project,
                 has_ideas_section: None,
                 has_todo_section: None,
             })

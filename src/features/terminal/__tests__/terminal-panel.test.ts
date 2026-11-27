@@ -89,7 +89,6 @@ function makeDoc(
       id: '01JDOC00000000000000000001',
       title: 'Demo',
       tags: [],
-      project: 'quicknote',
       docType: 'note',
       openDir: null,
       codeWorkspace: null,
@@ -138,28 +137,28 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
   it('1. 按优先级解析工作区 cwd（terminalDir > openDir > 文档父目录 > 库根）', () => {
     // 1. 文档 frontmatter terminalDir 最高优先
     const docWithTermDir = makeDoc({
-      meta: { terminalDir: '/custom/term', openDir: '/custom/open', project: 'quicknote' },
+      meta: { terminalDir: '/custom/term', openDir: '/custom/open' },
     });
     expect(resolveTerminalLaunchContext(docWithTermDir, '/vault')).toMatchObject({
-      workspaceKey: 'quicknote',
+      workspaceKey: 'default',
       cwd: '/custom/term',
       source: 'doc-terminal-dir',
     });
 
     // 2. 文档 frontmatter openDir 次之
     const docWithOpenDir = makeDoc({
-      meta: { terminalDir: null, openDir: '/custom/open', project: 'quicknote' },
+      meta: { terminalDir: null, openDir: '/custom/open' },
     });
     expect(resolveTerminalLaunchContext(docWithOpenDir, '/vault')).toMatchObject({
-      workspaceKey: 'quicknote',
+      workspaceKey: 'default',
       cwd: '/custom/open',
       source: 'doc-open-dir',
     });
 
-    // 3. 库内文档无显式目录时回退到文档父目录，并保留 project 作为会话分组键
-    const docOnlyProject = makeDoc({ meta: { project: 'quicknote' } });
-    expect(resolveTerminalLaunchContext(docOnlyProject, '/vault')).toMatchObject({
-      workspaceKey: 'quicknote',
+    // 3. 库内文档无显式目录时回退到文档父目录，会话分组键统一回退 default
+    const docParentFallback = makeDoc({});
+    expect(resolveTerminalLaunchContext(docParentFallback, '/vault')).toMatchObject({
+      workspaceKey: 'default',
       cwd: '/vault/notes',
       source: 'doc-parent-dir',
     });
@@ -169,7 +168,6 @@ describe('M4-02 embedded terminal panel & key isolation', () => {
       isLibrary: false,
       relPath: null,
       absPath: '/Users/dev/notes/external-readme.md',
-      meta: { project: null },
     });
     expect(resolveTerminalLaunchContext(externalDoc, '/vault')).toMatchObject({
       workspaceKey: 'default',

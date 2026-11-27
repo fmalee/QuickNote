@@ -256,13 +256,13 @@ fn test_note_update_meta_preserves_comments_and_backups_broken_yaml() {
         NoteUpdateMetaArgs {
             abs_path: broken_path,
             patch: NoteMetaPatch {
-                title: Some("Fixed Broken YAML".to_string()),
+                pinned: Some(true),
                 ..Default::default()
             },
         },
     )
     .expect("update broken-yaml.md");
-    assert_eq!(fixed_doc.meta.title, "Fixed Broken YAML");
+    assert!(fixed_doc.meta.pinned);
 
     let backups: Vec<_> = fs::read_dir(pm.backups_dir())
         .expect("read backups dir")
@@ -844,4 +844,135 @@ fn test_notes_backfill_missing_ids_mixed_vault_and_idempotency() {
     assert_eq!(res2.skipped_existing, 3);
     assert_eq!(res2.skipped_broken_yaml, 2);
     assert_eq!(res2.failed, 0);
+}
+
+#[test]
+fn test_unified_title_write_sync_and_reconcile_version_upgrade() {
+    let tmp = TempDir::new().expect("tempdir");
+    let app_dir = tmp.path.join("app_data");
+    let vault = tmp.path.join("vault");
+    fs::create_dir_all(&vault).expect("mkdir vault");
+
+    // 1. 准备三类文档：含旧 frontmatter title + H1 的 Markdown、无 H1 的 Markdown、非 Markdown 配置文件
+    let h1_path = vault.join("with-h1.md");
+    fs::write(
+        &h1_path,
+        "---\nid: 01JTITLEUPGRADE00000000001\ntitle: 旧Frontmatter标题\nproject: legacy\n---\n# 初始一级标题\n\n正文\n",
+    )
+    .expect("write with-h1.md");
+
+    let no_h1_path = vault.join("plain-doc.md");
+    fs::write(
+        &no_h1_path,
+        "---\nid: 01JTITLEUPGRADE00000000002\ntitle: 忽略的FM标题\n---\n## 只有二级标题\n",
+    )
+    .expect("write plain-doc.md");
+
+    let yaml_path = vault.join("config.yaml");
+    fs::write(&yaml_path, "name: demo\n").expect("write config.yaml");
+
+    let pm = PersistenceManager::open(app_dir.clone()).expect("open pm");
+    set_library_root(
+        &pm,
+        SetRootArgs {
+            root: vault.to_string_lossy().to_string(),
+            create_if_missing: true,
+        },
+    )
+    .expect("set root");
+    index_rebuild(&pm, None).expect("initial rebuild");
+
+    // 2. 模拟老版本缓存库：强行把 notes.title 改回旧 FM 标题并清除 title_rule_version，模拟跨重启升级
+    pm.with_db(|conn| {
+        conn.execute(
+            "UPDATE notes SET title = '旧Frontmatter标题' WHERE rel_path = 'with-h1.md'",
+            [],
+        )
+        .expect("corrupt legacy title");
+        conn.execute(
+            "DELETE FROM library_meta WHERE key = 'title_rule_version'",
+            [],
+        )
+        .expect("delete rule version");
+        Ok(())
+    })
+    .expect("simulate legacy db");
+
+    // 3. 再次执行增量对账（即使 mtime/size 未变，版本号不匹配也会强制刷新标题）
+    let pm_restarted = PersistenceManager::open(app_dir).expect("reopen pm");
+    let report = pm_restarted
+        .with_db(|conn| reconcile_vault(&vault, conn))
+        .expect("reconcile after upgrade");
+    assert!(report.notes_upserted >= 2);
+
+    let list = notes_list(
+        &pm_restarted,
+        NotesFilterArgs {
+            tab: "recent".to_string(),
+            dir_rel_path: None,
+            tags: vec![],
+            filter_text: None,
+        },
+    )
+    .expect("notes_list after upgrade");
+    let h1_item = list
+        .iter()
+        .find(|n| n.rel_path.as_deref() == Some("with-h1.md"))
+        .expect("h1 item");
+    let no_h1_item = list
+        .iter()
+        .find(|n| n.rel_path.as_deref() == Some("plain-doc.md"))
+        .expect("no h1 item");
+    assert_eq!(h1_item.title, "初始一级标题");
+    assert_eq!(no_h1_item.title, "plain-doc");
+
+    // 4. 修改正文一级标题并落盘保存：WriteResult.updated_meta 必须返回新标题，且列表同步更新
+    let read_before = note_read(
+        &pm_restarted,
+        ReadNoteArgs {
+            abs_path: h1_path.to_string_lossy().to_string(),
+        },
+    )
+    .expect("read with-h1");
+    assert_eq!(read_before.meta.title, "初始一级标题");
+
+    let write_res = note_write(
+        &pm_restarted,
+        WriteNoteArgs {
+            abs_path: h1_path.to_string_lossy().to_string(),
+            body: "# 修改后的一级标题\n\n正文\n".to_string(),
+            base_body_hash: read_before.body_hash,
+        },
+    )
+    .expect("write updated h1");
+    let updated_meta = write_res
+        .updated_meta
+        .expect("updated_meta must be returned when derived H1 title changes");
+    assert_eq!(updated_meta.title, "修改后的一级标题");
+
+    let list_after_write = notes_list(
+        &pm_restarted,
+        NotesFilterArgs {
+            tab: "recent".to_string(),
+            dir_rel_path: None,
+            tags: vec![],
+            filter_text: None,
+        },
+    )
+    .expect("notes_list after write");
+    let h1_after = list_after_write
+        .iter()
+        .find(|n| n.rel_path.as_deref() == Some("with-h1.md"))
+        .expect("h1 after");
+    assert_eq!(h1_after.title, "修改后的一级标题");
+
+    // 5. 非 Markdown 文件读取时标题必须保留完整文件名（含扩展名）
+    let yaml_doc = note_read(
+        &pm_restarted,
+        ReadNoteArgs {
+            abs_path: yaml_path.to_string_lossy().to_string(),
+        },
+    )
+    .expect("read config.yaml");
+    assert_eq!(yaml_doc.meta.title, "config.yaml");
 }

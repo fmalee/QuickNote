@@ -17,7 +17,6 @@ pub struct RelatedNoteCandidate<'a> {
     pub rel_path: &'a str,
     pub title: &'a str,
     pub tags: &'a [String],
-    pub project: Option<&'a str>,
     pub mtime_ms: i64,
 }
 
@@ -28,7 +27,6 @@ pub fn score_related_notes(
     backlink_sources: &HashSet<String>,
 ) -> Vec<RelatedNoteItem> {
     let current_tags: HashSet<&str> = current.tags.iter().map(String::as_str).collect();
-    let current_project = current.project.map(str::trim).filter(|s| !s.is_empty());
 
     let mut scored: Vec<(f64, i64, RelatedNoteItem)> = Vec::new();
 
@@ -44,13 +42,6 @@ pub fn score_related_notes(
             let cand_tags: HashSet<&str> = cand.tags.iter().map(String::as_str).collect();
             cand_tags.intersection(&current_tags).count()
         };
-        let same_project = match (
-            current_project,
-            cand.project.map(str::trim).filter(|s| !s.is_empty()),
-        ) {
-            (Some(cp), Some(dp)) => cp == dp,
-            _ => false,
-        };
 
         let mut score = 0.0_f64;
         if has_backlink {
@@ -59,9 +50,6 @@ pub fn score_related_notes(
         if shared_tags > 0 {
             score += 15.0 * (shared_tags as f64);
         }
-        if same_project {
-            score += 10.0;
-        }
 
         if score <= 0.0 {
             continue;
@@ -69,10 +57,8 @@ pub fn score_related_notes(
 
         let reason = if has_backlink {
             RelatedReason::Backlink
-        } else if shared_tags > 0 {
-            RelatedReason::SharedTags
         } else {
-            RelatedReason::SameProject
+            RelatedReason::SharedTags
         };
 
         scored.push((

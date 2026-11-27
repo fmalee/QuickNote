@@ -430,7 +430,6 @@ export type NoteMeta = {
 	title: string,
 	docType: NoteType,
 	tags: string[],
-	project: string | null,
 	openDir: string | null,
 	codeWorkspace: string | null,
 	terminalDir: string | null,
@@ -446,10 +445,8 @@ export type NoteMeta = {
  *  For `Option<Option<String>>` fields: absent = keep, `null` = remove key, value = set.
  */
 export type NoteMetaPatch = {
-	title?: string | null,
 	docType?: NoteType | null,
 	tags?: string[] | null,
-	project?: string | null,
 	openDir?: string | null,
 	codeWorkspace?: string | null,
 	terminalDir?: string | null,
@@ -465,7 +462,6 @@ export type NoteSummary = {
 	title: string,
 	docType: NoteType,
 	tags: string[],
-	project: string | null,
 	excerpt: string,
 	pinned: boolean,
 	archived: boolean,
@@ -915,7 +911,7 @@ export type WriteNoteArgs = {
 	baseBodyHash: string,
 };
 
-/**  Result of `note_write`; `updated_meta` only set when a missing ULID was back-filled (`D-0006`). */
+/**  Result of `note_write`; `updated_meta` is set when ULID was back-filled or derived title changed (`D-0006`). */
 export type WriteResult = {
 	bodyHash: string,
 	mtimeMs: number,

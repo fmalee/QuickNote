@@ -8,7 +8,6 @@ use crate::domain::frontmatter::{render_yaml_string, split_frontmatter};
 pub const DEFAULT_TEMPLATE_NOTE: &str = "\
 ---
 id: {{id}}
-title: {{title}}
 type: note
 tags: []
 created: \"{{date}}T{{time}}\"
@@ -22,10 +21,8 @@ archived: false
 pub const DEFAULT_TEMPLATE_DOC: &str = "\
 ---
 id: {{id}}
-title: {{title}}
 type: doc
 tags: []
-project: \"\"
 open_dir: \"\"
 code_workspace: \"\"
 terminal_dir: \"\"
@@ -44,11 +41,9 @@ archived: false
 pub const DEFAULT_TEMPLATE_COMMAND_BOOK: &str = "\
 ---
 id: {{id}}
-title: {{title}}
 type: command-book
 tags:
   - commands
-project: \"\"
 open_dir: \"\"
 created: \"{{date}}T{{time}}\"
 ---

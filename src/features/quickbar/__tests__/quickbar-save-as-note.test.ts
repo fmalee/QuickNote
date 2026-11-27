@@ -80,7 +80,6 @@ function makeMeta(overrides: Partial<NoteMeta> = {}): NoteMeta {
     id: '01JTESTNOTE00000000000001',
     title: '新笔记',
     tags: [],
-    project: null,
     docType: 'note',
     openDir: null,
     codeWorkspace: null,
@@ -206,7 +205,6 @@ describe('template utils & Quick Bar save-as-note (M2-04)', () => {
         title: '项目文档模板',
         docType: 'template',
         tags: [],
-        project: null,
         excerpt: '',
         pinned: false,
         archived: false,
@@ -262,7 +260,7 @@ describe('template utils & Quick Bar save-as-note (M2-04)', () => {
     store.saveAsTemplate = 'doc';
 
     const createdDoc = makeDoc({
-      meta: makeMeta({ project: 'quicknote' }),
+      meta: makeMeta(),
     });
     mockNoteCreate.mockResolvedValueOnce(createdDoc);
 

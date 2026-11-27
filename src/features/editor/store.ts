@@ -162,6 +162,9 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
         if (entry.state) {
           tab.cursorPos = entry.state.selection.main.head;
         }
+        if (tab.doc?.meta.title?.trim()) {
+          tab.cachedTitle = tab.doc.meta.title.trim();
+        }
         tab.doc = null;
         tab.draftBody = '';
         tab.evicted = true;
@@ -398,6 +401,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     tab.relPath = doc.relPath;
     tab.absPath = doc.absPath;
     tab.doc = doc;
+    tab.cachedTitle = doc.meta.title?.trim() || null;
     tab.isMissing = false;
     tab.evicted = false;
     tab.draftBody = doc.body;
@@ -438,6 +442,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       existingByKey.relPath = doc.relPath;
       existingByKey.absPath = doc.absPath;
       existingByKey.doc = doc;
+      existingByKey.cachedTitle = doc.meta.title?.trim() || null;
       existingByKey.isMissing = false;
       existingByKey.evicted = false;
       const shouldResetState = !existingByKey.isDirty;
@@ -748,6 +753,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
 
         if (res.updatedMeta !== null) {
           tab.doc!.meta = res.updatedMeta;
+          tab.cachedTitle = res.updatedMeta.title?.trim() || null;
           if (tab.key.startsWith('path:') && res.updatedMeta.id) {
             const oldKey = tab.key;
             const newKey = res.updatedMeta.id;
@@ -870,7 +876,10 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
             tab.doc.bodyHash = nextHash;
             if (event.newMeta) {
               tab.doc.meta = event.newMeta;
+              tab.cachedTitle = event.newMeta.title?.trim() || null;
             }
+          } else if (event.newMeta) {
+            tab.cachedTitle = event.newMeta.title?.trim() || null;
           }
           tab.conflictState = null;
           tab.saveStatus = 'external-synced';
@@ -918,6 +927,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       tab.doc.bodyHash = diskBodyHash;
       if (diskMeta) {
         tab.doc.meta = diskMeta;
+        tab.cachedTitle = diskMeta.title?.trim() || null;
       }
     }
     tab.isDirty = false;
@@ -1035,6 +1045,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
 
       if (res.updatedMeta !== null) {
         tab.doc.meta = res.updatedMeta;
+        tab.cachedTitle = res.updatedMeta.title?.trim() || null;
         if (tab.key.startsWith('path:') && res.updatedMeta.id) {
           const oldKey = tab.key;
           const newKey = res.updatedMeta.id;
@@ -1050,6 +1061,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
         notifyNotesRefresh();
       } else if (diskMeta !== null) {
         tab.doc.meta = diskMeta;
+        tab.cachedTitle = diskMeta.title?.trim() || null;
         notifyNotesRefresh();
       }
 
@@ -1235,6 +1247,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
     target.relPath = updatedDoc.relPath;
     target.absPath = updatedDoc.absPath;
+    target.cachedTitle = updatedDoc.meta.title?.trim() || null;
     target.isMissing = false;
     if (!target.evicted) {
       target.doc = updatedDoc;
@@ -1328,6 +1341,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           scrollTop: item.scrollTop,
           cursorPos: item.cursorPos,
           doc: null,
+          cachedTitle: matched?.title?.trim() || null,
           isDirty: false,
           isMissing,
           evicted: true,
@@ -1509,6 +1523,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
         meta: updatedDoc.meta,
         mtimeMs: updatedDoc.mtimeMs,
       };
+      tab.cachedTitle = updatedDoc.meta.title?.trim() || null;
       confirmedExternalMetaPaths.value.add(tab.absPath);
       notifyNotesRefresh();
       return tab.doc;
@@ -1570,6 +1585,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       try {
         const latest = await readNote({ absPath: tab.absPath });
         tab.doc = latest;
+        tab.cachedTitle = latest.meta.title?.trim() || null;
         if (!tab.isDirty) {
           tab.draftBody = latest.body;
           tab.baseBodyHash = latest.bodyHash;

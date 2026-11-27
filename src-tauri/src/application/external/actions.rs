@@ -47,10 +47,10 @@ pub fn external_actions_resolve(
         _ => false,
     };
 
-    let (doc, _doc_project) = if let Some(ref abs) = file_path {
+    let doc = if let Some(ref abs) = file_path {
         read_doc_target(Path::new(abs))
     } else {
-        (None, None)
+        None
     };
 
     let ancestor_layers = match (
@@ -79,9 +79,9 @@ pub fn external_actions_resolve(
             (Some(rel), Some(root)) => Some(Path::new(root).join(rel)),
             _ => None,
         };
-        let (cmd_doc, _cmd_proj) = match cmd_abs.as_deref() {
+        let cmd_doc = match cmd_abs.as_deref() {
             Some(path) => read_doc_target(path),
-            None => (None, None),
+            None => None,
         };
         let cmd_ancestors = match (cmd_abs.as_deref(), library_root.as_deref()) {
             (Some(abs), Some(root)) => load_ancestor_workspace_layers(pm, abs, Path::new(root))?,
@@ -252,21 +252,20 @@ fn require_existing_dir(path: Option<&str>) -> Result<PathBuf, AppError> {
     Ok(pb)
 }
 
-fn read_doc_target(path: &Path) -> (Option<ExternalDocTarget>, Option<String>) {
+fn read_doc_target(path: &Path) -> Option<ExternalDocTarget> {
     if !path.is_file() {
-        return (None, None);
+        return None;
     }
     let Ok(raw) = fs::read_to_string(path) else {
-        return (None, None);
+        return None;
     };
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("note");
     let parsed = parse_note(&raw, stem);
-    let target = ExternalDocTarget {
+    Some(ExternalDocTarget {
         open_dir: parsed.meta.open_dir.map(|s| expand_optional_path(&s)),
         terminal_dir: parsed.meta.terminal_dir.map(|s| expand_optional_path(&s)),
         code_workspace: parsed.meta.code_workspace.map(|s| expand_optional_path(&s)),
-    };
-    (Some(target), parsed.meta.project)
+    })
 }
 
 fn extract_command_rel_path(command_id: &str) -> Option<&str> {

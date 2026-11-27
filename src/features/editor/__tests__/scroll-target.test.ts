@@ -120,7 +120,6 @@ function makeMeta(overrides: Partial<NoteMeta> = {}): NoteMeta {
     id: '01JCMD00000000000000000001',
     title: '常用命令',
     tags: [],
-    project: null,
     docType: 'command-book',
     openDir: null,
     codeWorkspace: null,

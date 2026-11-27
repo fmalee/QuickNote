@@ -415,7 +415,6 @@ describe('quickbar-capture-flow (M1-05)', () => {
         title: 'B 区规格',
         docType: 'note',
         tags: ['架构'],
-        project: null,
         excerpt: '',
         pinned: false,
         archived: false,

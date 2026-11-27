@@ -443,9 +443,6 @@ export function buildPrintHtmlDocument(doc: NoteDoc, body: string): string {
   const escapedTitle = escapeHtml(title);
 
   const metaItems: string[] = [`<span class="meta-badge">${escapeHtml(doc.meta.docType)}</span>`];
-  if (doc.meta.project) {
-    metaItems.push(`<span class="meta-item">项目: ${escapeHtml(doc.meta.project)}</span>`);
-  }
   if (doc.meta.tags.length > 0) {
     const tagsHtml = doc.meta.tags.map((t) => `#${escapeHtml(t)}`).join(' ');
     metaItems.push(`<span class="meta-item">标签: ${tagsHtml}</span>`);

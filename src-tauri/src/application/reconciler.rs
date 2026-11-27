@@ -20,10 +20,13 @@ use crate::domain::workspace_context::{
 };
 use crate::infra::fs::{atomic_write_str, map_io_error};
 use crate::infra::sqlite::{
-    delete_directory_workspace_config, delete_note_index_by_rel_path,
+    delete_directory_workspace_config, delete_note_index_by_rel_path, get_library_meta,
     list_directory_workspace_configs, set_library_meta, upsert_directory_workspace_config,
     upsert_note_index, DirectoryWorkspaceConfigRecord,
 };
+
+const TITLE_RULE_VERSION_KEY: &str = "title_rule_version";
+const CURRENT_TITLE_RULE_VERSION: &str = "2";
 
 /// Summary statistics produced by [`reconcile_vault`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -112,7 +115,10 @@ pub fn reconcile_vault(vault_root: &Path, db: &Connection) -> Result<ReconcileRe
     report.notes_scanned = disk_notes.len();
     report.configs_scanned = disk_configs.len();
 
-    // 1. Reconcile Markdown notes incrementally.
+    // 1. Reconcile Markdown notes incrementally (force full refresh when title derivation rule upgrades).
+    let stored_title_rule_version = get_library_meta(db, TITLE_RULE_VERSION_KEY)?;
+    let force_reindex_notes =
+        stored_title_rule_version.as_deref() != Some(CURRENT_TITLE_RULE_VERSION);
     let existing_notes = load_existing_notes_meta(db)?;
     let mut disk_note_paths: HashSet<String> = HashSet::with_capacity(disk_notes.len());
     let mut key_owners: HashMap<String, String> = HashMap::with_capacity(existing_notes.len());
@@ -137,10 +143,12 @@ pub fn reconcile_vault(vault_root: &Path, db: &Connection) -> Result<ReconcileRe
     }
 
     for note in &disk_notes {
-        if let Some(existing) = existing_notes.get(&note.rel_path) {
-            if existing.mtime_ms == note.mtime_ms && existing.size_bytes == note.size_bytes {
-                report.notes_skipped += 1;
-                continue;
+        if !force_reindex_notes {
+            if let Some(existing) = existing_notes.get(&note.rel_path) {
+                if existing.mtime_ms == note.mtime_ms && existing.size_bytes == note.size_bytes {
+                    report.notes_skipped += 1;
+                    continue;
+                }
             }
         }
 
@@ -200,6 +208,7 @@ pub fn reconcile_vault(vault_root: &Path, db: &Connection) -> Result<ReconcileRe
         }
     }
 
+    set_library_meta(db, TITLE_RULE_VERSION_KEY, CURRENT_TITLE_RULE_VERSION)?;
     set_library_meta(db, "last_indexed_at", &now_ms.to_string())?;
 
     Ok(report)

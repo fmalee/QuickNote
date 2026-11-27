@@ -70,8 +70,8 @@ export function resolveTerminalLaunchContext(
   libraryRoot: string | null,
 ): TerminalLaunchContext {
   const activeDocPath = normalizeNonEmpty(activeDoc?.absPath);
-  const fallbackKey = normalizeNonEmpty(activeDoc?.meta.project) ?? 'default';
-  const fallbackLabel = fallbackKey === 'default' ? '默认工作区' : fallbackKey;
+  const fallbackKey = 'default';
+  const fallbackLabel = '默认工作区';
 
   // 外部文件终端默认 cwd 必须取该文件所在父目录
   if (activeDoc && !activeDoc.isLibrary && activeDocPath) {

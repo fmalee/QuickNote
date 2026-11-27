@@ -316,9 +316,7 @@ fn undo_rejects_modified_body_but_succeeds_after_meta_only_update() {
         NoteUpdateMetaArgs {
             abs_path: note_b.to_string_lossy().to_string(),
             patch: NoteMetaPatch {
-                title: Some("Note B Updated".to_string()),
                 doc_type: None,
-                project: None,
                 tags: Some(vec!["updated".to_string()]),
                 pinned: Some(true),
                 archived: None,
@@ -340,7 +338,7 @@ fn undo_rejects_modified_body_but_succeeds_after_meta_only_update() {
         },
     )
     .expect("read note-b after undo");
-    assert_eq!(after_undo_b.meta.title, "Note B Updated");
+    assert_eq!(after_undo_b.meta.tags, vec!["updated".to_string()]);
     assert!(after_undo_b.meta.pinned);
     assert!(!after_undo_b.body.contains("追加B"));
     assert!(after_undo_b.body.contains("- 初始B"));

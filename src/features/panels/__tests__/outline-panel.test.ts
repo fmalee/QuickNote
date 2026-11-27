@@ -62,7 +62,6 @@ function makeDoc(body: string): NoteDoc {
       id: '01JOUTLINEDOC0000000000001',
       title: '大纲测试',
       tags: [],
-      project: null,
       docType: 'note',
       openDir: null,
       codeWorkspace: null,

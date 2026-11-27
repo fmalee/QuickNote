@@ -282,45 +282,45 @@ fn notes_get_related_scores_weights_order_and_limit_20() {
 
     fs::write(
         vault_dir.join("notes/target.md"),
-        "---\ntitle: Target\ntags: [rust, tauri]\nproject: quicknote\n---\nBody\n",
+        "---\ntags: [rust, tauri]\n---\n# Target\n\nBody\n",
     )
     .expect("write target");
 
     // Backlink (+100) + 1 shared tag (+15) = 115
     fs::write(
         vault_dir.join("notes/backlinker.md"),
-        "---\ntitle: Backlinker\ntags: [rust]\n---\nSee [target](./target.md)\n",
+        "---\ntags: [rust]\n---\n# Backlinker\n\nSee [target](./target.md)\n",
     )
     .expect("write backlinker");
 
-    // Shared 2 tags (+30) + same project (+10) = 40
+    // Shared 2 tags (+30)
     fs::write(
-        vault_dir.join("notes/tags_proj.md"),
-        "---\ntitle: TagsProj\ntags: [rust, tauri]\nproject: quicknote\n---\nBody\n",
+        vault_dir.join("notes/tags_two.md"),
+        "---\ntags: [rust, tauri]\n---\n# TagsTwo\n\nBody\n",
     )
-    .expect("write tags_proj");
+    .expect("write tags_two");
 
-    // Template should be excluded even if matching tags/project/link
+    // Template should be excluded even if matching tags/link
     fs::write(
         vault_dir.join("_templates/tpl.md"),
-        "---\ntitle: Tpl\ntags: [rust, tauri]\nproject: quicknote\n---\n[t](../notes/target.md)\n",
+        "---\ntags: [rust, tauri]\n---\n# Tpl\n\n[t](../notes/target.md)\n",
     )
     .expect("write tpl");
 
     // Unrelated note (score 0)
     fs::write(
         vault_dir.join("notes/unrelated.md"),
-        "---\ntitle: Unrelated\ntags: [other]\n---\nBody\n",
+        "---\ntags: [other]\n---\n# Unrelated\n\nBody\n",
     )
     .expect("write unrelated");
 
-    // 22 same-project-only notes (+10) to verify limit 20
+    // 22 single-shared-tag notes (+15) to verify limit 20
     for i in 0..22 {
         fs::write(
-            vault_dir.join(format!("notes/proj_{i:02}.md")),
-            format!("---\ntitle: Proj {i:02}\nproject: quicknote\n---\nBody\n"),
+            vault_dir.join(format!("notes/tag_{i:02}.md")),
+            format!("---\ntags: [tauri]\n---\n# Tag {i:02}\n\nBody\n"),
         )
-        .expect("write proj note");
+        .expect("write tag note");
     }
 
     let pm = setup_pm(&app_dir, &vault_dir);
@@ -339,12 +339,12 @@ fn notes_get_related_scores_weights_order_and_limit_20() {
     assert_eq!(related[0].reason, RelatedReason::Backlink);
     assert!((related[0].score - 115.0).abs() < 1e-6);
 
-    assert_eq!(related[1].rel_path, "notes/tags_proj.md");
+    assert_eq!(related[1].rel_path, "notes/tags_two.md");
     assert_eq!(related[1].reason, RelatedReason::SharedTags);
-    assert!((related[1].score - 40.0).abs() < 1e-6);
+    assert!((related[1].score - 30.0).abs() < 1e-6);
 
-    assert_eq!(related[2].reason, RelatedReason::SameProject);
-    assert!((related[2].score - 10.0).abs() < 1e-6);
+    assert_eq!(related[2].reason, RelatedReason::SharedTags);
+    assert!((related[2].score - 15.0).abs() < 1e-6);
 
     assert!(related.iter().all(|item| item.rel_path != "notes/target.md"
         && item.rel_path != "notes/unrelated.md"
@@ -487,7 +487,7 @@ fn non_markdown_files_roundtrip_without_stripping_frontmatter_or_adding_ulid() {
         NoteUpdateMetaArgs {
             abs_path: conf_path.to_string_lossy().to_string(),
             patch: NoteMetaPatch {
-                title: Some("Hacked".to_string()),
+                pinned: Some(true),
                 ..NoteMetaPatch::default()
             },
         },

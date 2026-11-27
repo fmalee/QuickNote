@@ -141,7 +141,6 @@ function makeMeta(overrides: Partial<NoteMeta> = {}): NoteMeta {
     id: '01JTESTMERGE00000000000001',
     title: '冲突合并测试',
     tags: [],
-    project: null,
     docType: 'note',
     openDir: null,
     codeWorkspace: null,

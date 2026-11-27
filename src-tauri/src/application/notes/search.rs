@@ -1,18 +1,37 @@
+use std::fs;
 use std::path::Path;
 
 use crate::application::persistence::PersistenceManager;
 use crate::domain::command_book::{filter_and_rank_commands, CommandEntry, CommandSearchArgs};
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::note::{
-    score_related_notes, RelPathArgs, RelatedNoteCandidate, RelatedNoteItem, SearchItemKind,
-    SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource,
+    parse_note, score_related_notes, RelPathArgs, RelatedNoteCandidate, RelatedNoteItem,
+    SearchItemKind, SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource,
 };
 use crate::domain::tokenizer::build_fts_query;
 use crate::infra::sqlite::{
     list_all_commands, list_all_indexed_notes, list_backlink_sources, search_notes_fts,
 };
 
-use super::{normalize_rel_path, require_library_root};
+use super::{is_markdown_path, normalize_rel_path, require_library_root};
+
+fn resolve_external_file_display_title(path: &Path, fallback: &str) -> String {
+    if is_markdown_path(path) {
+        let stem = path
+            .file_stem()
+            .and_then(|n| n.to_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(fallback);
+        if let Ok(raw) = fs::read_to_string(path) {
+            return parse_note(&raw, stem).meta.title;
+        }
+        return stem.to_string();
+    }
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(fallback)
+        .to_string()
+}
 
 /// Searches indexed notes using FTS5 mixed tokenization and title/path substring boosting (`C5.3`),
 /// merged with pinned external files from `pinned-files.json`.
@@ -31,11 +50,7 @@ pub fn search_notes_and_files(
         if !path_obj.is_file() {
             continue;
         }
-        let title = path_obj
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&pinned_path)
-            .to_string();
+        let title = resolve_external_file_display_title(path_obj, &pinned_path);
         if !raw_lower.is_empty()
             && !title.to_lowercase().contains(&raw_lower)
             && !pinned_path.to_lowercase().contains(&raw_lower)
@@ -131,7 +146,6 @@ pub fn notes_get_related(
             rel_path: &current_row.rel_path,
             title: &current_row.title,
             tags: &current_row.tags,
-            project: current_row.project.as_deref(),
             mtime_ms: current_row.mtime_ms,
         };
 
@@ -142,7 +156,6 @@ pub fn notes_get_related(
                 rel_path: &r.rel_path,
                 title: &r.title,
                 tags: &r.tags,
-                project: r.project.as_deref(),
                 mtime_ms: r.mtime_ms,
             })
             .collect();

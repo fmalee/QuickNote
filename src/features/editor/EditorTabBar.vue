@@ -5,6 +5,7 @@ import { QnBadge, QnContextMenu, type ContextMenuEntry } from '@/components';
 import { useNotesStore } from '@/features/notes';
 import { useSettingsStore } from '@/features/settings';
 import { actionRegistry } from '@/lib/actions';
+import { deriveTabTitle } from './core/tabModel';
 import { type EditorTab, useEditorTabsStore } from './store';
 import {
   buildExternalContextMenuItems,
@@ -281,12 +282,7 @@ function handleTabPointerDown(event: PointerEvent, tab: EditorTab): void {
 }
 
 function getTabTitle(tab: EditorTab): string {
-  if (tab.doc?.meta.title) {
-    return tab.doc.meta.title;
-  }
-  const path = tab.relPath ?? tab.absPath;
-  const parts = path.split('/');
-  return parts[parts.length - 1] ?? path;
+  return deriveTabTitle(tab);
 }
 
 function isExternalTab(tab: EditorTab): boolean {

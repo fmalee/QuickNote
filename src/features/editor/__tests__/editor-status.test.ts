@@ -59,7 +59,6 @@ function makeMeta(overrides: Partial<NoteMeta> = {}): NoteMeta {
     title: '测试文档',
     created: '2026-03-27T00:00:00Z',
     tags: [],
-    project: null,
     openDir: null,
     codeWorkspace: null,
     terminalDir: null,

@@ -142,7 +142,6 @@ fn minimal_patch_preserves_unknown_keys_comments_and_key_order() {
     assert!(!tag_matches("dev/quicknote", "idea"));
 
     let patch = NoteMetaPatch {
-        title: Some("更新后的标题".to_string()),
         pinned: Some(true),
         open_dir: Some(None),
         ..Default::default()
@@ -159,13 +158,11 @@ fn minimal_patch_preserves_unknown_keys_comments_and_key_order() {
     assert!(patched_yaml.contains("x-extension:\n  nested: value\n  list:\n    - a\n    - b"));
 
     // 目标键更新或删除
-    assert!(patched_yaml.contains("title: 更新后的标题"));
     assert!(patched_yaml.contains("pinned: true"));
     assert!(!patched_yaml.contains("open_dir:"));
 
     // 既有键顺序不变
     let pos_type = patched_yaml.find("type: doc").expect("type");
-    let pos_title = patched_yaml.find("title: 更新后的标题").expect("title");
     let pos_custom = patched_yaml
         .find("custom_field: 保留我")
         .expect("custom_field");
@@ -174,16 +171,52 @@ fn minimal_patch_preserves_unknown_keys_comments_and_key_order() {
     let pos_id = patched_yaml
         .find("id: 01JDQN0TE5UNKNWNKEYS000001")
         .expect("id");
-    assert!(pos_type < pos_title);
-    assert!(pos_title < pos_custom);
+    assert!(pos_type < pos_custom);
     assert!(pos_custom < pos_pinned);
     assert!(pos_pinned < pos_archived);
     assert!(pos_archived < pos_id);
 
     let updated_raw = replace_frontmatter_yaml(&raw, &patched_yaml);
     let reparsed = parse_note(&updated_raw, "unknown-keys-comments");
-    assert_eq!(reparsed.meta.title, "更新后的标题");
+    assert_eq!(reparsed.meta.title, parsed.meta.title);
     assert!(reparsed.meta.pinned);
     assert_eq!(reparsed.meta.open_dir, None);
     assert_eq!(reparsed.body, parsed.body);
+}
+
+#[test]
+fn markdown_display_title_ignores_frontmatter_title_and_prefers_first_h1_then_stem() {
+    let raw_with_fm_and_h1 = "\
+---
+id: 01JTITLETEST00000000000001
+title: 旧 Frontmatter 标题
+project: legacy-proj
+---
+```md
+# 代码块里的伪标题
+```
+
+# 正文一级标题
+
+正文内容
+";
+    let parsed = parse_note(raw_with_fm_and_h1, "fallback-stem");
+    assert_eq!(parsed.meta.title, "正文一级标题");
+
+    let raw_with_fm_only = "\
+---
+title: 仅 Frontmatter 标题
+---
+## 只有二级标题
+";
+    let parsed_no_h1 = parse_note(raw_with_fm_only, "my-note-name");
+    assert_eq!(parsed_no_h1.meta.title, "my-note-name");
+
+    let raw_csharp = "# C#\n\n语言笔记\n";
+    let parsed_csharp = parse_note(raw_csharp, "csharp");
+    assert_eq!(parsed_csharp.meta.title, "C#");
+
+    let raw_closing_hashes = "  # 带闭合井号 ###\n";
+    let parsed_closing = parse_note(raw_closing_hashes, "closing");
+    assert_eq!(parsed_closing.meta.title, "带闭合井号");
 }

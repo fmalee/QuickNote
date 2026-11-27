@@ -163,9 +163,9 @@ pub fn resolve_effective_workspace_for_path(
     let library_root = pm.current_library_root()?;
     let resolved_path = resolve_sentinel_path(pm, abs_path);
 
-    let (doc_layer, _doc_project) = match resolved_path.as_deref() {
+    let doc_layer = match resolved_path.as_deref() {
         Some(path) => read_doc_workspace_layer(Path::new(path)),
-        None => (None, None),
+        None => None,
     };
 
     let ancestor_layers = match (resolved_path.as_deref(), library_root.as_deref()) {
@@ -239,15 +239,16 @@ fn expand_workspace_layer(mut cfg: DirectoryWorkspaceConfig) -> DirectoryWorkspa
     cfg
 }
 
-fn read_doc_workspace_layer(path: &Path) -> (Option<DirectoryWorkspaceConfig>, Option<String>) {
+fn read_doc_workspace_layer(path: &Path) -> Option<DirectoryWorkspaceConfig> {
     if !path.is_file() {
-        return (None, None);
+        return None;
     }
     let Ok(raw) = fs::read_to_string(path) else {
-        return (None, None);
+        return None;
     };
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("note");
     let parsed = parse_note(&raw, stem);
-    let layer = expand_workspace_layer(DirectoryWorkspaceConfig::from_note_meta(&parsed.meta));
-    (Some(layer), parsed.meta.project)
+    Some(expand_workspace_layer(
+        DirectoryWorkspaceConfig::from_note_meta(&parsed.meta),
+    ))
 }

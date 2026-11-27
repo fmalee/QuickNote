@@ -143,7 +143,7 @@ fn internal_writes_are_suppressed_by_process_external_fs_path_and_vault_watcher(
         NoteUpdateMetaArgs {
             abs_path: doc.abs_path.clone(),
             patch: NoteMetaPatch {
-                title: Some("防回环测试-已更新".to_string()),
+                pinned: Some(true),
                 ..Default::default()
             },
         },

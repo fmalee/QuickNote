@@ -159,7 +159,8 @@ fn templates_b3_alignment_render_and_note_create_isolation() {
     assert!(note_tpl.contains("archived: false"));
 
     let doc_tpl = fs::read_to_string(library.join("_templates/doc.md")).expect("read doc.md");
-    assert!(doc_tpl.contains("project: \"\""));
+    assert!(!doc_tpl.contains("title:"));
+    assert!(!doc_tpl.contains("project:"));
     assert!(doc_tpl.contains("open_dir: \"\""));
     assert!(doc_tpl.contains("## 想法"));
 
@@ -257,7 +258,6 @@ fn note_update_meta_handles_no_frontmatter_without_backup_and_preserves_unknown_
         NoteUpdateMetaArgs {
             abs_path: external_path.to_string_lossy().to_string(),
             patch: NoteMetaPatch {
-                project: Some(Some("alpha".to_string())),
                 open_dir: Some(Some("/tmp/alpha".to_string())),
                 code_workspace: Some(Some("/tmp/alpha.code-workspace".to_string())),
                 terminal_dir: Some(Some("/tmp/alpha/term".to_string())),
@@ -268,7 +268,6 @@ fn note_update_meta_handles_no_frontmatter_without_backup_and_preserves_unknown_
     )
     .expect("update external file meta");
 
-    assert_eq!(updated_ext.meta.project.as_deref(), Some("alpha"));
     assert_eq!(updated_ext.meta.open_dir.as_deref(), Some("/tmp/alpha"));
     assert_eq!(
         updated_ext.meta.code_workspace.as_deref(),

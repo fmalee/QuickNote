@@ -141,7 +141,6 @@ function makeSampleDoc(overrides: Partial<NoteDoc> = {}): NoteDoc {
       title: '测试笔记: 导出/验证?',
       docType: 'note',
       tags: ['导出', 'm4'],
-      project: 'QuickNote',
       openDir: null,
       codeWorkspace: null,
       terminalDir: null,
@@ -295,7 +294,6 @@ describe('M4-04 rich text export, XSS protection, and PDF export', () => {
         ...makeSampleDoc().meta,
         title: '周报 <2026>',
         tags: ['工作', 'a&b'],
-        project: 'QuickNote',
         created: '2026-11-24',
       },
     });
@@ -305,7 +303,6 @@ describe('M4-04 rich text export, XSS protection, and PDF export', () => {
     expect(html).toContain('@page { size: A4; margin: 18mm 16mm; }');
     expect(html).toContain('<h1 class="doc-title">周报 &lt;2026&gt;</h1>');
     expect(html).toContain('#工作 #a&amp;b');
-    expect(html).toContain('项目: QuickNote');
     expect(html).toContain('创建于: 2026-11-24');
     expect(html).toContain('break-after: avoid');
     expect(html).toContain('完成导出');

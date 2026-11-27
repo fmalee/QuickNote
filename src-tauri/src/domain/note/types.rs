@@ -44,7 +44,6 @@ pub struct NoteMeta {
     pub title: String,
     pub doc_type: NoteType,
     pub tags: Vec<String>,
-    pub project: Option<String>,
     pub open_dir: Option<String>,
     pub code_workspace: Option<String>,
     pub terminal_dir: Option<String>,
@@ -82,7 +81,6 @@ pub struct NoteSummary {
     pub title: String,
     pub doc_type: NoteType,
     pub tags: Vec<String>,
-    pub project: Option<String>,
     pub excerpt: String,
     pub pinned: bool,
     pub archived: bool,
@@ -118,7 +116,7 @@ pub struct WriteNoteArgs {
     pub base_body_hash: String,
 }
 
-/// Result of `note_write`; `updated_meta` only set when a missing ULID was back-filled (`D-0006`).
+/// Result of `note_write`; `updated_meta` is set when ULID was back-filled or derived title changed (`D-0006`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WriteResult {
@@ -154,14 +152,9 @@ where
 #[serde(rename_all = "camelCase")]
 pub struct NoteMetaPatch {
     #[serde(default)]
-    pub title: Option<String>,
-    #[serde(default)]
     pub doc_type: Option<NoteType>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "double_option")]
-    #[specta(type = Option<String>)]
-    pub project: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     #[specta(type = Option<String>)]
     pub open_dir: Option<Option<String>>,

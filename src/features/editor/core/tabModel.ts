@@ -1,5 +1,6 @@
 import type { EditorState } from '@codemirror/state';
 import type { NoteDoc, NoteMeta, TabItemState } from '@/bindings/types';
+import { deriveFallbackTitleFromPath } from '@/lib/utils/docTitle';
 import { createDocTabStub, type DocTabKind, type DocTabStub } from './docSession';
 
 export const DEFAULT_INBOX_BLOAT_THRESHOLD_LINES = 500;
@@ -35,6 +36,7 @@ export interface EditorPoolEntry {
 
 export interface EditorTab extends TabItemState {
   doc: NoteDoc | null;
+  cachedTitle: string | null;
   isDirty: boolean;
   isMissing: boolean;
   evicted?: boolean;
@@ -75,7 +77,6 @@ export function needsExternalFrontmatterConfirm(doc: NoteDoc): boolean {
     doc.meta.id === null &&
     doc.meta.created === null &&
     doc.meta.tags.length === 0 &&
-    doc.meta.project === null &&
     doc.meta.openDir === null &&
     doc.meta.codeWorkspace === null &&
     doc.meta.terminalDir === null &&
@@ -98,18 +99,18 @@ export function toTabItemState(tab: EditorTab): TabItemState {
   };
 }
 
-export function deriveTabTitle(tab: Pick<EditorTab, 'doc' | 'relPath' | 'absPath'>): string {
+export function deriveTabTitle(
+  tab: Pick<EditorTab, 'doc' | 'relPath' | 'absPath'> & { cachedTitle?: string | null },
+): string {
   const metaTitle = tab.doc?.meta.title?.trim();
   if (metaTitle) {
     return metaTitle;
   }
-  const source = tab.relPath || tab.absPath;
-  if (!source) {
-    return '未命名笔记';
+  const cachedTitle = tab.cachedTitle?.trim();
+  if (cachedTitle) {
+    return cachedTitle;
   }
-  const segments = source.split('/');
-  const base = segments[segments.length - 1] || source;
-  return base.replace(/\.md$/i, '') || base;
+  return deriveFallbackTitleFromPath(tab.relPath || tab.absPath);
 }
 
 export function deriveTabKind(tab: Pick<EditorTab, 'doc' | 'relPath'>): DocTabKind {
@@ -143,6 +144,7 @@ export function buildTabFromDoc(doc: NoteDoc, isPreview: boolean): EditorTab {
     scrollTop: 0,
     cursorPos: 0,
     doc,
+    cachedTitle: doc.meta.title?.trim() || null,
     isDirty: false,
     isMissing: false,
     evicted: false,
@@ -169,7 +171,6 @@ export function isSameNoteMeta(a: NoteMeta, b: NoteMeta | undefined): boolean {
     a.docType === b.docType &&
     a.tags.length === b.tags.length &&
     a.tags.every((tag, idx) => tag === b.tags[idx]) &&
-    a.project === b.project &&
     a.openDir === b.openDir &&
     a.codeWorkspace === b.codeWorkspace &&
     a.terminalDir === b.terminalDir &&

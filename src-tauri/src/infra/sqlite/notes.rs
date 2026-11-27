@@ -15,7 +15,6 @@ pub struct NoteIndexRecord {
     pub rel_path: String,
     pub title: String,
     pub doc_type: String,
-    pub project: Option<String>,
     pub mtime_ms: i64,
     pub size_bytes: i64,
     pub body_hash: String,
@@ -41,7 +40,6 @@ pub struct IndexedNoteRow {
     pub rel_path: String,
     pub title: String,
     pub doc_type: String,
-    pub project: Option<String>,
     pub excerpt: String,
     pub pinned: bool,
     pub archived: bool,
@@ -175,7 +173,7 @@ fn insert_note_in_tx(
             rec.rel_path,
             rec.title,
             rec.doc_type,
-            rec.project,
+            Option::<String>::None,
             rec.mtime_ms,
             rec.size_bytes,
             rec.body_hash,
@@ -243,7 +241,7 @@ fn insert_note_in_tx(
 pub fn list_all_indexed_notes(conn: &Connection) -> Result<Vec<IndexedNoteRow>, AppError> {
     let mut stmt = conn
         .prepare(
-            "SELECT key, rel_path, title, doc_type, project, excerpt,
+            "SELECT key, rel_path, title, doc_type, excerpt,
                     pinned, archived, is_inbox, mtime_ms, meta_error
              FROM notes
              ORDER BY pinned DESC, mtime_ms DESC",
@@ -257,13 +255,12 @@ pub fn list_all_indexed_notes(conn: &Connection) -> Result<Vec<IndexedNoteRow>, 
                 rel_path: row.get(1)?,
                 title: row.get(2)?,
                 doc_type: row.get(3)?,
-                project: row.get(4)?,
-                excerpt: row.get(5)?,
-                pinned: row.get::<_, i64>(6)? != 0,
-                archived: row.get::<_, i64>(7)? != 0,
-                is_inbox: row.get::<_, i64>(8)? != 0,
-                mtime_ms: row.get(9)?,
-                meta_error: row.get(10)?,
+                excerpt: row.get(4)?,
+                pinned: row.get::<_, i64>(5)? != 0,
+                archived: row.get::<_, i64>(6)? != 0,
+                is_inbox: row.get::<_, i64>(7)? != 0,
+                mtime_ms: row.get(8)?,
+                meta_error: row.get(9)?,
                 tags: Vec::new(),
             })
         })

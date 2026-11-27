@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import type { NoteMeta, NoteMetaPatch } from '@/bindings/types';
 import { QnButton } from '@/components';
-import { useNotesStore } from '@/features/notes';
 import { useEditorTabsStore } from './store';
 
 const props = defineProps<{
@@ -15,10 +14,8 @@ const emit = defineEmits<{
 }>();
 
 const editorTabsStore = useEditorTabsStore();
-const notesStore = useNotesStore();
 const popoverRef = ref<HTMLDivElement | null>(null);
 
-const projectDraft = ref('');
 const openDirDraft = ref('');
 const codeWorkspaceDraft = ref('');
 const terminalDirDraft = ref('');
@@ -26,19 +23,7 @@ const pinnedDraft = ref(false);
 const archivedDraft = ref(false);
 const saving = ref(false);
 
-const projectSuggestions = computed(() => {
-  const unique = new Set<string>();
-  for (const note of notesStore.notes) {
-    const proj = note.project?.trim();
-    if (proj) {
-      unique.add(proj);
-    }
-  }
-  return Array.from(unique).sort();
-});
-
 function syncFromMeta(meta: NoteMeta): void {
-  projectDraft.value = meta.project ?? '';
   openDirDraft.value = meta.openDir ?? '';
   codeWorkspaceDraft.value = meta.codeWorkspace ?? '';
   terminalDirDraft.value = meta.terminalDir ?? '';
@@ -65,7 +50,6 @@ async function handleSave(): Promise<void> {
   saving.value = true;
   try {
     const patch: NoteMetaPatch = {
-      project: normalizeNullableString(projectDraft.value),
       openDir: normalizeNullableString(openDirDraft.value),
       codeWorkspace: normalizeNullableString(codeWorkspaceDraft.value),
       terminalDir: normalizeNullableString(terminalDirDraft.value),
@@ -138,23 +122,6 @@ onUnmounted(() => {
     </div>
 
     <form class="qn-doc-properties-popover__form" @submit.prevent="handleSave">
-      <label class="qn-doc-properties-popover__field">
-        <span class="qn-doc-properties-popover__label">所属项目 (project)</span>
-        <input
-          v-model="projectDraft"
-          type="text"
-          list="qn-doc-prop-projects"
-          class="qn-doc-properties-popover__input"
-          data-testid="doc-prop-project-input"
-          placeholder="项目标识"
-        />
-        <datalist id="qn-doc-prop-projects">
-          <option v-for="proj in projectSuggestions" :key="proj" :value="proj">
-            {{ proj }}
-          </option>
-        </datalist>
-      </label>
-
       <label class="qn-doc-properties-popover__field">
         <span class="qn-doc-properties-popover__label">项目目录 (open_dir)</span>
         <input

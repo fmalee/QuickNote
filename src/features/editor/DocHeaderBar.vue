@@ -30,7 +30,6 @@ import { isExternalActionId, useExternalActions } from './useExternalActions';
 const editorTabsStore = useEditorTabsStore();
 const externalActions = useExternalActions();
 
-const titleDraft = ref('');
 const tagInputDraft = ref('');
 const propertiesOpen = ref(false);
 const siblingsOpen = ref(false);
@@ -118,14 +117,6 @@ async function loadExternalBookmarks(): Promise<void> {
   }
 }
 
-watch(
-  () => doc.value?.meta.title ?? doc.value?.relPath ?? '',
-  (nextTitle) => {
-    titleDraft.value = nextTitle;
-  },
-  { immediate: true },
-);
-
 const moreMenuItems: ContextMenuEntry[] = [
   { type: 'item', id: 'editor.copyRichText', title: '复制为富文本' },
   { type: 'separator', id: 'export-separator' },
@@ -179,36 +170,6 @@ async function commitMetaPatch(patch: NoteMetaPatch): Promise<void> {
     return;
   }
   await editorTabsStore.updateActiveMeta(patch);
-}
-
-async function handleTitleCommit(): Promise<void> {
-  const currentDoc = doc.value;
-  if (!currentDoc) {
-    return;
-  }
-  const original = currentDoc.meta.title || currentDoc.relPath || '';
-  const trimmed = titleDraft.value.trim();
-  if (!trimmed) {
-    titleDraft.value = original;
-    return;
-  }
-  if (trimmed === currentDoc.meta.title) {
-    return;
-  }
-  await commitMetaPatch({ title: trimmed });
-}
-
-function handleTitleKeydown(event: KeyboardEvent): void {
-  if (event.isComposing || event.keyCode === 229) {
-    return;
-  }
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    (event.target as HTMLInputElement | null)?.blur();
-  } else if (event.key === 'Escape') {
-    titleDraft.value = doc.value?.meta.title || doc.value?.relPath || '';
-    (event.target as HTMLInputElement | null)?.blur();
-  }
 }
 
 async function handleDocTypeChange(event: Event): Promise<void> {
@@ -448,28 +409,35 @@ async function confirmExternalFrontmatter(): Promise<void> {
 function cancelExternalFrontmatter(): void {
   externalConfirmOpen.value = false;
   pendingAction.value = null;
-  if (doc.value) {
-    titleDraft.value = doc.value.meta.title || doc.value.relPath || '';
-  }
 }
 </script>
 
 <template>
   <header v-if="doc" class="qn-doc-header" data-testid="doc-header-bar">
     <div class="qn-doc-header__top">
-      <input
-        v-if="isMarkdown"
-        v-model="titleDraft"
-        type="text"
-        class="qn-doc-header__title-input"
-        data-testid="doc-header-title-input"
-        aria-label="文档标题"
-        @blur="handleTitleCommit"
-        @keydown="handleTitleKeydown"
-      />
-      <span v-else class="qn-doc-header__title-readonly" data-testid="doc-header-title-readonly">
-        {{ doc.meta.title || doc.relPath || doc.absPath }}
-      </span>
+      <div v-if="isMarkdown" class="qn-doc-header__tags" data-testid="doc-header-tags">
+        <span v-for="tag in doc.meta.tags" :key="tag" class="qn-doc-header__tag-chip">
+          <span>#{{ tag }}</span>
+          <button
+            type="button"
+            class="qn-doc-header__tag-remove"
+            :aria-label="`移除标签 ${tag}`"
+            @click="handleRemoveTag(tag)"
+          >
+            ×
+          </button>
+        </span>
+
+        <input
+          v-model="tagInputDraft"
+          type="text"
+          class="qn-doc-header__tag-input"
+          data-testid="doc-header-tag-input"
+          placeholder="+ 标签"
+          @keydown.enter="handleTagKeydown"
+        />
+      </div>
+      <div v-else class="qn-doc-header__tags-spacer" />
 
       <div class="qn-doc-header__controls">
         <QnBadge
@@ -653,33 +621,7 @@ function cancelExternalFrontmatter(): void {
       </button>
     </div>
 
-    <div
-      v-if="isMarkdown || doc.meta.metaError || editorTabsStore.errorMessage"
-      class="qn-doc-header__meta-row"
-    >
-      <div v-if="isMarkdown" class="qn-doc-header__tags" data-testid="doc-header-tags">
-        <span v-for="tag in doc.meta.tags" :key="tag" class="qn-doc-header__tag-chip">
-          <span>#{{ tag }}</span>
-          <button
-            type="button"
-            class="qn-doc-header__tag-remove"
-            :aria-label="`移除标签 ${tag}`"
-            @click="handleRemoveTag(tag)"
-          >
-            ×
-          </button>
-        </span>
-
-        <input
-          v-model="tagInputDraft"
-          type="text"
-          class="qn-doc-header__tag-input"
-          data-testid="doc-header-tag-input"
-          placeholder="+ 标签"
-          @keydown.enter="handleTagKeydown"
-        />
-      </div>
-
+    <div v-if="doc.meta.metaError || editorTabsStore.errorMessage" class="qn-doc-header__meta-row">
       <QnBadge v-if="doc.meta.metaError" tone="warning" data-testid="editor-doc-meta-error">
         Frontmatter 异常：{{ doc.meta.metaError }}
       </QnBadge>
@@ -729,38 +671,9 @@ function cancelExternalFrontmatter(): void {
   gap: var(--qn-space-3);
 }
 
-.qn-doc-header__title-input {
+.qn-doc-header__tags-spacer {
   flex: 1;
   min-width: 0;
-  border: 1px solid transparent;
-  border-radius: var(--qn-radius-sm);
-  background: transparent;
-  color: var(--qn-text-primary);
-  font-size: var(--qn-text-xl);
-  font-weight: 700;
-  font-family: var(--qn-font-sans);
-  padding: var(--qn-space-1) var(--qn-space-2);
-  margin-left: calc(var(--qn-space-2) * -1);
-}
-
-.qn-doc-header__title-input:hover,
-.qn-doc-header__title-input:focus {
-  outline: none;
-  border-color: var(--qn-border-subtle);
-  background-color: var(--qn-bg-elevated);
-}
-
-.qn-doc-header__title-readonly {
-  flex: 1;
-  min-width: 0;
-  color: var(--qn-text-primary);
-  font-size: var(--qn-text-xl);
-  font-weight: 700;
-  font-family: var(--qn-font-sans);
-  padding: var(--qn-space-1) 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .qn-doc-header__controls {
@@ -792,6 +705,8 @@ function cancelExternalFrontmatter(): void {
 }
 
 .qn-doc-header__tags {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

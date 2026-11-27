@@ -232,7 +232,6 @@ pub fn build_note_index_record(
         rel_path: rel_path.to_string(),
         title: parsed.meta.title.clone(),
         doc_type: parsed.meta.doc_type.as_str().to_string(),
-        project: parsed.meta.project.clone(),
         mtime_ms,
         size_bytes,
         body_hash: compute_body_hash(&parsed.body),

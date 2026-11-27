@@ -109,10 +109,9 @@ pub fn meta_from_mapping(m: &Mapping, errors: &mut Vec<String>) -> NoteMeta {
     };
     NoteMeta {
         id: opt_string_field(m, "id", errors),
-        title: opt_string_field(m, "title", errors).unwrap_or_default(),
+        title: String::new(),
         doc_type,
         tags: tags_field(m, errors),
-        project: opt_string_field(m, "project", errors),
         open_dir: opt_string_field(m, "open_dir", errors),
         code_workspace: opt_string_field(m, "code_workspace", errors),
         terminal_dir: opt_string_field(m, "terminal_dir", errors),
@@ -135,6 +134,30 @@ fn fence_marker(line: &str) -> Option<&'static str> {
     }
 }
 
+/// Strips optional CommonMark ATX closing `#` sequence (preceded by ASCII whitespace).
+fn strip_atx_closing_hashes(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "";
+    }
+    let without_hashes = trimmed.trim_end_matches('#');
+    if without_hashes.len() == trimmed.len() {
+        return trimmed;
+    }
+    if without_hashes.is_empty() {
+        return "";
+    }
+    if without_hashes
+        .chars()
+        .next_back()
+        .is_some_and(|c| c == ' ' || c == '\t')
+    {
+        without_hashes.trim_end()
+    } else {
+        trimmed
+    }
+}
+
 /// Derives a title from the first ATX H1 outside fenced code blocks (`v4` §4.3).
 pub fn derive_title_from_body(body: &str) -> Option<String> {
     let mut fence: Option<&'static str> = None;
@@ -150,14 +173,30 @@ pub fn derive_title_from_body(body: &str) -> Option<String> {
         if fence.is_some() {
             continue;
         }
-        if let Some(rest) = line.strip_prefix("# ") {
-            let title = rest.trim().trim_end_matches('#').trim();
-            if !title.is_empty() {
-                return Some(title.to_string());
-            }
+        let leading_spaces = line.bytes().take_while(|&b| b == b' ').count();
+        if leading_spaces > 3 {
+            continue;
+        }
+        let trimmed_lead = &line[leading_spaces..];
+        let rest = if let Some(r) = trimmed_lead.strip_prefix("# ") {
+            r
+        } else if let Some(r) = trimmed_lead.strip_prefix("#\t") {
+            r
+        } else {
+            continue;
+        };
+        let title = strip_atx_closing_hashes(rest);
+        if !title.is_empty() {
+            return Some(title.to_string());
         }
     }
     None
+}
+
+/// Resolves the unified display title for a Markdown document:
+/// first ATX H1 heading in `body`, falling back to `file_stem` (filename without `.md`/`.markdown`).
+pub fn resolve_markdown_display_title(body: &str, file_stem: &str) -> String {
+    derive_title_from_body(body).unwrap_or_else(|| file_stem.to_string())
 }
 
 /// Parses a raw Markdown document into `meta + body` with tolerant YAML handling (`D-0006`, `v4` §4.9).
@@ -186,9 +225,7 @@ pub fn parse_note(raw: &str, file_stem: &str) -> ParsedNote {
         }
     };
 
-    if meta.title.is_empty() {
-        meta.title = derive_title_from_body(&body).unwrap_or_else(|| file_stem.to_string());
-    }
+    meta.title = resolve_markdown_display_title(&body, file_stem);
     if !errors.is_empty() {
         meta.meta_error = Some(errors.join("; "));
     }
@@ -286,12 +323,6 @@ pub fn count_list_items(body: &str) -> u32 {
 /// Converts a `NoteMetaPatch` into minimal YAML patch operations (`C6.4`, `D-0007`).
 pub fn meta_patch_ops(patch: &NoteMetaPatch) -> Vec<YamlPatchOp> {
     let mut ops = Vec::new();
-    if let Some(title) = &patch.title {
-        ops.push(YamlPatchOp::set(
-            "title",
-            YamlPatchValue::Str(title.trim().to_string()),
-        ));
-    }
     if let Some(t) = patch.doc_type {
         ops.push(YamlPatchOp::set(
             "type",
@@ -309,7 +340,6 @@ pub fn meta_patch_ops(patch: &NoteMetaPatch) -> Vec<YamlPatchOp> {
         ops.push(YamlPatchOp::set("tags", YamlPatchValue::List(clean)));
     }
     let optional = [
-        ("project", &patch.project),
         ("open_dir", &patch.open_dir),
         ("code_workspace", &patch.code_workspace),
         ("terminal_dir", &patch.terminal_dir),

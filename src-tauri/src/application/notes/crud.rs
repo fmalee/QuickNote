@@ -360,14 +360,14 @@ pub fn note_write(pm: &PersistenceManager, args: WriteNoteArgs) -> Result<WriteR
     let rel_path = root.as_deref().and_then(|r| resolve_rel_path(r, &abs_path));
     let is_library = rel_path.is_some();
 
-    let mut updated_meta: Option<NoteMeta> = None;
+    let mut ulid_backfilled = false;
     let new_content = if is_library && parsed.meta.id.is_none() && parsed.yaml_patchable {
         let new_id = generate_ulid();
         let ops = meta_patch_ops(&NoteMetaPatch::default());
         let mut id_ops = ops;
         id_ops.push(YamlPatchOp {
             key: "id".to_string(),
-            value: Some(YamlPatchValue::Str(new_id.clone())),
+            value: Some(YamlPatchValue::Str(new_id)),
         });
         let base_yaml = parsed.yaml.as_deref().unwrap_or("");
         let patched_yaml = apply_yaml_patch(base_yaml, &id_ops).map_err(|e| {
@@ -378,15 +378,18 @@ pub fn note_write(pm: &PersistenceManager, args: WriteNoteArgs) -> Result<WriteR
             )
         })?;
         let new_block = build_frontmatter_block(&patched_yaml);
-        let mut new_meta = parsed.meta.clone();
-        new_meta.id = Some(new_id);
-        updated_meta = Some(new_meta);
+        ulid_backfilled = true;
         compose_note(Some(&new_block), &args.body)
     } else {
         compose_note(parsed.block.as_deref(), &args.body)
     };
 
     let new_parsed = parse_note(&new_content, stem);
+    let updated_meta = if ulid_backfilled || new_parsed.meta.title != parsed.meta.title {
+        Some(new_parsed.meta.clone())
+    } else {
+        None
+    };
     let new_body_hash = compute_body_hash(&new_parsed.body);
     pm.record_self_write(&abs_path, &new_body_hash);
     if let Err(err) = atomic_write_str(&abs_path, &new_content) {
@@ -501,17 +504,11 @@ pub fn note_update_meta(
 }
 
 fn merge_meta_with_patch(mut meta: NoteMeta, patch: &NoteMetaPatch) -> NoteMeta {
-    if let Some(ref title) = patch.title {
-        meta.title = title.clone();
-    }
     if let Some(doc_type) = patch.doc_type {
         meta.doc_type = doc_type;
     }
     if let Some(ref tags) = patch.tags {
         meta.tags = tags.clone();
-    }
-    if let Some(ref project) = patch.project {
-        meta.project = project.clone();
     }
     if let Some(ref open_dir) = patch.open_dir {
         meta.open_dir = open_dir.clone();
@@ -536,7 +533,6 @@ fn build_minimal_yaml(meta: &NoteMeta) -> String {
     if let Some(ref id) = meta.id {
         lines.push(format!("id: {}", render_yaml_string(id)));
     }
-    lines.push(format!("title: {}", render_yaml_string(&meta.title)));
     lines.push(format!("type: {}", meta.doc_type.as_str()));
     if meta.tags.is_empty() {
         lines.push("tags: []".to_string());
@@ -545,9 +541,6 @@ fn build_minimal_yaml(meta: &NoteMeta) -> String {
         for t in &meta.tags {
             lines.push(format!("  - {}", render_yaml_string(t)));
         }
-    }
-    if let Some(ref p) = meta.project {
-        lines.push(format!("project: {}", render_yaml_string(p)));
     }
     if let Some(ref open_dir) = meta.open_dir {
         lines.push(format!("open_dir: {}", render_yaml_string(open_dir)));

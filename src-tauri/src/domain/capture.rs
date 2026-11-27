@@ -85,7 +85,6 @@ pub struct ResolveDocCandidate {
     pub key: String,
     pub rel_path: String,
     pub title: String,
-    pub project: Option<String>,
     pub has_ideas_section: Option<bool>,
     pub has_todo_section: Option<bool>,
 }

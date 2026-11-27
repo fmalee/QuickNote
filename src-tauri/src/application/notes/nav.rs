@@ -84,7 +84,6 @@ pub fn notes_list(
             title: row.title,
             doc_type,
             tags: row.tags,
-            project: row.project,
             excerpt: row.excerpt,
             pinned: row.pinned,
             archived: row.archived,

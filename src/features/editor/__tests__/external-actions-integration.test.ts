@@ -59,7 +59,6 @@ function makeDoc(overrides: Partial<NoteDoc> = {}): NoteDoc {
       title: 'Inbox',
       docType: 'note',
       tags: [],
-      project: null,
       openDir: null,
       codeWorkspace: null,
       terminalDir: null,
@@ -183,6 +182,7 @@ describe('external-actions-integration', () => {
         baseBodyHash: doc.bodyHash,
         syncSeq: 1,
         doc,
+        cachedTitle: doc.meta.title,
         conflictState: null,
       },
     ];
@@ -206,7 +206,6 @@ describe('external-actions-integration', () => {
       isInbox: false,
       meta: {
         ...makeDoc().meta,
-        project: 'app',
       },
     });
 
@@ -374,6 +373,7 @@ describe('external-actions-integration', () => {
         baseBodyHash: confDoc.bodyHash,
         syncSeq: 1,
         doc: confDoc,
+        cachedTitle: confDoc.meta.title,
         conflictState: null,
       },
     ];
@@ -402,18 +402,19 @@ describe('external-actions-integration', () => {
     expect(externalActions.feedback?.message).toBe('已固定到常用文件');
     expect(refreshSpy).toHaveBeenCalledTimes(1);
 
-    // 2. Non-Markdown DocHeaderBar hides frontmatter controls and renders readonly filename + external controls
+    // 2. Non-Markdown DocHeaderBar hides frontmatter/tag controls and renders external controls
     const appPinned = createSSRApp(DocHeaderBar);
     appPinned.use(pinia);
     const htmlPinned = await renderToString(appPinned);
-    expect(htmlPinned).toContain('data-testid="doc-header-title-readonly"');
-    expect(htmlPinned).toContain('nginx.conf');
+    expect(htmlPinned).toContain('/etc/nginx/nginx.conf');
     expect(htmlPinned).toContain('data-testid="doc-header-external-badge"');
     expect(htmlPinned).toContain('data-testid="doc-header-pin-external-btn"');
     expect(htmlPinned).toContain('取消固定');
     expect(htmlPinned).toContain('data-testid="doc-header-external-btn"');
     expect(htmlPinned).not.toContain('data-testid="doc-header-title-input"');
+    expect(htmlPinned).not.toContain('data-testid="doc-header-title-readonly"');
     expect(htmlPinned).not.toContain('data-testid="doc-header-type-select"');
+    expect(htmlPinned).not.toContain('data-testid="doc-header-tags"');
     expect(htmlPinned).not.toContain('data-testid="doc-header-tag-input"');
     expect(htmlPinned).not.toContain('data-testid="doc-header-properties-btn"');
 

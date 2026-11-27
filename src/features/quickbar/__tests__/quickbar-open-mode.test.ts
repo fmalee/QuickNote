@@ -361,7 +361,6 @@ describe('quickbar-open-mode & external tabs (M3-03)', () => {
         title: 'nginx.conf',
         created: null,
         tags: [],
-        project: null,
         openDir: null,
         codeWorkspace: null,
         terminalDir: null,

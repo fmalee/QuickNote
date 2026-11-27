@@ -59,7 +59,6 @@ function makeMeta(overrides: Partial<NoteMeta> = {}): NoteMeta {
     id: '01JTESTNOTE00000000000001',
     title: '测试笔记',
     tags: [],
-    project: null,
     docType: 'note',
     openDir: null,
     codeWorkspace: null,
@@ -152,10 +151,8 @@ describe('doc meta editing, external frontmatter guard & inbox extract (M2-04)',
     expect(store.activeTab?.isDirty).toBe(true);
 
     const updatedMeta = makeMeta({
-      title: '新标题',
       docType: 'doc',
       tags: ['dev/m2', 'rust'],
-      project: 'quicknote',
       openDir: '/Users/Joey/Sites/Projects/QuickNote',
       codeWorkspace: '/Users/Joey/QuickNote.code-workspace',
       terminalDir: '/Users/Joey/Sites/Projects/QuickNote/src-tauri',
@@ -171,10 +168,8 @@ describe('doc meta editing, external frontmatter guard & inbox extract (M2-04)',
     );
 
     const result = await store.updateActiveMeta({
-      title: '新标题',
       docType: 'doc',
       tags: ['dev/m2', 'rust'],
-      project: 'quicknote',
       openDir: '/Users/Joey/Sites/Projects/QuickNote',
       codeWorkspace: '/Users/Joey/QuickNote.code-workspace',
       terminalDir: '/Users/Joey/Sites/Projects/QuickNote/src-tauri',
@@ -185,10 +180,8 @@ describe('doc meta editing, external frontmatter guard & inbox extract (M2-04)',
     expect(mockNoteUpdateMeta).toHaveBeenCalledWith({
       absPath: '/vault/notes/demo.md',
       patch: {
-        title: '新标题',
         docType: 'doc',
         tags: ['dev/m2', 'rust'],
-        project: 'quicknote',
         openDir: '/Users/Joey/Sites/Projects/QuickNote',
         codeWorkspace: '/Users/Joey/QuickNote.code-workspace',
         terminalDir: '/Users/Joey/Sites/Projects/QuickNote/src-tauri',
@@ -197,7 +190,7 @@ describe('doc meta editing, external frontmatter guard & inbox extract (M2-04)',
       },
     });
     expect(result?.meta).toEqual(updatedMeta);
-    expect(store.activeDoc?.meta.title).toBe('新标题');
+    expect(store.activeDoc?.meta.tags).toEqual(['dev/m2', 'rust']);
     expect(store.activeDoc?.meta.pinned).toBe(true);
     expect(store.activeDoc?.mtimeMs).toBe(2500);
     // D-0006 核心红线：绝不覆写编辑器中未保存的 draftBody
@@ -215,7 +208,6 @@ describe('doc meta editing, external frontmatter guard & inbox extract (M2-04)',
         id: null,
         created: null,
         tags: [],
-        project: null,
         openDir: null,
         codeWorkspace: null,
         terminalDir: null,

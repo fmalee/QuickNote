@@ -10,6 +10,7 @@ import {
 } from '@/features/editor';
 import { OutlinePanel, RelatedNotesPanel, usePanelsStore } from '@/features/panels';
 import { actionRegistry } from '@/lib/actions';
+import { deriveFallbackTitleFromPath } from '@/lib/utils/docTitle';
 import DirTreeSection from './DirTreeSection.vue';
 import DirWorkspaceBindModal from './DirWorkspaceBindModal.vue';
 import PinnedExternalFilesSection from './PinnedExternalFilesSection.vue';
@@ -562,7 +563,7 @@ function handleCollapsedStripClick(id: string): void {
             />
             <span v-else class="qn-notes-sidebar__card-title">
               <span v-if="note.pinned" class="qn-notes-sidebar__pin" title="已置顶">★</span>
-              {{ note.title || note.relPath || note.absPath }}
+              {{ note.title || deriveFallbackTitleFromPath(note.relPath || note.absPath) }}
             </span>
             <QnBadge v-if="note.metaError" tone="warning" data-testid="note-meta-error-badge">
               Meta异常

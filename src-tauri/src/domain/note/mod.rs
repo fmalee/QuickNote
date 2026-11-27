@@ -12,7 +12,8 @@ pub const INBOX_REL_PATH: &str = "inbox.md";
 
 pub use parse::{
     compose_note, compute_body_hash, count_list_items, derive_title_from_body, format_ulid,
-    make_excerpt, meta_from_mapping, meta_patch_ops, parse_note, ParsedNote,
+    make_excerpt, meta_from_mapping, meta_patch_ops, parse_note, resolve_markdown_display_title,
+    ParsedNote,
 };
 pub use tags_and_related::{
     normalize_tag_name, rewrite_tags_for_rename, score_related_notes, tag_matches,
