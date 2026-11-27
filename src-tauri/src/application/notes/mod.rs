@@ -19,7 +19,7 @@ use crate::infra::fs::map_io_error;
 pub use batch::{notes_backfill_missing_ids, tags_batch_rename};
 pub use crud::{
     note_create, note_delete, note_delete_with, note_read, note_rename, note_update_meta,
-    note_write,
+    note_write, MAX_EDITABLE_FILE_BYTES,
 };
 pub use media::{note_save_image, MAX_IMAGE_BYTES};
 pub use nav::{notes_get_tree_and_tags, notes_list};

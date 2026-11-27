@@ -121,6 +121,10 @@ export function appSetMenuAccelerators(args: SetMenuAcceleratorsArgs): Promise<v
   return invoke<void>('app_set_menu_accelerators', { args });
 }
 
+export function appTakePendingOpenFiles(): Promise<string[]> {
+  return invoke<string[]>('app_take_pending_open_files');
+}
+
 export function libraryGetInfo(): Promise<LibraryInfo> {
   return invoke<LibraryInfo>('library_get_info');
 }
@@ -366,4 +370,17 @@ export async function pickBackupOpenPath(defaultPath?: string | null): Promise<s
     filters: BACKUP_YAML_FILTER,
   });
   return typeof picked === 'string' && picked.length > 0 ? picked : null;
+}
+
+/** 弹出无后缀过滤的系统打开窗口（支持多选），用于打开本地任意文本文档。 */
+export async function pickLocalFilesToOpen(defaultPath?: string | null): Promise<string[]> {
+  const picked = await openDialog({
+    multiple: true,
+    directory: false,
+    defaultPath: defaultPath ?? undefined,
+  });
+  if (!Array.isArray(picked)) {
+    return [];
+  }
+  return picked.filter((item): item is string => typeof item === 'string' && item.length > 0);
 }

@@ -4,6 +4,7 @@ pub mod hotkey;
 pub mod index;
 pub mod library;
 pub mod notes;
+pub mod open_files;
 pub mod persistence;
 pub mod reconciler;
 pub mod terminal;

@@ -27,7 +27,40 @@ use super::{
     sanitize_filename,
 };
 
-/// Reads a note by absolute path (supports both library and external `.md` files) (`C4.2`).
+/// Default upper size limit (10 MiB) for opening a local document in the editor.
+/// Exposed as a dedicated constant so it can be wired to user settings later.
+pub const MAX_EDITABLE_FILE_BYTES: u64 = 10 * 1024 * 1024;
+const BINARY_SNIFF_BYTES: usize = 8192;
+
+fn read_editable_utf8_file(abs_path: &Path, size_bytes: u64) -> Result<String, AppError> {
+    if size_bytes > MAX_EDITABLE_FILE_BYTES {
+        return Err(AppError::with_detail(
+            ErrorCode::ValidationError,
+            "文件过大（超过 10 MB），暂不支持在编辑器中打开",
+            abs_path.to_string_lossy().to_string(),
+        ));
+    }
+
+    let bytes = fs::read(abs_path).map_err(|e| map_io_error(e, "Failed to read note"))?;
+    let sniff_len = bytes.len().min(BINARY_SNIFF_BYTES);
+    if bytes[..sniff_len].contains(&0) {
+        return Err(AppError::with_detail(
+            ErrorCode::ValidationError,
+            "暂不支持打开二进制或非 UTF-8 文本文件",
+            abs_path.to_string_lossy().to_string(),
+        ));
+    }
+
+    String::from_utf8(bytes).map_err(|_| {
+        AppError::with_detail(
+            ErrorCode::ValidationError,
+            "暂不支持打开二进制或非 UTF-8 文本文件",
+            abs_path.to_string_lossy().to_string(),
+        )
+    })
+}
+
+/// Reads a note by absolute path (supports both library and external text files) (`C4.2`).
 pub fn note_read(pm: &PersistenceManager, args: ReadNoteArgs) -> Result<NoteDoc, AppError> {
     let abs_path = expand_input_path(&args.abs_path);
     if !abs_path.is_file() {
@@ -38,8 +71,8 @@ pub fn note_read(pm: &PersistenceManager, args: ReadNoteArgs) -> Result<NoteDoc,
         ));
     }
 
-    let raw = fs::read_to_string(&abs_path).map_err(|e| map_io_error(e, "Failed to read note"))?;
     let (mtime_ms, size_bytes) = file_mtime_and_size(&abs_path)?;
+    let raw = read_editable_utf8_file(&abs_path, size_bytes)?;
 
     let root = pm.current_library_root()?.map(PathBuf::from);
     let rel_path = root.as_deref().and_then(|r| resolve_rel_path(r, &abs_path));

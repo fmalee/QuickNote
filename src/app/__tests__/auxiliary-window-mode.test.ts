@@ -36,6 +36,8 @@ const {
 vi.mock('@/lib/ipc/commands', () => ({
   isAppError: () => false,
   appSetMenuAccelerators: mockAppSetMenuAccelerators,
+  appTakePendingOpenFiles: vi.fn().mockResolvedValue([]),
+  pickLocalFilesToOpen: vi.fn().mockResolvedValue([]),
   uiStateGet: mockUiStateGet,
   uiStateSet: mockUiStateSet,
   windowShowMain: mockWindowShowMain,
@@ -62,6 +64,7 @@ vi.mock('@/lib/ipc/commands', () => ({
 vi.mock('@/lib/ipc/events', () => ({
   onWindowState: mockOnWindowState,
   onMenuAction: mockOnMenuAction,
+  onPendingOpenFiles: vi.fn().mockResolvedValue(() => undefined),
   onToastAppendUndo: mockOnToastAppendUndo,
   onSettingsStatus: mockOnSettingsStatus,
   onFsExternalChange: vi.fn().mockResolvedValue(() => undefined),

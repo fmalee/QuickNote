@@ -55,6 +55,12 @@ export function onMenuAction(handler: (actionId: string) => void): Promise<Unlis
   return listenEvent<string>('menu:action', handler);
 }
 
+export function onPendingOpenFiles(handler: () => void): Promise<UnlistenFn> {
+  return listenEvent<unknown>('app:pending-open-files', () => {
+    handler();
+  });
+}
+
 export function onTerminalSessionState(
   handler: (info: TerminalSessionInfo) => void,
 ): Promise<UnlistenFn> {

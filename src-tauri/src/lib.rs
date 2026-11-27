@@ -9,6 +9,7 @@ use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuil
 
 use crate::application::capture::CaptureManager;
 use crate::application::hotkey::HotkeyManager;
+use crate::application::open_files::PendingOpenFilesQueue;
 use crate::application::persistence::PersistenceManager;
 use crate::application::terminal::{TauriTerminalEventSink, TerminalManager};
 use crate::application::window::{MainWindowLayoutMode, WindowManager};
@@ -122,6 +123,11 @@ fn build_app_menu(app: &AppHandle) -> Result<BuiltAppMenu, tauri::Error> {
         .item(
             &MenuItemBuilder::with_id("window.newNote", "新建笔记")
                 .accelerator("CmdOrCtrl+N")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("window.openFile", "打开…")
+                .accelerator("CmdOrCtrl+O")
                 .build(app)?,
         )
         .item(&MenuItemBuilder::with_id("menu_quick_bar", "快速捕捉").build(app)?)
@@ -509,6 +515,12 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
                     }
                 }
             }
+            "window.openFile" => {
+                show_main_window_for_external_open(app_handle);
+                if let Err(err) = app_handle.emit("menu:action", menu_id) {
+                    eprintln!("[menu] emit menu:action failed: {err}");
+                }
+            }
             "window.newNote"
             | "window.quickOpen"
             | "window.commandBook"
@@ -600,19 +612,71 @@ fn create_aux_windows(app: &AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
+fn show_main_window_for_external_open(app_handle: &AppHandle) {
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let is_visible = win.is_visible().unwrap_or(false);
+        let is_minimized = win.is_minimized().unwrap_or(false);
+        if is_visible && !is_minimized {
+            let _ = win.set_focus();
+            return;
+        }
+    }
+    if let Some(wm) = app_handle.try_state::<Arc<WindowManager>>() {
+        let aux_pct = app_handle
+            .try_state::<Arc<PersistenceManager>>()
+            .and_then(|pm| pm.settings_get().ok())
+            .map(|s| s.settings.main_window.auxiliary_width_percent)
+            .unwrap_or(crate::domain::window::DEFAULT_AUXILIARY_WIDTH_PERCENT);
+        if let Err(err) = wm.show_main(app_handle, None, aux_pct) {
+            eprintln!("[open-files] show_main failed: code={:?}", err.code);
+        }
+    }
+}
+
 /// Boots the Tauri desktop runtime with registered IPC commands, native macOS bridge, tray, and hotkey.
 pub fn run() -> Result<(), tauri::Error> {
+    // Manage `PendingOpenFilesQueue` on the builder BEFORE `app.run()` starts so macOS cold-start
+    // `RunEvent::Opened` events (which can arrive before `RuntimeRunEvent::Ready` / `.setup()`)
+    // are always captured instead of dropped.
+    let pending_open_files = Arc::new(PendingOpenFilesQueue::new());
+    let cli_args: Vec<String> = std::env::args().skip(1).collect();
+    if !cli_args.is_empty() {
+        let cwd = std::env::current_dir().ok();
+        if let Err(err) = pending_open_files.enqueue_raw_args(&cli_args, cwd.as_deref()) {
+            eprintln!("[startup] enqueue_raw_args failed: code={:?}", err.code);
+        }
+    }
+
     tauri::Builder::default()
+        .manage(pending_open_files)
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(wm) = app.try_state::<Arc<WindowManager>>() {
-                let aux_pct = app
-                    .try_state::<Arc<PersistenceManager>>()
-                    .and_then(|pm| pm.settings_get().ok())
-                    .map(|s| s.settings.main_window.auxiliary_width_percent)
-                    .unwrap_or(crate::domain::window::DEFAULT_AUXILIARY_WIDTH_PERCENT);
-                if let Err(err) = wm.show_main(app, None, aux_pct) {
-                    eprintln!("[single-instance] show_main failed: code={:?}", err.code);
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            let mut has_new_files = false;
+            if let Some(queue) = app.try_state::<Arc<PendingOpenFilesQueue>>() {
+                let cwd_path = std::path::PathBuf::from(&cwd);
+                let cwd_opt = if cwd.trim().is_empty() {
+                    None
+                } else {
+                    Some(cwd_path.as_path())
+                };
+                if argv.len() > 1 {
+                    match queue.enqueue_raw_args(&argv[1..], cwd_opt) {
+                        Ok(report) => {
+                            has_new_files = !report.accepted.is_empty();
+                        }
+                        Err(err) => {
+                            eprintln!(
+                                "[single-instance] enqueue_raw_args failed: code={:?}",
+                                err.code
+                            );
+                        }
+                    }
+                }
+            }
+            show_main_window_for_external_open(app);
+            if has_new_files {
+                if let Err(err) = app.emit("app:pending-open-files", ()) {
+                    eprintln!("[single-instance] emit app:pending-open-files failed: {err}");
                 }
             }
         }))
@@ -811,6 +875,7 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::app::app_get_info,
             commands::app::app_open_external_url,
             commands::app::app_set_menu_accelerators,
+            commands::app::app_take_pending_open_files,
             commands::settings::settings_get,
             commands::settings::settings_update,
             commands::settings::settings_export,
@@ -868,12 +933,33 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::terminal::terminal_list_sessions,
         ])
         .build(tauri::generate_context!())?
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(|app_handle, event| match event {
+            tauri::RunEvent::Exit => {
                 if let Some(tm) = app_handle.try_state::<Arc<TerminalManager>>() {
                     tm.shutdown_all();
                 }
             }
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            tauri::RunEvent::Opened { urls } => {
+                if let Some(queue) = app_handle.try_state::<Arc<PendingOpenFilesQueue>>() {
+                    match queue.enqueue_urls(&urls) {
+                        Ok(report) => {
+                            if !report.accepted.is_empty() {
+                                show_main_window_for_external_open(app_handle);
+                                if let Err(err) = app_handle.emit("app:pending-open-files", ()) {
+                                    eprintln!(
+                                        "[open-files] emit app:pending-open-files failed: {err}"
+                                    );
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            eprintln!("[open-files] enqueue_urls failed: code={:?}", err.code);
+                        }
+                    }
+                }
+            }
+            _ => {}
         });
     Ok(())
 }

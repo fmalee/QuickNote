@@ -38,12 +38,20 @@ import {
 } from '@/lib/actions';
 import {
   appSetMenuAccelerators,
+  appTakePendingOpenFiles,
+  pickLocalFilesToOpen,
   uiStateGet,
   uiStateSet,
   windowSetQuickBarPinned,
   windowShowMain,
 } from '@/lib/ipc/commands';
-import { onMenuAction, onToastAppendUndo, onWindowState, type UnlistenFn } from '@/lib/ipc/events';
+import {
+  onMenuAction,
+  onPendingOpenFiles,
+  onToastAppendUndo,
+  onWindowState,
+  type UnlistenFn,
+} from '@/lib/ipc/events';
 
 const onboardingStore = useOnboardingStore();
 const settingsStore = useSettingsStore();
@@ -68,9 +76,13 @@ let windowModePersistTimer: ReturnType<typeof setTimeout> | null = null;
 let unlistenToastAppendUndo: UnlistenFn | null = null;
 let unlistenMainWindowState: UnlistenFn | null = null;
 let unlistenMenuAction: UnlistenFn | null = null;
+let unlistenPendingOpenFiles: UnlistenFn | null = null;
 let crossWindowListenersBound = false;
 let viewportResizeObserver: ResizeObserver | null = null;
 let pendingOpenInFlight: Promise<unknown> | null = null;
+let pendingExternalDrainInFlight: Promise<void> | null = null;
+let pendingExternalDrainRequestedAgain = false;
+let workbenchTabsRestored = false;
 let lastPendingOpenAtMs = 0;
 const CROSS_WINDOW_OPEN_GRACE_MS = 2000;
 const actionDisposers: Array<() => void> = [];
@@ -225,8 +237,66 @@ function consumeAndOpenPendingFile(): boolean {
   return true;
 }
 
+async function openLocalFilesSequentially(paths: readonly string[]): Promise<void> {
+  for (const absPath of paths) {
+    if (!absPath) {
+      continue;
+    }
+    try {
+      await editorTabsStore.openNoteByAbsPath(absPath, { preview: false });
+    } catch {
+      // 单文件失败（如二进制或超过 10MB）由 editorTabsStore 记录错误提示，继续打开其余文件
+    }
+  }
+}
+
+async function openLocalFilesFromDialog(): Promise<void> {
+  const activeAbsPath = editorTabsStore.activeDoc?.absPath ?? '';
+  const lastSlash = activeAbsPath.lastIndexOf('/');
+  const defaultDir =
+    lastSlash > 0 ? activeAbsPath.slice(0, lastSlash) : (onboardingStore.libraryInfo?.root ?? null);
+  const paths = await pickLocalFilesToOpen(defaultDir);
+  if (paths.length === 0) {
+    return;
+  }
+  await openLocalFilesSequentially(paths);
+}
+
+function drainPendingOpenFiles(): Promise<void> {
+  if (!onboardingStore.libraryInfo?.root || !workbenchTabsRestored) {
+    return Promise.resolve();
+  }
+  if (pendingExternalDrainInFlight) {
+    pendingExternalDrainRequestedAgain = true;
+    return pendingExternalDrainInFlight;
+  }
+  const run = (async () => {
+    try {
+      do {
+        pendingExternalDrainRequestedAgain = false;
+        let paths: string[] = [];
+        try {
+          paths = await appTakePendingOpenFiles();
+        } catch {
+          return;
+        }
+        if (paths.length === 0) {
+          continue;
+        }
+        lastPendingOpenAtMs = Date.now();
+        await openLocalFilesSequentially(paths);
+      } while (pendingExternalDrainRequestedAgain);
+    } finally {
+      pendingExternalDrainInFlight = null;
+    }
+  })();
+  pendingExternalDrainInFlight = run;
+  return run;
+}
+
 function bindMainWindowActions(): void {
   actionDisposers.push(
+    actionRegistry.bindHandler('window.openFile', () => openLocalFilesFromDialog()),
     actionRegistry.bindHandler('window.quickOpen', () => {
       openMainQuickOpen();
     }),
@@ -529,6 +599,7 @@ async function ensureCrossWindowListeners(): Promise<void> {
         const hasActiveOrRecentPendingOpen =
           openedNow ||
           pendingOpenInFlight !== null ||
+          pendingExternalDrainInFlight !== null ||
           Date.now() - lastPendingOpenAtMs < CROSS_WINDOW_OPEN_GRACE_MS;
         if (hasActiveOrRecentPendingOpen) {
           lastPendingOpenAtMs = 0;
@@ -557,6 +628,9 @@ async function ensureCrossWindowListeners(): Promise<void> {
         return;
       }
       void actionRegistry.executeById(mappedActionId, ctx);
+    });
+    unlistenPendingOpenFiles = await onPendingOpenFiles(() => {
+      void drainPendingOpenFiles();
     });
   } catch {
     // 非 Tauri 测试环境容错
@@ -611,15 +685,20 @@ watch(
   () => onboardingStore.libraryInfo?.root ?? null,
   (nextRoot) => {
     if (nextRoot) {
-      void Promise.all([
+      workbenchTabsRestored = false;
+      void Promise.allSettled([
         notesStore.initialize(),
         editorTabsStore.restoreTabsFromUiState(),
         panelsStore.initialize(),
         restoreMainWindowMode(),
         ensureCrossWindowListeners(),
       ]).then(() => {
+        workbenchTabsRestored = true;
         consumeAndOpenPendingFile();
+        void drainPendingOpenFiles();
       });
+    } else {
+      workbenchTabsRestored = false;
     }
   },
   { immediate: true },
@@ -690,8 +769,15 @@ onUnmounted(() => {
     unlistenMenuAction();
     unlistenMenuAction = null;
   }
+  if (unlistenPendingOpenFiles) {
+    unlistenPendingOpenFiles();
+    unlistenPendingOpenFiles = null;
+  }
   crossWindowListenersBound = false;
   pendingOpenInFlight = null;
+  pendingExternalDrainInFlight = null;
+  pendingExternalDrainRequestedAgain = false;
+  workbenchTabsRestored = false;
   lastPendingOpenAtMs = 0;
   mainQuickOpenEngine.dispose();
   mainCommandPaletteEngine.dispose();

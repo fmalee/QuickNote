@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tauri::menu::MenuItemKind;
 use tauri::{AppHandle, State};
 
+use crate::application::open_files::PendingOpenFilesQueue;
 use crate::application::persistence::PersistenceManager;
 use crate::application::window::WindowManager;
 use crate::domain::app::{
@@ -105,4 +106,12 @@ pub fn app_set_menu_accelerators(
         )
     })?;
     update_menu_items_accelerators(&items, &args.entries)
+}
+
+/// Atomically drains pending local file paths delivered by macOS (Dock drop, Finder Open With, or CLI args).
+#[tauri::command]
+pub fn app_take_pending_open_files(
+    queue: State<'_, Arc<PendingOpenFilesQueue>>,
+) -> Result<Vec<String>, AppError> {
+    queue.take_all()
 }

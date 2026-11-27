@@ -26,6 +26,7 @@ export const SCOPE_PRIORITY: readonly ActionScope[] = [
 
 export const NATIVE_MENU_ACTION_IDS = [
   'window.newNote',
+  'window.openFile',
   'window.quickOpen',
   'window.commandBook',
   'window.nextTab',

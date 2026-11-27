@@ -130,6 +130,14 @@ export const DEFAULT_ACTION_CATALOG: readonly ActionDef[] = [
     run: noopAction,
   },
   {
+    id: 'window.openFile',
+    title: '打开…',
+    category: 'window',
+    defaultKeys: 'cmd+o',
+    scope: 'main-window',
+    run: noopAction,
+  },
+  {
     id: 'window.save',
     title: '保存当前笔记',
     category: 'window',
