@@ -544,7 +544,7 @@ async function ensureCrossWindowListeners(): Promise<void> {
       let mappedActionId = actionId;
       if (actionId === 'menu_quick_open') {
         mappedActionId = 'window.quickOpen';
-      } else if (actionId === 'menu_command_book' || actionId === 'menu_tools_commands') {
+      } else if (actionId === 'menu_command_book') {
         mappedActionId = 'window.commandBook';
       } else if (actionId === 'menu_view_terminal') {
         mappedActionId = 'panel.toggle.terminal';

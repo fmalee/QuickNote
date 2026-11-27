@@ -265,11 +265,6 @@ fn build_app_menu(app: &AppHandle) -> Result<BuiltAppMenu, tauri::Error> {
         .item(&PredefinedMenuItem::fullscreen(app, Some("进入/退出全屏"))?)
         .build()?;
 
-    let tools_submenu = SubmenuBuilder::new(app, "工具")
-        .item(&MenuItemBuilder::with_id("menu_tools_commands", "打开命令库").build(app)?)
-        .item(&MenuItemBuilder::with_id("menu_tools_toast", "调试：触发 5 秒 Toast").build(app)?)
-        .build()?;
-
     let initial_pinned = app
         .try_state::<Arc<PersistenceManager>>()
         .and_then(|pm| pm.settings_get().ok())
@@ -320,7 +315,6 @@ fn build_app_menu(app: &AppHandle) -> Result<BuiltAppMenu, tauri::Error> {
         .item(&edit_submenu)
         .item(&format_submenu)
         .item(&view_submenu)
-        .item(&tools_submenu)
         .item(&window_submenu)
         .item(&help_submenu)
         .build()?;
@@ -381,11 +375,6 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
         .item(&MenuItemBuilder::with_id("tray_show_main", "打开主窗口").build(app)?)
         .item(&MenuItemBuilder::with_id("tray_hide_main", "隐藏主窗口").build(app)?)
         .item(&MenuItemBuilder::with_id("tray_settings", "设置…").build(app)?)
-        .separator()
-        .item(
-            &MenuItemBuilder::with_id("tray_debug_toast", "调试：触发 5 秒 Toast 浮窗")
-                .build(app)?,
-        )
         .separator()
         .item(&MenuItemBuilder::with_id("tray_quit", "退出 QuickNote").build(app)?)
         .build()?;
@@ -477,11 +466,6 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
                     eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
                 }
             }
-            "tray_debug_toast" | "menu_tools_toast" => {
-                if let Err(err) = wm.show_debug_toast(app_handle) {
-                    eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
-                }
-            }
             "tray_quit" => {
                 app_handle.exit(0);
             }
@@ -528,7 +512,6 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
             "window.newNote"
             | "window.quickOpen"
             | "window.commandBook"
-            | "menu_tools_commands"
             | "editor.bold"
             | "editor.italic"
             | "editor.codeBlock"

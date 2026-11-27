@@ -697,20 +697,6 @@ impl WindowManager {
         }
     }
 
-    /// Triggers the non-activating bottom Toast panel for 5 seconds and emits `toast:append-undo` (`M0-03`).
-    pub fn show_debug_toast(&self, app: &AppHandle) -> Result<(), AppError> {
-        let debug_payload = AppendResult {
-            rel_path: "inbox.md".to_string(),
-            title: "收件箱".to_string(),
-            added_lines: 1,
-            section_heading: Some("2026-11-23".to_string()),
-            body_hash: "debug-toast".to_string(),
-            mtime_ms: 0,
-            undo_available: true,
-        };
-        self.show_append_toast(app, &debug_payload)
-    }
-
     /// Shows the 5-second non-activating Toast panel (creating it on demand) and emits
     /// `toast:append-undo` with `AppendResult` (`C8.3`). Destroys the Toast WebView when hidden.
     pub fn show_append_toast(
