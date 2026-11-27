@@ -241,14 +241,14 @@ fn build_app_menu(app: &AppHandle) -> Result<BuiltAppMenu, tauri::Error> {
         )
         .build()?;
 
-    let view_submenu = SubmenuBuilder::new(app, "视图")
+    let view_submenu = SubmenuBuilder::new(app, "显示")
         .item(
-            &MenuItemBuilder::with_id("panel.toggle.outline", "大纲视图")
+            &MenuItemBuilder::with_id("panel.toggle.outline", "大纲面板")
                 .accelerator("Ctrl+CmdOrCtrl+O")
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("panel.toggle.related", "相关文档视图")
+            &MenuItemBuilder::with_id("panel.toggle.related", "相关文档面板")
                 .accelerator("Ctrl+CmdOrCtrl+R")
                 .build(app)?,
         )

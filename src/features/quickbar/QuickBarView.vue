@@ -286,7 +286,7 @@ function handleKeydown(event: KeyboardEvent): void {
           :class="['qn-quickbar__mode', { 'qn-quickbar__mode--active': store.mode === 'capture' }]"
           @click="store.mode = 'capture'"
         >
-          记录 ⌘N
+          记录
         </button>
         <button
           type="button"

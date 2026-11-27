@@ -65,7 +65,7 @@ async function handleImportSettings(): Promise<void> {
 
 const sections: { id: SettingsSection; label: string }[] = [
   { id: 'general', label: '通用与热键' },
-  { id: 'appearance', label: '外观与编辑器' },
+  { id: 'appearance', label: '编辑器' },
   { id: 'library', label: '库与收件箱' },
   { id: 'workspaces', label: '工作区' },
   { id: 'external', label: '外部与搜索' },
