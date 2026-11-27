@@ -36,7 +36,20 @@ import {
   getStreamLanguageExtension,
 } from './extensions/codeLanguages';
 import { EDITOR_FORMAT_ACTION_IDS, executeEditorFormatAction } from './extensions/markdownFormat';
-import { createSearchExtensions, openFindPanel, openReplacePanel } from './extensions/search';
+import {
+  applySearchQuery,
+  clearSearchQuery,
+  computeMatchSummary,
+  createSearchExtensions,
+  findNextMatch,
+  findPrevMatch,
+  getSelectedSearchSeed,
+  replaceAllMatches,
+  replaceCurrentMatch,
+  type SearchMatchSummary,
+  type SearchOptionsState,
+} from './extensions/search';
+import EditorFindReplaceBar from './EditorFindReplaceBar.vue';
 import {
   extractImageFileFromDataTransfer,
   handleImageInsert,
@@ -131,6 +144,114 @@ const editorActiveFontFamily = computed<string>(() => {
 
 function buildTypographyTheme(_isMarkdown = true): Extension {
   return [];
+}
+
+const findBarRef = ref<InstanceType<typeof EditorFindReplaceBar> | null>(null);
+const findBarOpen = ref(false);
+const findReplaceExpanded = ref(false);
+const findOptions = ref<SearchOptionsState>({
+  search: '',
+  replace: '',
+  caseSensitive: false,
+  wholeWord: false,
+  regexp: false,
+});
+const findSummary = ref<SearchMatchSummary>({
+  total: 0,
+  current: 0,
+  valid: true,
+  capped: false,
+});
+
+function syncSearchStateToView(): void {
+  if (!view) {
+    return;
+  }
+  const { valid } = applySearchQuery(view, findOptions.value);
+  if (!valid) {
+    findSummary.value = { total: 0, current: 0, valid: false, capped: false };
+    return;
+  }
+  findSummary.value = computeMatchSummary(view.state, findOptions.value);
+}
+
+function handleFindOptionsUpdate(next: SearchOptionsState): void {
+  findOptions.value = next;
+  if (findBarOpen.value) {
+    syncSearchStateToView();
+  }
+}
+
+function openFindReplaceBar(withReplace: boolean): void {
+  if (!view || !buildEditorActionContext().hasActiveDoc) {
+    return;
+  }
+  const seed = getSelectedSearchSeed(view);
+  if (seed !== null) {
+    findOptions.value = {
+      ...findOptions.value,
+      search: seed,
+    };
+  }
+  findBarOpen.value = true;
+  if (withReplace) {
+    findReplaceExpanded.value = true;
+  }
+  syncSearchStateToView();
+  if (withReplace) {
+    findBarRef.value?.focusReplaceInput(true);
+  } else {
+    findBarRef.value?.focusSearchInput(true);
+  }
+}
+
+function closeFindReplaceBar(restoreEditorFocus = true): void {
+  if (!findBarOpen.value) {
+    return;
+  }
+  findBarOpen.value = false;
+  if (view) {
+    clearSearchQuery(view);
+    if (restoreEditorFocus) {
+      view.focus();
+    }
+  }
+}
+
+function handleFindNext(): void {
+  if (!view) {
+    return;
+  }
+  syncSearchStateToView();
+  findNextMatch(view);
+  findSummary.value = computeMatchSummary(view.state, findOptions.value);
+}
+
+function handleFindPrev(): void {
+  if (!view) {
+    return;
+  }
+  syncSearchStateToView();
+  findPrevMatch(view);
+  findSummary.value = computeMatchSummary(view.state, findOptions.value);
+}
+
+function handleReplaceOne(): void {
+  if (!view) {
+    return;
+  }
+  syncSearchStateToView();
+  replaceCurrentMatch(view);
+  findSummary.value = computeMatchSummary(view.state, findOptions.value);
+}
+
+function handleReplaceAll(): void {
+  if (!view) {
+    return;
+  }
+  syncSearchStateToView();
+  replaceAllMatches(view);
+  findSummary.value = computeMatchSummary(view.state, findOptions.value);
 }
 
 function computeTabSizeBytes(tab: EditorTab, contentOverride?: string): number {
@@ -681,6 +802,9 @@ function createEditorState(tab: EditorTab): EditorState {
           editorTabsStore.updateTabSelection(key, fromLine, toLine, hasSelection);
           editorTabsStore.setActiveTopLine(line);
         }
+        if (findBarOpen.value && (update.docChanged || update.selectionSet)) {
+          findSummary.value = computeMatchSummary(update.state, findOptions.value);
+        }
       }),
       EditorView.domEventHandlers({
         compositionend: () => {
@@ -800,6 +924,7 @@ function switchToTab(tab: EditorTab | null): void {
     saveCurrentViewSnapshot();
   }
   if (!tab || tab.evicted) {
+    closeFindReplaceBar(false);
     currentTabKey = null;
     currentTabAbsPath = null;
     editorTabsStore.setEditorStatus({
@@ -840,6 +965,9 @@ function switchToTab(tab: EditorTab | null): void {
     updateStatusAndDiagnostics(tab, nextState.doc.toString());
   } finally {
     suppressUpdate = false;
+  }
+  if (findBarOpen.value) {
+    syncSearchStateToView();
   }
   if (editorTabsStore.scrollTarget?.key === tab.key) {
     applyScrollTarget(editorTabsStore.scrollTarget);
@@ -1008,6 +1136,9 @@ watch(
     } finally {
       suppressUpdate = false;
     }
+    if (findBarOpen.value) {
+      syncSearchStateToView();
+    }
   },
 );
 
@@ -1071,16 +1202,10 @@ onMounted(() => {
   }
   actionDisposers.push(
     actionRegistry.bindHandler('editor.find', () => {
-      if (!view || !buildEditorActionContext().hasActiveDoc) {
-        return;
-      }
-      openFindPanel(view);
+      openFindReplaceBar(false);
     }),
     actionRegistry.bindHandler('editor.replace', () => {
-      if (!view || !buildEditorActionContext().hasActiveDoc) {
-        return;
-      }
-      openReplacePanel(view);
+      openFindReplaceBar(true);
     }),
   );
   if (typeof window !== 'undefined') {
@@ -1152,6 +1277,22 @@ onUnmounted(() => {
 
 <template>
   <div class="qn-markdown-editor-shell">
+    <div v-if="findBarOpen" class="qn-find-bar-anchor">
+      <EditorFindReplaceBar
+        ref="findBarRef"
+        :open="findBarOpen"
+        :replace-expanded="findReplaceExpanded"
+        :model-value="findOptions"
+        :summary="findSummary"
+        @update:model-value="handleFindOptionsUpdate"
+        @update:replace-expanded="findReplaceExpanded = $event"
+        @find-next="handleFindNext"
+        @find-prev="handleFindPrev"
+        @replace-one="handleReplaceOne"
+        @replace-all="handleReplaceAll"
+        @close="closeFindReplaceBar(true)"
+      />
+    </div>
     <div
       ref="containerRef"
       :class="[
@@ -1217,10 +1358,22 @@ onUnmounted(() => {
 
 <style scoped>
 .qn-markdown-editor-shell {
+  position: relative;
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--qn-space-2);
+}
+
+.qn-find-bar-anchor {
+  position: sticky;
+  top: var(--qn-space-2);
+  z-index: var(--qn-z-popover);
+  height: 0;
+  overflow: visible;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
 }
 
 .qn-markdown-editor {
