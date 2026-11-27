@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue';
-import type { NoteMeta, NoteMetaPatch } from '@/bindings/types';
+import type { NoteMeta, NoteMetaPatch, NoteType } from '@/bindings/types';
 import { QnButton } from '@/components';
 import { useEditorTabsStore } from './store';
 
@@ -16,6 +16,7 @@ const emit = defineEmits<{
 const editorTabsStore = useEditorTabsStore();
 const popoverRef = ref<HTMLDivElement | null>(null);
 
+const docTypeDraft = ref<NoteType>('note');
 const openDirDraft = ref('');
 const codeWorkspaceDraft = ref('');
 const terminalDirDraft = ref('');
@@ -24,6 +25,7 @@ const archivedDraft = ref(false);
 const saving = ref(false);
 
 function syncFromMeta(meta: NoteMeta): void {
+  docTypeDraft.value = meta.docType;
   openDirDraft.value = meta.openDir ?? '';
   codeWorkspaceDraft.value = meta.codeWorkspace ?? '';
   terminalDirDraft.value = meta.terminalDir ?? '';
@@ -50,6 +52,7 @@ async function handleSave(): Promise<void> {
   saving.value = true;
   try {
     const patch: NoteMetaPatch = {
+      docType: docTypeDraft.value,
       openDir: normalizeNullableString(openDirDraft.value),
       codeWorkspace: normalizeNullableString(codeWorkspaceDraft.value),
       terminalDir: normalizeNullableString(terminalDirDraft.value),
@@ -122,6 +125,21 @@ onUnmounted(() => {
     </div>
 
     <form class="qn-doc-properties-popover__form" @submit.prevent="handleSave">
+      <label class="qn-doc-properties-popover__field">
+        <span class="qn-doc-properties-popover__label">文档类型 (type)</span>
+        <select
+          v-model="docTypeDraft"
+          class="qn-doc-properties-popover__input"
+          data-testid="doc-prop-type-select"
+          aria-label="文档类型"
+        >
+          <option value="note">note</option>
+          <option value="doc">doc</option>
+          <option value="command-book">command-book</option>
+          <option value="template">template</option>
+        </select>
+      </label>
+
       <label class="qn-doc-properties-popover__field">
         <span class="qn-doc-properties-popover__label">项目目录 (open_dir)</span>
         <input

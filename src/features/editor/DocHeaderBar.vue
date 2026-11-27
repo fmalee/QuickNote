@@ -1,11 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import type {
-  ExternalBookmark,
-  ExternalDirectoryListing,
-  NoteMetaPatch,
-  NoteType,
-} from '@/bindings/types';
+import type { ExternalBookmark, ExternalDirectoryListing, NoteMetaPatch } from '@/bindings/types';
 import {
   type ContextMenuEntry,
   QnBadge,
@@ -88,8 +83,8 @@ const resolvedExternalDirPath = computed(() => {
   }
   return (
     siblingDirPath.value ??
-    externalActions.getResolvedPath('external.vscode') ??
     externalActions.getResolvedPath('external.terminal') ??
+    externalActions.getResolvedPath('external.sublime') ??
     null
   );
 });
@@ -170,18 +165,6 @@ async function commitMetaPatch(patch: NoteMetaPatch): Promise<void> {
     return;
   }
   await editorTabsStore.updateActiveMeta(patch);
-}
-
-async function handleDocTypeChange(event: Event): Promise<void> {
-  const target = event.target as HTMLSelectElement | null;
-  if (!target || !doc.value) {
-    return;
-  }
-  const nextType = target.value as NoteType;
-  if (nextType === doc.value.meta.docType) {
-    return;
-  }
-  await commitMetaPatch({ docType: nextType });
 }
 
 async function handleAddTag(): Promise<void> {
@@ -449,20 +432,6 @@ function cancelExternalFrontmatter(): void {
           外部
         </QnBadge>
 
-        <select
-          v-if="isMarkdown"
-          :value="doc.meta.docType"
-          class="qn-doc-header__type-select"
-          data-testid="doc-header-type-select"
-          aria-label="文档类型"
-          @change="handleDocTypeChange"
-        >
-          <option value="note">note</option>
-          <option value="doc">doc</option>
-          <option value="command-book">command-book</option>
-          <option value="template">template</option>
-        </select>
-
         <QnButton
           v-if="isMarkdown && isInboxWithSelection"
           variant="secondary"
@@ -681,16 +650,6 @@ function cancelExternalFrontmatter(): void {
   align-items: center;
   gap: var(--qn-space-2);
   flex-shrink: 0;
-}
-
-.qn-doc-header__type-select {
-  padding: var(--qn-space-1) var(--qn-space-2);
-  border: 1px solid var(--qn-border-subtle);
-  border-radius: var(--qn-radius-sm);
-  background-color: var(--qn-bg-elevated);
-  color: var(--qn-text-secondary);
-  font-size: var(--qn-text-xs);
-  font-family: var(--qn-font-mono);
 }
 
 .qn-doc-header__prop-anchor {

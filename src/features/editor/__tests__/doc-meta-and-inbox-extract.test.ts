@@ -316,10 +316,16 @@ describe('doc meta editing, external frontmatter guard & inbox extract (M2-04)',
     expect(store.activeTab?.isPreview).toBe(false);
   });
 
-  it('DocHeaderBar / DocPropertiesPopover / InboxExtractModal SSR 渲染无异常', async () => {
-    mockNoteRead.mockResolvedValueOnce(
-      makeDoc({ isInbox: true, relPath: 'inbox.md', key: 'inbox.md' }),
-    );
+  it('DocHeaderBar / DocPropertiesPopover / InboxExtractModal SSR 渲染无异常且文档类型位于属性表单', async () => {
+    const doc = makeDoc({
+      isInbox: true,
+      relPath: 'inbox.md',
+      key: 'inbox.md',
+      meta: makeMeta({ docType: 'command-book' }),
+    });
+    mockNoteRead.mockResolvedValueOnce(doc);
+    const pinia = createPinia();
+    setActivePinia(pinia);
     const store = useEditorTabsStore();
     await store.openNote('inbox.md', { preview: false });
     store.updateTabSelection('inbox.md', 1, 2, true);
@@ -327,10 +333,18 @@ describe('doc meta editing, external frontmatter guard & inbox extract (M2-04)',
 
     const app = createSSRApp({
       components: { DocHeaderBar, DocPropertiesPopover, InboxExtractModal },
-      template: '<div><DocHeaderBar /><InboxExtractModal /></div>',
+      setup() {
+        return { meta: doc.meta };
+      },
+      template:
+        '<div><DocHeaderBar /><DocPropertiesPopover :open="true" :meta="meta" /><InboxExtractModal /></div>',
     });
-    app.use(createPinia());
+    app.use(pinia);
     const html = await renderToString(app);
     expect(html).toContain('<div>');
+    expect(html).not.toContain('data-testid="doc-header-type-select"');
+    expect(html).toContain('data-testid="doc-prop-type-select"');
+    expect(html).toContain('value="command-book"');
+    expect(html).toContain('>command-book</option>');
   });
 });

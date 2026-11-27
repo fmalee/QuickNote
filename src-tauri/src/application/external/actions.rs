@@ -141,11 +141,12 @@ pub fn external_action_run(
         (Some(abs), Some(root)) => is_path_inside_root(Path::new(abs), Path::new(root)),
         _ => false,
     };
+    let file_parent_dir = abs_path
+        .as_deref()
+        .and_then(|p| Path::new(p).parent())
+        .map(|p| p.to_string_lossy().to_string());
     let external_parent_dir = if !is_library_doc {
-        abs_path
-            .as_deref()
-            .and_then(|p| Path::new(p).parent())
-            .map(|p| p.to_string_lossy().to_string())
+        file_parent_dir.clone()
     } else {
         None
     };
@@ -189,12 +190,16 @@ pub fn external_action_run(
             launcher.open_terminal(&app_cfg, &dir)
         }
         ExternalActionId::ExternalVscode => {
-            let candidate = dir_path
-                .or_else(|| effective.project_root.clone())
-                .or(external_parent_dir);
-            let dir = require_existing_dir(candidate.as_deref())?;
+            let target = if let Some(explicit) = dir_path.as_deref() {
+                require_existing_file_or_dir(Some(explicit))?
+            } else if let Some(ws_file) = effective.vscode_workspace_path.as_deref() {
+                require_existing_file(Some(ws_file))?
+            } else {
+                let candidate = effective.project_root.clone().or(file_parent_dir);
+                require_existing_dir(candidate.as_deref())?
+            };
             let app_cfg = apply_app_override(&settings.editors.vscode, &effective, "vscode");
-            launcher.open_with_app(&app_cfg, &dir)
+            launcher.open_with_app(&app_cfg, &target)
         }
         ExternalActionId::ExternalSublime => {
             let candidate = dir_path
@@ -250,6 +255,29 @@ fn require_existing_dir(path: Option<&str>) -> Result<PathBuf, AppError> {
         ));
     }
     Ok(pb)
+}
+
+fn require_existing_file_or_dir(path: Option<&str>) -> Result<PathBuf, AppError> {
+    let Some(raw) = path.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Err(AppError::new(
+            ErrorCode::WorkspaceDirMissing,
+            "未配置或未提供目标路径",
+        ));
+    };
+    let pb = PathBuf::from(raw);
+    if pb.is_file() || pb.is_dir() {
+        return Ok(pb);
+    }
+    if raw.ends_with(".code-workspace") {
+        return Err(AppError::new(
+            ErrorCode::NotFound,
+            "指定的 .code-workspace 文件不存在",
+        ));
+    }
+    Err(AppError::new(
+        ErrorCode::WorkspaceDirMissing,
+        "目标目录不存在",
+    ))
 }
 
 fn read_doc_target(path: &Path) -> Option<ExternalDocTarget> {

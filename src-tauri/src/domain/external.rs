@@ -307,6 +307,47 @@ fn resolve_dir_action(
     }
 }
 
+fn resolve_vscode_action(
+    ctx: &ExternalResolveContext,
+    probe: &dyn PathProbe,
+) -> ExternalActionState {
+    if let Some(ws_file) = resolve_code_workspace_file(ctx) {
+        if !probe.is_file(&ws_file) {
+            return ExternalActionState {
+                id: ExternalActionId::ExternalVscode,
+                enabled: false,
+                disabled_reason: Some("指定的 .code-workspace 文件不存在".to_string()),
+                resolved_path: Some(ws_file),
+            };
+        }
+        if !ctx.vscode_configured {
+            return ExternalActionState {
+                id: ExternalActionId::ExternalVscode,
+                enabled: false,
+                disabled_reason: Some("未配置 VS Code 应用".to_string()),
+                resolved_path: Some(ws_file),
+            };
+        }
+        return ExternalActionState {
+            id: ExternalActionId::ExternalVscode,
+            enabled: true,
+            disabled_reason: None,
+            resolved_path: Some(ws_file),
+        };
+    }
+
+    let target_dir = resolve_editor_dir(ctx).or_else(|| non_empty(ctx.file_parent_dir.as_deref()));
+
+    resolve_dir_action(
+        ExternalActionId::ExternalVscode,
+        target_dir,
+        ctx.vscode_configured,
+        "未配置 VS Code 应用",
+        ctx,
+        probe,
+    )
+}
+
 /// Computes availability and resolved paths for all 8 external actions in fixed order (`v4` §3.7.1).
 pub fn resolve_external_action_states(
     ctx: &ExternalResolveContext,
@@ -355,14 +396,7 @@ pub fn resolve_external_action_states(
     );
 
     let editor_dir = resolve_editor_dir(ctx);
-    let vscode = resolve_dir_action(
-        ExternalActionId::ExternalVscode,
-        editor_dir.clone(),
-        ctx.vscode_configured,
-        "未配置 VS Code 应用",
-        ctx,
-        probe,
-    );
+    let vscode = resolve_vscode_action(ctx, probe);
     let sublime = resolve_dir_action(
         ExternalActionId::ExternalSublime,
         editor_dir,

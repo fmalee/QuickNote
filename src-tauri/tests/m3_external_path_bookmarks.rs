@@ -237,7 +237,6 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
     assert!(find_state(&plain_states, ExternalActionId::ExternalCopyPath).enabled);
     for id in [
         ExternalActionId::ExternalTerminal,
-        ExternalActionId::ExternalVscode,
         ExternalActionId::ExternalSublime,
         ExternalActionId::ExternalWorkspace,
         ExternalActionId::ExternalPin,
@@ -253,6 +252,15 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
             Some(lib.path().to_string_lossy().as_ref())
         );
     }
+    let plain_vscode = find_state(&plain_states, ExternalActionId::ExternalVscode);
+    assert!(
+        plain_vscode.enabled,
+        "expected ExternalVscode to fall back to doc parent dir for plain library doc"
+    );
+    assert_eq!(
+        plain_vscode.resolved_path.as_deref(),
+        plain_note.parent().and_then(|p| p.to_str())
+    );
 
     // 2. Library doc under directory with `.quicknote.yaml` -> inherits workspace dirs.
     let proj_note = lib.path().join("notes/demo/proj.md");
@@ -271,6 +279,10 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
     );
     assert_eq!(
         find_state(&proj_states, ExternalActionId::ExternalVscode).resolved_path,
+        Some(code_ws_file.to_string_lossy().to_string())
+    );
+    assert_eq!(
+        find_state(&proj_states, ExternalActionId::ExternalSublime).resolved_path,
         Some(ws_open.path().to_string_lossy().to_string())
     );
     assert_eq!(
@@ -303,9 +315,63 @@ fn external_actions_full_matrix_and_pin_sentinel_run() {
         Some(doc_term.path().to_string_lossy().to_string())
     );
     assert_eq!(
-        find_state(&override_states, ExternalActionId::ExternalVscode).resolved_path,
+        find_state(&override_states, ExternalActionId::ExternalSublime).resolved_path,
         Some(doc_open.path().to_string_lossy().to_string())
     );
+    assert_eq!(
+        find_state(&override_states, ExternalActionId::ExternalVscode).resolved_path,
+        Some(code_ws_file.to_string_lossy().to_string())
+    );
+
+    // 3b. When no `code_workspace` is configured, `ExternalVscode` falls back to `open_dir`.
+    let dir_only_note = lib.path().join("open_dir_only.md");
+    fs::write(
+        &dir_only_note,
+        format!(
+            "---\ntitle: OpenDirOnly\nopen_dir: {}\n---\nBody\n",
+            doc_open.path().display()
+        ),
+    )
+    .expect("write open_dir_only");
+    let dir_only_states = external_actions_resolve(
+        &pm,
+        ResolveExternalArgs {
+            abs_path: Some(dir_only_note.to_string_lossy().to_string()),
+            command_id: None,
+        },
+    )
+    .expect("resolve open_dir_only");
+    let dir_only_vscode = find_state(&dir_only_states, ExternalActionId::ExternalVscode);
+    assert!(dir_only_vscode.enabled);
+    assert_eq!(
+        dir_only_vscode.resolved_path,
+        Some(doc_open.path().to_string_lossy().to_string())
+    );
+
+    // 3c. Missing explicit `code_workspace` disables `ExternalVscode` with clear reason (no silent fallback).
+    let missing_ws_note = lib.path().join("missing_ws.md");
+    fs::write(
+        &missing_ws_note,
+        format!(
+            "---\ntitle: MissingWs\ncode_workspace: /nonexistent/missing.code-workspace\nopen_dir: {}\n---\nBody\n",
+            doc_open.path().display()
+        ),
+    )
+    .expect("write missing_ws");
+    let missing_ws_states = external_actions_resolve(
+        &pm,
+        ResolveExternalArgs {
+            abs_path: Some(missing_ws_note.to_string_lossy().to_string()),
+            command_id: None,
+        },
+    )
+    .expect("resolve missing_ws");
+    let missing_ws_vscode = find_state(&missing_ws_states, ExternalActionId::ExternalVscode);
+    assert!(!missing_ws_vscode.enabled);
+    assert!(missing_ws_vscode
+        .disabled_reason
+        .as_deref()
+        .is_some_and(|r| r.contains(".code-workspace")));
 
     // 4. External file -> parent dir + external.pin enabled.
     let ext_file = ext_dir.path().join("nginx.conf");
@@ -607,6 +673,12 @@ fn three_tier_workspace_cascade_priority_and_external_actions() {
         find_state(&states, ExternalActionId::ExternalVscode)
             .resolved_path
             .as_deref(),
+        Some(parent_ws_file.to_string_lossy().as_ref())
+    );
+    assert_eq!(
+        find_state(&states, ExternalActionId::ExternalSublime)
+            .resolved_path
+            .as_deref(),
         Some(child_open.path().to_string_lossy().as_ref())
     );
     assert_eq!(
@@ -661,7 +733,7 @@ fn three_tier_workspace_cascade_priority_and_external_actions() {
         calls[1],
         (
             "app:com.microsoft.VSCode".to_string(),
-            child_open.path().to_string_lossy().to_string()
+            parent_ws_file.to_string_lossy().to_string()
         )
     );
     assert_eq!(
@@ -686,6 +758,26 @@ fn three_tier_workspace_cascade_priority_and_external_actions() {
     assert_eq!(empty_effective.project_root, None);
     assert_eq!(empty_effective.default_terminal_cwd, None);
     assert_eq!(empty_effective.vscode_workspace_path, None);
+
+    // `external_action_run` for `ExternalVscode` falls back to doc parent dir when neither `code_workspace` nor `open_dir` is set.
+    let fallback_launcher = RecordingLauncher::default();
+    external_action_run(
+        &pm,
+        &fallback_launcher,
+        RunExternalArgs {
+            id: ExternalActionId::ExternalVscode,
+            abs_path: Some(plain_other_note.to_string_lossy().to_string()),
+            dir_path: None,
+        },
+    )
+    .expect("run vscode fallback to doc parent dir");
+    assert_eq!(
+        fallback_launcher.calls(),
+        vec![(
+            "app:com.microsoft.VSCode".to_string(),
+            lib.path().join("other").to_string_lossy().to_string()
+        )]
+    );
 
     // Manually dropped root markdown + `.quicknote.yaml` reconciled via `index_rebuild`.
     let manual_dir = lib.path().join("manual_sub");
