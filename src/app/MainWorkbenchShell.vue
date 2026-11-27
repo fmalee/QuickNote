@@ -794,7 +794,13 @@ onUnmounted(() => {
     </div>
 
     <div
-      v-if="onboardingStore.isLocked"
+      v-if="onboardingStore.isLocked && onboardingStore.initialized === false"
+      class="qn-main-shell__locked"
+      data-testid="main-onboarding-loading"
+    />
+
+    <div
+      v-else-if="onboardingStore.isLocked"
       class="qn-main-shell__locked"
       data-testid="main-onboarding-lock"
     >

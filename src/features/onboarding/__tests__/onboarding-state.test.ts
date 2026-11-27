@@ -119,8 +119,10 @@ describe('onboarding-state (S1 lock & unlock)', () => {
     mockLibrarySetRoot.mockResolvedValueOnce(configured);
 
     const onboardingStore = useOnboardingStore();
+    expect(onboardingStore.initialized).toBe(false);
     await onboardingStore.refreshLibraryInfo();
 
+    expect(onboardingStore.initialized).toBe(true);
     expect(onboardingStore.isLocked).toBe(true);
     expect(onboardingStore.isConfigured).toBe(false);
 

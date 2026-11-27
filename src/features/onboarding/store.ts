@@ -14,6 +14,7 @@ export const useOnboardingStore = defineStore('onboarding', () => {
   const libraryInfo = ref<LibraryInfo | null>(null);
   const rootInput = ref<string>(DEFAULT_LIBRARY_ROOT);
   const createIfMissing = ref<boolean>(true);
+  const initialized = ref<boolean>(false);
   const loading = ref<boolean>(false);
   const submitting = ref<boolean>(false);
   const errorMessage = ref<string | null>(null);
@@ -29,12 +30,14 @@ export const useOnboardingStore = defineStore('onboarding', () => {
       libraryInfo.value = info;
       if (info.root) {
         rootInput.value = info.root;
+        initialized.value = true;
       }
       return info;
     } catch (error) {
       errorMessage.value = extractOnboardingErrorMessage(error);
       return null;
     } finally {
+      initialized.value = true;
       loading.value = false;
     }
   }
@@ -59,6 +62,7 @@ export const useOnboardingStore = defineStore('onboarding', () => {
       libraryInfo.value = info;
       if (info.root) {
         rootInput.value = info.root;
+        initialized.value = true;
       }
       return Boolean(info.root);
     } catch (error) {
@@ -77,6 +81,7 @@ export const useOnboardingStore = defineStore('onboarding', () => {
     libraryInfo,
     rootInput,
     createIfMissing,
+    initialized,
     loading,
     submitting,
     errorMessage,
