@@ -22,6 +22,7 @@ import {
 import { useSettingsStore } from '@/features/settings';
 import { type ActionContext, actionRegistry } from '@/lib/actions';
 import { onWindowFileDrop, type UnlistenFn, type WindowFileDropPayload } from '@/lib/ipc/events';
+import { resolveEditorCodeFontFamily, resolveEditorProseFontFamily } from '@/lib/utils';
 import { extractEditorErrorMessage, openExternalUrl, saveNoteImage } from './api';
 import {
   DIAGNOSTICS_MAX_BYTES,
@@ -119,18 +120,28 @@ const editorMaxWidth = computed<string>(() => {
   const maxWidth = editorSettings.value?.maxWidth ?? 900;
   return maxWidth === 0 ? '100%' : `${maxWidth}px`;
 });
+const editorFontSize = computed<string>(() => `${editorSettings.value?.fontSize ?? 14}px`);
+const editorLineHeight = computed<string>(() => String(editorSettings.value?.lineHeight ?? 1.6));
+const editorProseFontFamily = computed<string>(() =>
+  resolveEditorProseFontFamily(editorSettings.value?.fontFamily),
+);
+const editorCodeFontFamily = computed<string>(() =>
+  resolveEditorCodeFontFamily(editorSettings.value?.codeFontFamily),
+);
+const editorActiveFontFamily = computed<string>(() => {
+  const activeTab = editorTabsStore.activeTab;
+  if (!activeTab) {
+    return editorProseFontFamily.value;
+  }
+  const path = activeTab.absPath || activeTab.relPath || '';
+  const isMarkdown = path
+    ? detectDocumentLanguage(path, activeTab.draftBody ?? '').isMarkdown
+    : true;
+  return isMarkdown ? editorProseFontFamily.value : editorCodeFontFamily.value;
+});
 
-function buildTypographyTheme() {
-  const fontSize = editorSettings.value?.fontSize ?? 15;
-  const lineHeight = editorSettings.value?.lineHeight ?? 1.7;
-  return EditorView.theme({
-    '&': {
-      fontSize: `${fontSize}px`,
-    },
-    '.cm-scroller': {
-      lineHeight: String(lineHeight),
-    },
-  });
+function buildTypographyTheme(_isMarkdown = true): Extension {
+  return [];
 }
 
 function computeTabSizeBytes(tab: EditorTab, contentOverride?: string): number {
@@ -295,7 +306,7 @@ function reconfigureEditorCompartments(): void {
   lastFallbackMode = cfg.mode;
   view.dispatch({
     effects: [
-      typographyCompartment.reconfigure(buildTypographyTheme()),
+      typographyCompartment.reconfigure(buildTypographyTheme(cfg.lang.isMarkdown)),
       tabSizeCompartment.reconfigure(EditorState.tabSize.of(cfg.indent.tabSize)),
       languageCompartment.reconfigure(cfg.languageExt),
       keymapCompartment.reconfigure(cfg.keymapExt),
@@ -548,7 +559,7 @@ const qnHighlightStyle = HighlightStyle.define([
   { tag: tags.url, color: 'var(--qn-text-secondary)' },
   {
     tag: [tags.monospace, tags.processingInstruction],
-    fontFamily: 'var(--qn-font-mono)',
+    fontFamily: 'var(--qn-editor-code-font, var(--qn-font-mono))',
     color: 'var(--qn-accent)',
   },
   { tag: tags.quote, color: 'var(--qn-text-secondary)', fontStyle: 'italic' },
@@ -567,16 +578,17 @@ const qnEditorTheme = EditorView.theme({
   '&': {
     color: 'var(--qn-text-primary)',
     backgroundColor: 'var(--qn-bg-base)',
-    fontFamily: 'var(--qn-font-sans)',
-    fontSize: 'var(--qn-text-base)',
+    fontFamily: 'var(--qn-editor-font-family, var(--qn-font-sans))',
+    fontSize: 'var(--qn-editor-font-size, var(--qn-text-base))',
     height: '100%',
   },
   '&.cm-focused': {
     outline: 'none',
   },
   '.cm-scroller': {
-    fontFamily: 'var(--qn-font-sans)',
-    lineHeight: '1.7',
+    fontFamily: 'var(--qn-editor-font-family, var(--qn-font-sans))',
+    fontSize: 'var(--qn-editor-font-size, var(--qn-text-base))',
+    lineHeight: 'var(--qn-editor-line-height, 1.6)',
     overflow: 'auto',
     overscrollBehavior: 'contain',
   },
@@ -636,7 +648,7 @@ function createEditorState(tab: EditorTab): EditorState {
       languageCompartment.of(cfg.languageExt),
       syntaxHighlighting(qnHighlightStyle),
       qnEditorTheme,
-      typographyCompartment.of(buildTypographyTheme()),
+      typographyCompartment.of(buildTypographyTheme(cfg.lang.isMarkdown)),
       tabSizeCompartment.of(EditorState.tabSize.of(cfg.indent.tabSize)),
       diagnosticsCompartment.of(cfg.diagnosticsExt),
       EditorView.lineWrapping,
@@ -956,6 +968,8 @@ watch(
 
 watch(
   () => [
+    editorSettings.value?.fontFamily,
+    editorSettings.value?.codeFontFamily,
     editorSettings.value?.fontSize,
     editorSettings.value?.lineHeight,
     editorSettings.value?.tabSizeProse,
@@ -964,6 +978,11 @@ watch(
   ],
   () => {
     reconfigureEditorCompartments();
+    view?.requestMeasure();
+    const activeTab = editorTabsStore.activeTab;
+    if (view && activeTab && !activeTab.evicted) {
+      updateStatusAndDiagnostics(activeTab, view.state.doc.toString());
+    }
   },
 );
 
@@ -1161,7 +1180,13 @@ onUnmounted(() => {
         },
       ]"
       data-testid="markdown-editor"
-      :style="{ '--qn-editor-max-width': editorMaxWidth }"
+      :style="{
+        '--qn-editor-max-width': editorMaxWidth,
+        '--qn-editor-font-size': editorFontSize,
+        '--qn-editor-line-height': editorLineHeight,
+        '--qn-editor-font-family': editorActiveFontFamily,
+        '--qn-editor-code-font': editorCodeFontFamily,
+      }"
       @contextmenu.prevent="handleContextMenu"
     />
   </div>

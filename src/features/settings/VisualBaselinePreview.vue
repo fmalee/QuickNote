@@ -44,7 +44,8 @@ const colorTokens = [
           :key="opt.value"
           :variant="store.themePreference === opt.value ? 'primary' : 'secondary'"
           size="sm"
-          @click="store.setTheme(opt.value)"
+          :disabled="store.isSettingsInvalid"
+          @click="store.setTheme(opt.value, { persist: true })"
         >
           {{ opt.label }}
         </QnButton>

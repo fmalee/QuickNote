@@ -242,13 +242,25 @@ impl WindowManager {
             return Ok(existing);
         }
 
-        WebviewWindowBuilder::new(
+        let current_theme = app
+            .try_state::<Arc<PersistenceManager>>()
+            .and_then(|pm| pm.settings_get().ok())
+            .map(|s| s.settings.editor.theme)
+            .unwrap_or(crate::domain::settings::EditorTheme::System);
+        let tauri_theme = match current_theme {
+            crate::domain::settings::EditorTheme::Light => Some(tauri::Theme::Light),
+            crate::domain::settings::EditorTheme::Dark => Some(tauri::Theme::Dark),
+            crate::domain::settings::EditorTheme::System => None,
+        };
+
+        let win = WebviewWindowBuilder::new(
             app,
             SETTINGS_WINDOW_LABEL,
             WebviewUrl::App("index.html?window=settings".into()),
         )
         .title("QuickNote 设置")
         .inner_size(760.0, 560.0)
+        .theme(tauri_theme)
         .visible(false)
         .build()
         .map_err(|err| {
@@ -257,7 +269,19 @@ impl WindowManager {
                 "Failed to create settings window",
                 err.to_string(),
             )
-        })
+        })?;
+        let resolved_dark = match tauri_theme {
+            Some(tauri::Theme::Dark) => true,
+            Some(tauri::Theme::Light) => false,
+            _ => matches!(win.theme(), Ok(tauri::Theme::Dark)),
+        };
+        let bg = if resolved_dark {
+            tauri::window::Color(20, 22, 26, 255)
+        } else {
+            tauri::window::Color(255, 255, 255, 255)
+        };
+        let _ = win.set_background_color(Some(bg));
+        Ok(win)
     }
 
     /// Returns the existing `toast` window or creates and configures it as a native

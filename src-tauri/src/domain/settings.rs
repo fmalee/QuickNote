@@ -142,6 +142,8 @@ impl Default for MainWindowSettings {
 #[serde(rename_all = "camelCase")]
 pub struct EditorSettings {
     pub theme: EditorTheme,
+    pub font_family: String,
+    pub code_font_family: String,
     pub font_size: u16,
     #[specta(type = specta_typescript::Number)]
     pub line_height: f64,
@@ -158,6 +160,8 @@ impl Default for EditorSettings {
     fn default() -> Self {
         Self {
             theme: EditorTheme::System,
+            font_family: String::new(),
+            code_font_family: String::new(),
             font_size: 14,
             line_height: 1.6,
             max_width: 900,
@@ -370,6 +374,10 @@ pub struct EditorSettingsPatch {
     #[serde(default)]
     pub theme: Option<EditorTheme>,
     #[serde(default)]
+    pub font_family: Option<String>,
+    #[serde(default)]
+    pub code_font_family: Option<String>,
+    #[serde(default)]
     pub font_size: Option<u16>,
     #[serde(default)]
     #[specta(type = Option<specta_typescript::Number>)]
@@ -534,6 +542,12 @@ pub fn apply_settings_patch(base: &Settings, patch: &SettingsPatch) -> Result<Se
     if let Some(ref ed) = patch.editor {
         if let Some(theme) = ed.theme {
             next.editor.theme = theme;
+        }
+        if let Some(ref ff) = ed.font_family {
+            next.editor.font_family = ff.trim().to_string();
+        }
+        if let Some(ref cff) = ed.code_font_family {
+            next.editor.code_font_family = cff.trim().to_string();
         }
         if let Some(fs) = ed.font_size {
             next.editor.font_size = fs;
@@ -776,6 +790,8 @@ impl Default for MainWindowSettingsYaml {
 #[serde(default, deny_unknown_fields)]
 struct EditorSettingsYaml {
     theme: EditorTheme,
+    font_family: String,
+    code_font_family: String,
     font_size: u16,
     line_height: f64,
     max_width: u32,
@@ -792,6 +808,8 @@ impl Default for EditorSettingsYaml {
         let d = EditorSettings::default();
         Self {
             theme: d.theme,
+            font_family: d.font_family,
+            code_font_family: d.code_font_family,
             font_size: d.font_size,
             line_height: d.line_height,
             max_width: d.max_width,
@@ -1002,6 +1020,8 @@ impl From<SettingsYaml> for Settings {
             },
             editor: EditorSettings {
                 theme: y.editor.theme,
+                font_family: y.editor.font_family,
+                code_font_family: y.editor.code_font_family,
                 font_size: y.editor.font_size,
                 line_height: y.editor.line_height,
                 max_width: y.editor.max_width,
@@ -1081,6 +1101,8 @@ impl From<&Settings> for SettingsYaml {
             },
             editor: EditorSettingsYaml {
                 theme: s.editor.theme,
+                font_family: s.editor.font_family.clone(),
+                code_font_family: s.editor.code_font_family.clone(),
                 font_size: s.editor.font_size,
                 line_height: s.editor.line_height,
                 max_width: s.editor.max_width,

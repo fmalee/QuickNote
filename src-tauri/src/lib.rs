@@ -96,6 +96,53 @@ struct BuiltAppMenu {
     menu: Menu<tauri::Wry>,
     pin_quick_bar_item: CheckMenuItem<tauri::Wry>,
     show_tab_close_button_item: CheckMenuItem<tauri::Wry>,
+    theme_system_item: CheckMenuItem<tauri::Wry>,
+    theme_light_item: CheckMenuItem<tauri::Wry>,
+    theme_dark_item: CheckMenuItem<tauri::Wry>,
+}
+
+fn to_tauri_theme(theme: crate::domain::settings::EditorTheme) -> Option<tauri::Theme> {
+    match theme {
+        crate::domain::settings::EditorTheme::Light => Some(tauri::Theme::Light),
+        crate::domain::settings::EditorTheme::Dark => Some(tauri::Theme::Dark),
+        crate::domain::settings::EditorTheme::System => None,
+    }
+}
+
+fn apply_theme_to_window(win: &tauri::WebviewWindow, theme: crate::domain::settings::EditorTheme) {
+    let tauri_theme = to_tauri_theme(theme);
+    let _ = win.set_theme(tauri_theme);
+    if win.label() == "toast" {
+        return;
+    }
+    let resolved_dark = match tauri_theme {
+        Some(tauri::Theme::Dark) => true,
+        Some(tauri::Theme::Light) => false,
+        _ => matches!(win.theme(), Ok(tauri::Theme::Dark)),
+    };
+    let bg = if resolved_dark {
+        tauri::window::Color(20, 22, 26, 255)
+    } else {
+        tauri::window::Color(255, 255, 255, 255)
+    };
+    let _ = win.set_background_color(Some(bg));
+}
+
+fn apply_theme_to_all_windows(app: &AppHandle, theme: crate::domain::settings::EditorTheme) {
+    for win in app.webview_windows().values() {
+        apply_theme_to_window(win, theme);
+    }
+}
+
+fn sync_theme_menu_items(
+    theme: crate::domain::settings::EditorTheme,
+    system_item: &CheckMenuItem<tauri::Wry>,
+    light_item: &CheckMenuItem<tauri::Wry>,
+    dark_item: &CheckMenuItem<tauri::Wry>,
+) {
+    let _ = system_item.set_checked(theme == crate::domain::settings::EditorTheme::System);
+    let _ = light_item.set_checked(theme == crate::domain::settings::EditorTheme::Light);
+    let _ = dark_item.set_checked(theme == crate::domain::settings::EditorTheme::Dark);
 }
 
 fn build_app_menu(app: &AppHandle) -> Result<BuiltAppMenu, tauri::Error> {
@@ -292,6 +339,28 @@ fn build_app_menu(app: &AppHandle) -> Result<BuiltAppMenu, tauri::Error> {
             .checked(initial_show_tab_close_button)
             .build(app)?;
 
+    let initial_theme = app
+        .try_state::<Arc<PersistenceManager>>()
+        .and_then(|pm| pm.settings_get().ok())
+        .map(|s| s.settings.editor.theme)
+        .unwrap_or(crate::domain::settings::EditorTheme::System);
+
+    let theme_system_item = CheckMenuItemBuilder::with_id("window.theme.system", "跟随系统")
+        .checked(initial_theme == crate::domain::settings::EditorTheme::System)
+        .build(app)?;
+    let theme_light_item = CheckMenuItemBuilder::with_id("window.theme.light", "浅色")
+        .checked(initial_theme == crate::domain::settings::EditorTheme::Light)
+        .build(app)?;
+    let theme_dark_item = CheckMenuItemBuilder::with_id("window.theme.dark", "深色")
+        .checked(initial_theme == crate::domain::settings::EditorTheme::Dark)
+        .build(app)?;
+
+    let theme_submenu = SubmenuBuilder::new(app, "主题")
+        .item(&theme_system_item)
+        .item(&theme_light_item)
+        .item(&theme_dark_item)
+        .build()?;
+
     let window_submenu = SubmenuBuilder::new(app, "窗口")
         .item(&PredefinedMenuItem::minimize(app, Some("最小化"))?)
         .item(&PredefinedMenuItem::maximize(app, Some("缩放"))?)
@@ -306,6 +375,7 @@ fn build_app_menu(app: &AppHandle) -> Result<BuiltAppMenu, tauri::Error> {
                 .build(app)?,
         )
         .item(&show_tab_close_button_item)
+        .item(&theme_submenu)
         .separator()
         .item(&MenuItemBuilder::with_id("menu_show_main", "显示主窗口").build(app)?)
         .item(&pin_quick_bar_item)
@@ -329,6 +399,9 @@ fn build_app_menu(app: &AppHandle) -> Result<BuiltAppMenu, tauri::Error> {
         menu,
         pin_quick_bar_item,
         show_tab_close_button_item,
+        theme_system_item,
+        theme_light_item,
+        theme_dark_item,
     })
 }
 
@@ -345,6 +418,9 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
         menu,
         pin_quick_bar_item,
         show_tab_close_button_item,
+        theme_system_item,
+        theme_light_item,
+        theme_dark_item,
     } = build_app_menu(app)?;
     app.set_menu(menu)?;
     if let Some(wm) = app.try_state::<Arc<WindowManager>>() {
@@ -408,18 +484,31 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
     });
 
     let show_tab_close_for_event = show_tab_close_button_item.clone();
+    let theme_system_for_event = theme_system_item.clone();
+    let theme_light_for_event = theme_light_item.clone();
+    let theme_dark_for_event = theme_dark_item.clone();
     let app_for_settings_event = app.clone();
     app.listen("settings:status", move |_| {
         if let Some(pm) = app_for_settings_event.try_state::<Arc<PersistenceManager>>() {
             if let Ok(snapshot) = pm.settings_get() {
                 let _ = show_tab_close_for_event
                     .set_checked(snapshot.settings.editor.show_tab_close_button);
+                sync_theme_menu_items(
+                    snapshot.settings.editor.theme,
+                    &theme_system_for_event,
+                    &theme_light_for_event,
+                    &theme_dark_for_event,
+                );
+                apply_theme_to_all_windows(&app_for_settings_event, snapshot.settings.editor.theme);
             }
         }
     });
 
     let tray_aux_for_menu = tray_aux_item.clone();
     let show_tab_close_for_menu = show_tab_close_button_item;
+    let theme_system_for_menu = theme_system_item;
+    let theme_light_for_menu = theme_light_item;
+    let theme_dark_for_menu = theme_dark_item;
     app.on_menu_event(move |app_handle, event| {
         let wm = app_handle.state::<Arc<WindowManager>>();
         let menu_id = event.id().as_ref();
@@ -510,6 +599,46 @@ fn setup_tray_and_menu(app: &AppHandle) -> Result<(), tauri::Error> {
                         }
                         Err(err) => {
                             let _ = show_tab_close_for_menu.set_checked(current);
+                            eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
+                        }
+                    }
+                }
+            }
+            "window.theme.system" | "window.theme.light" | "window.theme.dark" => {
+                if let Some(pm) = app_handle.try_state::<Arc<PersistenceManager>>() {
+                    let prev_theme = pm
+                        .settings_get()
+                        .map(|s| s.settings.editor.theme)
+                        .unwrap_or(crate::domain::settings::EditorTheme::System);
+                    let next_theme = match menu_id {
+                        "window.theme.light" => crate::domain::settings::EditorTheme::Light,
+                        "window.theme.dark" => crate::domain::settings::EditorTheme::Dark,
+                        _ => crate::domain::settings::EditorTheme::System,
+                    };
+                    match pm.settings_update(crate::domain::settings::SettingsPatch {
+                        editor: Some(crate::domain::settings::EditorSettingsPatch {
+                            theme: Some(next_theme),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }) {
+                        Ok(snapshot) => {
+                            sync_theme_menu_items(
+                                snapshot.settings.editor.theme,
+                                &theme_system_for_menu,
+                                &theme_light_for_menu,
+                                &theme_dark_for_menu,
+                            );
+                            apply_theme_to_all_windows(app_handle, snapshot.settings.editor.theme);
+                            let _ = app_handle.emit("settings:status", &snapshot.status);
+                        }
+                        Err(err) => {
+                            sync_theme_menu_items(
+                                prev_theme,
+                                &theme_system_for_menu,
+                                &theme_light_for_menu,
+                                &theme_dark_for_menu,
+                            );
                             eprintln!("[menu] {menu_id} failed: code={:?}", err.code);
                         }
                     }
@@ -692,11 +821,12 @@ pub fn run() -> Result<(), tauri::Error> {
 
             let bridge = create_native_bridge();
             app.manage(Arc::clone(&bridge));
-            let main_initially_visible = app
-                .get_webview_window("main")
-                .and_then(|w| w.is_visible().ok())
-                .unwrap_or(true);
+            let main_initially_visible = true;
             let settings_snapshot = pm.settings_get().ok();
+            let initial_theme = settings_snapshot
+                .as_ref()
+                .map(|s| s.settings.editor.theme)
+                .unwrap_or(crate::domain::settings::EditorTheme::System);
             let has_persisted_ui_state = pm.app_data_dir().join("ui-state.json").exists();
             let initial_main_mode = if has_persisted_ui_state {
                 pm.ui_state_get()
@@ -740,6 +870,7 @@ pub fn run() -> Result<(), tauri::Error> {
             app.manage(tm);
 
             create_aux_windows(app.handle())?;
+            apply_theme_to_all_windows(app.handle(), initial_theme);
             wm.configure_native_panels(app.handle())
                 .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
 
@@ -759,16 +890,13 @@ pub fn run() -> Result<(), tauri::Error> {
                 .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
             wm.apply_activation_policy(app.handle(), policy);
 
-            if main_initially_visible && initial_main_mode == WindowMode::Auxiliary {
+            if main_initially_visible {
                 if let Err(err) = wm.show_main(
                     app.handle(),
-                    Some(WindowMode::Auxiliary),
+                    Some(initial_main_mode),
                     initial_aux_width_percent,
                 ) {
-                    eprintln!(
-                        "[window] initial auxiliary apply failed: code={:?}",
-                        err.code
-                    );
+                    eprintln!("[window] initial show_main failed: code={:?}", err.code);
                 }
             }
 

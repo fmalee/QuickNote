@@ -652,3 +652,36 @@ editor:
     let _ = fs::remove_dir_all(&config_dir);
     let _ = fs::remove_dir_all(&cache_dir);
 }
+
+#[test]
+fn settings_editor_fonts_default_empty_and_persist_across_restart() {
+    let app_data_dir = make_temp_dir("editor_fonts_setting");
+    {
+        let pm = PersistenceManager::open(app_data_dir.clone()).expect("open PersistenceManager");
+        let initial = pm.settings_get().expect("initial settings_get");
+        assert_eq!(initial.settings.editor.font_family, "");
+        assert_eq!(initial.settings.editor.code_font_family, "");
+
+        let updated = pm
+            .settings_update(SettingsPatch {
+                editor: Some(EditorSettingsPatch {
+                    font_family: Some("  LXGW WenKai  ".to_string()),
+                    code_font_family: Some(" JetBrains Mono ".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .expect("settings_update editor fonts");
+        assert_eq!(updated.settings.editor.font_family, "LXGW WenKai");
+        assert_eq!(updated.settings.editor.code_font_family, "JetBrains Mono");
+    }
+
+    // 模拟冷重启重新加载 settings.yaml
+    let reopened =
+        PersistenceManager::open(app_data_dir.clone()).expect("reopen PersistenceManager");
+    let reloaded = reopened.settings_get().expect("reloaded settings_get");
+    assert_eq!(reloaded.settings.editor.font_family, "LXGW WenKai");
+    assert_eq!(reloaded.settings.editor.code_font_family, "JetBrains Mono");
+
+    let _ = fs::remove_dir_all(&app_data_dir);
+}

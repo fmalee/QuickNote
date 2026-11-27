@@ -309,23 +309,6 @@ const selfCheckBadge = computed<{ tone: 'success' | 'warning' | 'danger'; label:
           </div>
         </QnPanelCard>
 
-        <QnPanelCard title="配置文件与笔记库" subtitle="settings.yaml 单一配置源（D-0008）">
-          <div class="qn-settings__kv-list">
-            <div class="qn-settings__kv-row">
-              <span class="qn-settings__kv-label">笔记库根目录</span>
-              <code class="qn-settings__kv-value">
-                {{ store.snapshot?.settings.libraryRoot ?? '未配置（等待初始化）' }}
-              </code>
-            </div>
-            <div class="qn-settings__kv-row">
-              <span class="qn-settings__kv-label">当前生效配置源</span>
-              <code class="qn-settings__kv-value">
-                {{ store.loadStatus?.activeSource ?? 'default' }}
-              </code>
-            </div>
-          </div>
-        </QnPanelCard>
-
         <QnPanelCard
           title="配置备份与恢复"
           subtitle="导出 settings.yaml 备份或从已有 YAML 文件恢复配置"

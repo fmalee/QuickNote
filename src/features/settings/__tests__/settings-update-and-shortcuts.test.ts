@@ -66,6 +66,8 @@ function makeValidSettingsSnapshot(overrides?: Partial<SettingsSnapshot>): Setti
       mainWindow: { mode: 'standard', auxiliaryWidthPercent: 45 },
       editor: {
         theme: 'system',
+        fontFamily: '',
+        codeFontFamily: '',
         fontSize: 14,
         lineHeight: 1.6,
         maxWidth: 900,
@@ -444,5 +446,29 @@ describe('settings-update-and-shortcuts', () => {
     expect(store.templates).toHaveLength(3);
 
     store.dispose();
+  });
+
+  it('resolves editor prose and code font families with safe fallbacks', async () => {
+    const {
+      CODE_FONT_PRESETS,
+      isPresetFontValue,
+      PROSE_FONT_PRESETS,
+      resolveEditorCodeFontFamily,
+      resolveEditorProseFontFamily,
+    } = await import('@/lib/utils');
+
+    expect(resolveEditorProseFontFamily('')).toBe('var(--qn-font-sans)');
+    expect(resolveEditorProseFontFamily('PingFang SC')).toBe("'PingFang SC', var(--qn-font-sans)");
+    expect(resolveEditorProseFontFamily('Inter, sans-serif')).toBe(
+      'Inter, sans-serif, var(--qn-font-sans)',
+    );
+    expect(resolveEditorCodeFontFamily('')).toBe('var(--qn-font-mono)');
+    expect(resolveEditorCodeFontFamily('JetBrains Mono')).toBe(
+      "'JetBrains Mono', var(--qn-font-mono)",
+    );
+    expect(isPresetFontValue('PingFang SC', PROSE_FONT_PRESETS)).toBe(true);
+    expect(isPresetFontValue('My Custom Font', PROSE_FONT_PRESETS)).toBe(false);
+    expect(isPresetFontValue('JetBrains Mono', CODE_FONT_PRESETS)).toBe(true);
+    expect(isPresetFontValue('Comic Mono', CODE_FONT_PRESETS)).toBe(false);
   });
 });

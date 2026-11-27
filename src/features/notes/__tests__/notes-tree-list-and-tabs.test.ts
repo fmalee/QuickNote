@@ -170,6 +170,8 @@ function makeSettingsSnapshot(bloatThresholdLines = 500): SettingsSnapshot {
       mainWindow: { mode: 'standard', auxiliaryWidthPercent: 45 },
       editor: {
         theme: 'system',
+        fontFamily: '',
+        codeFontFamily: '',
         fontSize: 15,
         lineHeight: 1.7,
         maxWidth: 900,

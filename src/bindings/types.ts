@@ -127,6 +127,8 @@ export type DirectoryWorkspaceConfigEntry = {
 /**  Editor configuration section (`C6.2`). */
 export type EditorSettings = {
 	theme: EditorTheme,
+	fontFamily: string,
+	codeFontFamily: string,
 	fontSize: number,
 	lineHeight: number,
 	maxWidth: number,
@@ -141,6 +143,8 @@ export type EditorSettings = {
 /**  Partial patch for `EditorSettings` (`C3.4`, `C4.2`). */
 export type EditorSettingsPatch = {
 	theme?: EditorTheme | null,
+	fontFamily?: string | null,
+	codeFontFamily?: string | null,
 	fontSize?: number | null,
 	lineHeight?: number | null,
 	maxWidth?: number | null,

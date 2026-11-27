@@ -173,6 +173,8 @@ function makeSnapshot(overrides?: Partial<SettingsSnapshot['settings']>): Settin
       },
       editor: {
         theme: 'system',
+        fontFamily: '',
+        codeFontFamily: '',
         fontSize: 15,
         lineHeight: 1.7,
         maxWidth: 740,

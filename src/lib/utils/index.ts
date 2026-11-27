@@ -15,17 +15,57 @@ export function resolveWindowKind(search: string): WindowKind {
   return 'main';
 }
 
+const THEME_CACHE_KEY = 'qn:theme';
+
 export function applyThemeToDocument(theme: EditorTheme, root?: HTMLElement): void {
   const target = root ?? (typeof document !== 'undefined' ? document.documentElement : null);
-  if (!target) {
-    return;
+  if (target) {
+    if (theme === 'system') {
+      target.removeAttribute('data-theme');
+    } else {
+      target.setAttribute('data-theme', theme);
+    }
   }
-  if (theme === 'system') {
-    target.removeAttribute('data-theme');
-  } else {
-    target.setAttribute('data-theme', theme);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(THEME_CACHE_KEY, theme);
+    }
+  } catch {
+    // 非浏览器/受限环境容错
   }
 }
+
+export function restoreCachedThemeToDocument(root?: HTMLElement): void {
+  try {
+    if (typeof localStorage === 'undefined') {
+      return;
+    }
+    const cached = localStorage.getItem(THEME_CACHE_KEY);
+    if (cached === 'light' || cached === 'dark' || cached === 'system') {
+      const target = root ?? (typeof document !== 'undefined' ? document.documentElement : null);
+      if (!target) {
+        return;
+      }
+      if (cached === 'system') {
+        target.removeAttribute('data-theme');
+      } else {
+        target.setAttribute('data-theme', cached);
+      }
+    }
+  } catch {
+    // 非浏览器/受限环境容错
+  }
+}
+
+export {
+  CODE_FONT_PRESETS,
+  CUSTOM_FONT_SENTINEL,
+  type FontPresetOption,
+  isPresetFontValue,
+  PROSE_FONT_PRESETS,
+  resolveEditorCodeFontFamily,
+  resolveEditorProseFontFamily,
+} from './editorFonts';
 
 export function formatHotkeyCombo(combo: string): string {
   const parts = combo

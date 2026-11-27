@@ -55,6 +55,11 @@ import {
 
 const onboardingStore = useOnboardingStore();
 const settingsStore = useSettingsStore();
+
+const editorMaxWidth = computed<string>(() => {
+  const maxWidth = settingsStore.snapshot?.settings?.editor?.maxWidth ?? 900;
+  return maxWidth === 0 ? '100%' : `${maxWidth}px`;
+});
 const notesStore = useNotesStore();
 const editorTabsStore = useEditorTabsStore();
 const externalActions = useExternalActions();
@@ -464,7 +469,7 @@ watch(
 );
 
 function handleWindowKeyDown(event: KeyboardEvent): void {
-  if (event.isComposing || event.keyCode === 229) {
+  if (event.defaultPrevented || event.isComposing || event.keyCode === 229) {
     return;
   }
   if (onboardingStore.isLocked) {
@@ -858,7 +863,10 @@ onUnmounted(() => {
           </div>
 
           <div class="qn-main-shell__workspace">
-            <div class="qn-main-shell__editor-stage">
+            <div
+              class="qn-main-shell__editor-stage"
+              :style="{ '--qn-editor-max-width': editorMaxWidth }"
+            >
               <div
                 v-if="editorTabsStore.activeTab?.isMissing"
                 class="qn-main-shell__editor-paper"
