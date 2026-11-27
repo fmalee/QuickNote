@@ -30,10 +30,19 @@ export const MAX_SEARCH_MATCH_COUNT = 999;
 
 /** 查找匹配高亮样式：只用 --qn-* Token（C7.1）。 */
 export const qnSearchPanelTheme = EditorView.theme({
-  '.cm-searchMatch': { backgroundColor: 'var(--qn-accent-soft)' },
+  '.cm-searchMatch': {
+    backgroundColor: 'color-mix(in srgb, var(--qn-warning) 28%, transparent)',
+    outline: '1px solid var(--qn-warning-border)',
+    borderRadius: '2px',
+  },
   '.cm-searchMatch.cm-searchMatch-selected': {
-    backgroundColor: 'var(--qn-bg-active)',
+    backgroundColor: 'var(--qn-accent)',
+    color: 'var(--qn-accent-contrast)',
     outline: '1px solid var(--qn-accent)',
+    borderRadius: '2px',
+  },
+  '.cm-searchMatch.cm-searchMatch-selected *': {
+    color: 'inherit',
   },
 });
 

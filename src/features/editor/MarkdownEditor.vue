@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
@@ -198,11 +198,13 @@ function openFindReplaceBar(withReplace: boolean): void {
     findReplaceExpanded.value = true;
   }
   syncSearchStateToView();
-  if (withReplace) {
-    findBarRef.value?.focusReplaceInput(true);
-  } else {
-    findBarRef.value?.focusSearchInput(true);
-  }
+  void nextTick(() => {
+    if (withReplace) {
+      findBarRef.value?.focusReplaceInput(true);
+    } else {
+      findBarRef.value?.focusSearchInput(true);
+    }
+  });
 }
 
 function closeFindReplaceBar(restoreEditorFocus = true): void {
