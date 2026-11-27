@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { ExternalActionState, NoteSummary, TagNode } from '@/bindings/types';
-import { type ContextMenuEntry, QnBadge, QnBanner, QnButton, QnContextMenu } from '@/components';
+import { type ContextMenuEntry, QnBadge, QnButton, QnContextMenu } from '@/components';
 import {
   appendExternalContextMenuItems,
   isExternalActionId,
@@ -10,6 +10,7 @@ import {
 } from '@/features/editor';
 import { OutlinePanel, RelatedNotesPanel, usePanelsStore } from '@/features/panels';
 import { actionRegistry } from '@/lib/actions';
+import { pushToastNotice } from '@/lib/notifications';
 import { deriveFallbackTitleFromPath } from '@/lib/utils/docTitle';
 import DirTreeSection from './DirTreeSection.vue';
 import DirWorkspaceBindModal from './DirWorkspaceBindModal.vue';
@@ -46,11 +47,15 @@ const renameDraft = ref<string>('');
 
 const tagRenameModalOpen = ref<boolean>(false);
 const tagRenameOld = ref<string>('');
-const tagRenameNotice = ref<string | null>(null);
 
 const { dirWorkspaceMap, loadDirectoryWorkspaceConfigs, handleOpenDirWorkspaceInVscode } =
   useDirectoryWorkspaces((message) => {
     notesStore.errorMessage = message;
+    pushToastNotice({
+      tone: 'danger',
+      title: '打开工作区失败',
+      message,
+    });
   });
 
 const dirWsModalOpen = ref<boolean>(false);
@@ -141,7 +146,11 @@ async function submitTagRename(oldTag: string, newTag: string): Promise<void> {
   const updatedFiles = await notesStore.renameOrMergeTag(oldTag, newTag);
   if (!notesStore.errorMessage) {
     tagRenameModalOpen.value = false;
-    tagRenameNotice.value = `已更新 ${updatedFiles} 篇笔记的标签`;
+    pushToastNotice({
+      tone: 'success',
+      title: '标签已批量更新',
+      message: `已更新 ${updatedFiles} 篇笔记的标签`,
+    });
   }
 }
 
@@ -510,16 +519,10 @@ function handleCollapsedStripClick(id: string): void {
         v-else-if="notesStore.activeTab === 'tags'"
         :tags="notesStore.navTree.tags"
         :selected-tags="notesStore.selectedTags"
-        :rename-notice="tagRenameNotice"
         @toggle-tag="notesStore.toggleTag($event)"
         @clear-tags="notesStore.clearTags()"
-        @dismiss-notice="tagRenameNotice = null"
         @request-rename="openTagRenameModal($event)"
       />
-
-      <QnBanner v-if="notesStore.errorMessage" tone="danger" data-testid="notes-error-banner">
-        {{ notesStore.errorMessage }}
-      </QnBanner>
 
       <PinnedExternalFilesSection
         :items="notesStore.pinnedExternalFiles"

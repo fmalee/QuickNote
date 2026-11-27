@@ -12,6 +12,7 @@ import type {
 import { useNotesStore } from '@/features/notes';
 import { useSettingsStore } from '@/features/settings';
 import type { UnlistenFn } from '@/lib/ipc/events';
+import { pushToastNotice } from '@/lib/notifications';
 import {
   extractEditorErrorMessage,
   extractInboxToNote,
@@ -81,6 +82,16 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
   }
   const loading = ref<boolean>(false);
   const errorMessage = ref<string | null>(null);
+
+  function reportEditorError(error: unknown, title = '文档操作失败'): void {
+    const message = extractEditorErrorMessage(error);
+    errorMessage.value = message;
+    pushToastNotice({
+      tone: 'danger',
+      title,
+      message,
+    });
+  }
   const initialized = ref<boolean>(false);
   const activeTopLine = ref<number>(1);
   const scrollTarget = ref<EditorScrollTarget | null>(null);
@@ -430,7 +441,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       if (isNoteNotFoundError(error)) {
         tab.isMissing = true;
       } else {
-        errorMessage.value = extractEditorErrorMessage(error);
+        reportEditorError(error);
       }
       return false;
     }
@@ -548,7 +559,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       persistTabsDebounced();
       return opened;
     } catch (error) {
-      errorMessage.value = extractEditorErrorMessage(error);
+      reportEditorError(error);
       return null;
     } finally {
       loading.value = false;
@@ -787,7 +798,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           return false;
         }
         tab.saveStatus = 'error';
-        errorMessage.value = extractEditorErrorMessage(error);
+        reportEditorError(error, '保存文档失败');
         return false;
       } finally {
         inFlightSaveMap.delete(key);
@@ -1230,7 +1241,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       persistTabsDebounced();
       return reopened;
     } catch (error) {
-      errorMessage.value = extractEditorErrorMessage(error);
+      reportEditorError(error);
       persistTabsDebounced();
       return null;
     } finally {
@@ -1389,7 +1400,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       }
       initialized.value = true;
     } catch (error) {
-      errorMessage.value = extractEditorErrorMessage(error);
+      reportEditorError(error);
     } finally {
       loading.value = false;
     }
@@ -1421,7 +1432,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
           }
           recordLastActiveDoc(doc);
         } catch (error) {
-          errorMessage.value = extractEditorErrorMessage(error);
+          reportEditorError(error);
         }
       } else if (openIfMissing) {
         activeKey.value = existing.key;
@@ -1528,7 +1539,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       notifyNotesRefresh();
       return tab.doc;
     } catch (error) {
-      errorMessage.value = extractEditorErrorMessage(error);
+      reportEditorError(error);
       return null;
     }
   }
@@ -1572,7 +1583,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       });
       return newDoc;
     } catch (error) {
-      errorMessage.value = extractEditorErrorMessage(error);
+      reportEditorError(error);
       return null;
     }
   }

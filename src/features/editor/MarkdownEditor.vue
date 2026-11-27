@@ -12,16 +12,11 @@ import {
 } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
-import {
-  type ContextMenuEntry,
-  QnBanner,
-  QnButton,
-  QnContextMenu,
-  QnModalShell,
-} from '@/components';
+import { type ContextMenuEntry, QnButton, QnContextMenu, QnModalShell } from '@/components';
 import { useSettingsStore } from '@/features/settings';
 import { type ActionContext, actionRegistry } from '@/lib/actions';
 import { onWindowFileDrop, type UnlistenFn, type WindowFileDropPayload } from '@/lib/ipc/events';
+import { type NotificationTone, pushStatusNotice, pushToastNotice } from '@/lib/notifications';
 import { resolveEditorCodeFontFamily, resolveEditorProseFontFamily } from '@/lib/utils';
 import { extractEditorErrorMessage, openExternalUrl, saveNoteImage } from './api';
 import {
@@ -68,11 +63,6 @@ import {
 } from './extensions/markdownTodo';
 import { type EditorScrollTarget, type EditorTab, useEditorTabsStore } from './store';
 
-interface EditorNotice {
-  tone: 'info' | 'warning' | 'danger' | 'success';
-  message: string;
-}
-
 const CONTEXT_LINK_OPEN_ID = '__qn_link_open__';
 const CONTEXT_LINK_COPY_ID = '__qn_link_copy__';
 const TEXT_FILE_EXT_RE = /\.(md|markdown|txt|ya?ml|json|ts|tsx|js|jsx|rs|css|html|toml)$/i;
@@ -89,7 +79,6 @@ const contextMenuItems = ref<ContextMenuEntry[]>([]);
 const contextLinkUrl = ref<string | null>(null);
 
 const isMetaPressed = ref(false);
-const editorNotice = ref<EditorNotice | null>(null);
 
 const localPathModalOpen = ref(false);
 const pendingLocalPath = ref('');
@@ -315,12 +304,16 @@ function reconfigureEditorCompartments(): void {
   });
 }
 
-function showNotice(tone: EditorNotice['tone'], message: string): void {
-  editorNotice.value = { tone, message };
-}
-
-function dismissNotice(): void {
-  editorNotice.value = null;
+function showNotice(tone: NotificationTone, message: string, toastTitle?: string): void {
+  if (tone === 'danger') {
+    pushToastNotice({
+      tone: 'danger',
+      title: toastTitle ?? '编辑器错误',
+      message,
+    });
+    return;
+  }
+  pushStatusNotice({ tone, message });
 }
 
 function getIndentConfig(): IndentConfig {
@@ -387,7 +380,7 @@ async function openLinkUrl(rawUrl: string): Promise<void> {
     try {
       await openExternalUrl({ url: target.url });
     } catch (error) {
-      showNotice('danger', extractEditorErrorMessage(error, '打开外部链接失败'));
+      showNotice('danger', extractEditorErrorMessage(error, '打开外部链接失败'), '打开链接失败');
     }
     return;
   }
@@ -507,7 +500,7 @@ async function processImageFile(
       insertSnippetAtViewPos(targetView, insertPos, snippet);
     },
     onError: (message) => {
-      showNotice('danger', message);
+      showNotice('danger', message, '图片保存失败');
     },
   });
 }
@@ -538,7 +531,7 @@ async function processDroppedImagePaths(payload: WindowFileDropPayload): Promise
       insertSnippetAtViewPos(targetView, insertPos, snippet);
     },
     onError: (message) => {
-      showNotice('danger', message);
+      showNotice('danger', message, '图片保存失败');
     },
   });
 }
@@ -1159,17 +1152,6 @@ onUnmounted(() => {
 
 <template>
   <div class="qn-markdown-editor-shell">
-    <QnBanner
-      v-if="editorNotice"
-      :tone="editorNotice.tone"
-      class="qn-markdown-editor-notice"
-      data-testid="editor-notice-banner"
-    >
-      <span>{{ editorNotice.message }}</span>
-      <template #actions>
-        <QnButton size="sm" variant="ghost" @click="dismissNotice">关闭</QnButton>
-      </template>
-    </QnBanner>
     <div
       ref="containerRef"
       :class="[
@@ -1239,11 +1221,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--qn-space-2);
-}
-
-.qn-markdown-editor-notice {
-  width: 100%;
-  max-width: var(--qn-editor-max-width, 900px);
 }
 
 .qn-markdown-editor {

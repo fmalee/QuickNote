@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
 import type { WindowMode, WindowsUiState } from '@/bindings/types';
-import { QnBanner, QnButton, QnModalShell } from '@/components';
+import { QnBanner, QnButton, QnModalShell, QnToastContainer } from '@/components';
 import { CommandBookPalette, useCommandPalette } from '@/features/commands';
 import {
   DocHeaderBar,
@@ -52,6 +52,7 @@ import {
   onWindowState,
   type UnlistenFn,
 } from '@/lib/ipc/events';
+import { useNotificationStore } from '@/lib/notifications';
 
 const onboardingStore = useOnboardingStore();
 const settingsStore = useSettingsStore();
@@ -65,6 +66,7 @@ const editorTabsStore = useEditorTabsStore();
 const externalActions = useExternalActions();
 const panelsStore = usePanelsStore();
 const terminalStore = useTerminalStore();
+const notificationStore = useNotificationStore();
 
 const shellRef = ref<HTMLElement | null>(null);
 const quickOpenModalOpen = ref(false);
@@ -788,6 +790,7 @@ onUnmounted(() => {
   notesStore.dispose();
   editorTabsStore.dispose();
   panelsStore.dispose();
+  notificationStore.dispose();
 });
 </script>
 
@@ -968,16 +971,21 @@ onUnmounted(() => {
             Ln {{ editorTabsStore.activeTab.cursorLine }}, Col
             {{ editorTabsStore.activeTab.cursorCol }}
           </span>
-          <span
-            v-if="externalActions.feedback"
+          <button
+            v-if="notificationStore.statusNotice"
+            type="button"
             :class="[
               'qn-main-shell__status-feedback',
-              `qn-main-shell__status-feedback--${externalActions.feedback.tone}`,
+              `qn-main-shell__status-feedback--${notificationStore.statusNotice.tone}`,
             ]"
-            data-testid="external-action-feedback"
+            data-testid="statusbar-notification"
+            :title="`${notificationStore.statusNotice.message}（点击关闭）`"
+            @mouseenter="notificationStore.pauseStatusTimer()"
+            @mouseleave="notificationStore.resumeStatusTimer()"
+            @click="notificationStore.clearStatus()"
           >
-            {{ externalActions.feedback.message }}
-          </span>
+            {{ notificationStore.statusNotice.message }}
+          </button>
         </div>
         <div class="qn-main-shell__status-right">
           <span v-if="editorTabsStore.editorStatus?.docKindLabel" data-testid="statusbar-doc-kind">
@@ -1030,6 +1038,12 @@ onUnmounted(() => {
       :doc="editorTabsStore.activeDoc"
       :body="editorTabsStore.activeTab?.draftBody ?? editorTabsStore.activeDoc?.body ?? ''"
       @close="exportPdfModalOpen = false"
+    />
+    <QnToastContainer
+      :items="notificationStore.toasts"
+      @dismiss="notificationStore.dismissToast($event)"
+      @pause="notificationStore.pauseToastTimer($event)"
+      @resume="notificationStore.resumeToastTimer($event)"
     />
   </div>
 </template>
@@ -1272,6 +1286,27 @@ onUnmounted(() => {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.qn-main-shell__status-feedback {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qn-main-shell__status-feedback--info {
+  color: var(--qn-accent);
 }
 
 .qn-main-shell__status-feedback--success {

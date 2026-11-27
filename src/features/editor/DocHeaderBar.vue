@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import type { ExternalBookmark, ExternalDirectoryListing, NoteMetaPatch } from '@/bindings/types';
 import {
   type ContextMenuEntry,
@@ -9,6 +9,7 @@ import {
   QnModalShell,
 } from '@/components';
 import { actionRegistry } from '@/lib/actions';
+import { pushStatusNotice, pushToastNotice } from '@/lib/notifications';
 import {
   extractEditorErrorMessage,
   fetchExternalBookmarks,
@@ -35,8 +36,6 @@ const externalMenuOpen = ref(false);
 const externalMenuPos = ref({ x: 0, y: 0 });
 const moreMenuOpen = ref(false);
 const moreMenuPos = ref({ x: 0, y: 0 });
-const copyFeedbackText = ref<string | null>(null);
-let copyFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 const externalConfirmOpen = ref(false);
 const pendingAction = ref<
   { kind: 'open-properties' } | { kind: 'patch'; patch: NoteMetaPatch } | null
@@ -137,13 +136,6 @@ watch(
 onMounted(() => {
   if (isExternalDoc.value) {
     void loadExternalBookmarks();
-  }
-});
-
-onUnmounted(() => {
-  if (copyFeedbackTimer !== null) {
-    clearTimeout(copyFeedbackTimer);
-    copyFeedbackTimer = null;
   }
 });
 
@@ -249,17 +241,6 @@ function handleMoreMenuClick(event: MouseEvent): void {
   moreMenuOpen.value = true;
 }
 
-function showCopyFeedback(message: string): void {
-  copyFeedbackText.value = message;
-  if (copyFeedbackTimer !== null) {
-    clearTimeout(copyFeedbackTimer);
-  }
-  copyFeedbackTimer = setTimeout(() => {
-    copyFeedbackText.value = null;
-    copyFeedbackTimer = null;
-  }, 2400);
-}
-
 async function handleMoreMenuSelect(id: string): Promise<void> {
   moreMenuOpen.value = false;
   const currentDoc = doc.value;
@@ -269,7 +250,10 @@ async function handleMoreMenuSelect(id: string): Promise<void> {
   if (id === 'editor.copyRichText') {
     const body = tab.value?.draftBody ?? currentDoc.body;
     const mode = await copyMarkdownAsRichText(body);
-    showCopyFeedback(mode === 'rich' ? '已复制为富文本' : '已复制纯文本');
+    pushStatusNotice({
+      tone: 'success',
+      message: mode === 'rich' ? '已复制为富文本' : '已复制纯文本',
+    });
   } else if (id === 'editor.exportPdf') {
     await actionRegistry.executeById('editor.exportPdf', {
       activeScope: 'editor',
@@ -290,7 +274,7 @@ async function handleToggleFileBookmark(): Promise<void> {
       if (currentDoc.meta.pinned) {
         await externalActions.executeAction('external.pin', { pinned: true });
       }
-      showCopyFeedback('已取消收藏文件书签');
+      pushStatusNotice({ tone: 'success', message: '已取消收藏文件书签' });
     } else {
       externalBookmarks.value = await upsertExternalBookmark({
         path: currentDoc.absPath,
@@ -299,13 +283,14 @@ async function handleToggleFileBookmark(): Promise<void> {
         pinned: true,
         lastOpenedAt: null,
       });
-      showCopyFeedback('已收藏此文件为书签');
+      pushStatusNotice({ tone: 'success', message: '已收藏此文件为书签' });
     }
   } catch (error) {
-    externalActions.feedback = {
+    pushToastNotice({
       tone: 'danger',
+      title: '更新书签失败',
       message: extractEditorErrorMessage(error, '更新外部文件书签失败'),
-    };
+    });
   } finally {
     bookmarkBusy.value = false;
   }
@@ -325,15 +310,15 @@ async function handleToggleDirBookmark(): Promise<void> {
       dirPath = listing.rootPath;
     }
     if (!dirPath) {
-      externalActions.feedback = {
+      pushStatusNotice({
         tone: 'warning',
         message: '未能解析当前外部文件所在目录',
-      };
+      });
       return;
     }
     if (isCurrentDirBookmarked.value) {
       externalBookmarks.value = await removeExternalBookmark(dirPath);
-      showCopyFeedback('已取消收藏常用目录书签');
+      pushStatusNotice({ tone: 'success', message: '已取消收藏常用目录书签' });
     } else {
       externalBookmarks.value = await upsertExternalBookmark({
         path: dirPath,
@@ -342,13 +327,14 @@ async function handleToggleDirBookmark(): Promise<void> {
         pinned: true,
         lastOpenedAt: null,
       });
-      showCopyFeedback('已收藏所在目录为常用目录书签');
+      pushStatusNotice({ tone: 'success', message: '已收藏所在目录为常用目录书签' });
     }
   } catch (error) {
-    externalActions.feedback = {
+    pushToastNotice({
       tone: 'danger',
+      title: '更新书签失败',
       message: extractEditorErrorMessage(error, '更新常用目录书签失败'),
-    };
+    });
   } finally {
     bookmarkBusy.value = false;
   }
@@ -487,14 +473,6 @@ function cancelExternalFrontmatter(): void {
           />
         </div>
 
-        <span
-          v-if="copyFeedbackText"
-          class="qn-doc-header__copy-feedback"
-          data-testid="doc-header-copy-feedback"
-        >
-          {{ copyFeedbackText }}
-        </span>
-
         <div class="qn-doc-header__prop-anchor">
           <QnButton
             variant="ghost"
@@ -570,34 +548,10 @@ function cancelExternalFrontmatter(): void {
       </div>
     </div>
 
-    <div
-      v-if="externalActions.feedback"
-      class="qn-doc-header__external-feedback"
-      :class="`is-${externalActions.feedback.tone}`"
-      data-testid="doc-header-external-feedback"
-      role="status"
-    >
-      <span class="qn-doc-header__external-feedback-text">
-        {{ externalActions.feedback.message }}
-      </span>
-      <button
-        type="button"
-        class="qn-doc-header__external-feedback-close"
-        aria-label="关闭提示"
-        @click="externalActions.clearFeedback()"
-      >
-        ×
-      </button>
-    </div>
-
-    <div v-if="doc.meta.metaError || editorTabsStore.errorMessage" class="qn-doc-header__meta-row">
-      <QnBadge v-if="doc.meta.metaError" tone="warning" data-testid="editor-doc-meta-error">
+    <div v-if="doc.meta.metaError" class="qn-doc-header__meta-row">
+      <QnBadge tone="warning" data-testid="editor-doc-meta-error">
         Frontmatter 异常：{{ doc.meta.metaError }}
       </QnBadge>
-
-      <span v-if="editorTabsStore.errorMessage" class="qn-doc-header__error">
-        {{ editorTabsStore.errorMessage }}
-      </span>
     </div>
 
     <QnModalShell
@@ -710,17 +664,6 @@ function cancelExternalFrontmatter(): void {
   color: var(--qn-text-primary);
 }
 
-.qn-doc-header__error {
-  font-size: var(--qn-text-xs);
-  color: var(--qn-danger);
-}
-
-.qn-doc-header__copy-feedback {
-  font-size: var(--qn-text-xs);
-  color: var(--qn-success);
-  white-space: nowrap;
-}
-
 .qn-doc-header__confirm-text {
   margin: 0;
   font-size: var(--qn-text-sm);
@@ -755,53 +698,6 @@ function cancelExternalFrontmatter(): void {
   display: flex;
   align-items: center;
   gap: var(--qn-space-1);
-  flex-shrink: 0;
-}
-
-.qn-doc-header__external-feedback {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--qn-space-2);
-  padding: var(--qn-space-1) var(--qn-space-2);
-  border-radius: var(--qn-radius-sm);
-  font-size: var(--qn-text-xs);
-  border: 1px solid var(--qn-border-subtle);
-}
-
-.qn-doc-header__external-feedback.is-success {
-  background-color: var(--qn-success-soft);
-  border-color: var(--qn-success-border);
-  color: var(--qn-success);
-}
-
-.qn-doc-header__external-feedback.is-warning {
-  background-color: var(--qn-warning-soft);
-  border-color: var(--qn-warning-border);
-  color: var(--qn-warning);
-}
-
-.qn-doc-header__external-feedback.is-danger {
-  background-color: var(--qn-danger-soft);
-  border-color: var(--qn-danger-border);
-  color: var(--qn-danger);
-}
-
-.qn-doc-header__external-feedback-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.qn-doc-header__external-feedback-close {
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  padding: 0 var(--qn-space-1);
-  font-size: var(--qn-text-sm);
-  line-height: 1;
   flex-shrink: 0;
 }
 </style>

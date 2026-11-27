@@ -10,6 +10,7 @@ import type {
 } from '@/bindings/types';
 import { useEditorTabsStore } from '@/features/editor';
 import type { UnlistenFn } from '@/lib/ipc/events';
+import { pushToastNotice } from '@/lib/notifications';
 import {
   batchRenameTag,
   createNote,
@@ -70,6 +71,15 @@ export const useNotesStore = defineStore('notes', () => {
   const loadingList = ref<boolean>(false);
   const mutating = ref<boolean>(false);
   const errorMessage = ref<string | null>(null);
+
+  function reportNotesError(message: string, title = '笔记操作失败'): void {
+    errorMessage.value = message;
+    pushToastNotice({
+      tone: 'danger',
+      title,
+      message,
+    });
+  }
   const newNoteModalOpen = ref<boolean>(false);
   const newNoteDefaultDir = ref<string>('');
   const templates = ref<NoteSummary[]>([]);
@@ -124,7 +134,7 @@ export const useNotesStore = defineStore('notes', () => {
     try {
       navTree.value = await fetchNavTreeAndTags();
     } catch (error) {
-      errorMessage.value = extractNotesErrorMessage(error);
+      reportNotesError(extractNotesErrorMessage(error));
     } finally {
       loadingTree.value = false;
     }
@@ -169,7 +179,7 @@ export const useNotesStore = defineStore('notes', () => {
       if (seq !== requestSeq) {
         return;
       }
-      errorMessage.value = extractNotesErrorMessage(error);
+      reportNotesError(extractNotesErrorMessage(error));
     } finally {
       if (seq === requestSeq) {
         loadingList.value = false;
@@ -282,7 +292,7 @@ export const useNotesStore = defineStore('notes', () => {
       await Promise.all([loadTreeAndTags(), loadNotesList()]);
       return doc;
     } catch (error) {
-      errorMessage.value = extractNotesErrorMessage(error);
+      reportNotesError(extractNotesErrorMessage(error));
       return null;
     } finally {
       mutating.value = false;
@@ -295,12 +305,12 @@ export const useNotesStore = defineStore('notes', () => {
 
   async function renameNoteItem(oldRelPath: string, newName: string): Promise<NoteDoc | null> {
     if (oldRelPath === 'inbox.md') {
-      errorMessage.value = '收件箱 inbox.md 不可重命名。';
+      reportNotesError('收件箱 inbox.md 不可重命名。');
       return null;
     }
     const trimmed = newName.trim();
     if (!trimmed) {
-      errorMessage.value = '文件名不能为空。';
+      reportNotesError('文件名不能为空。');
       return null;
     }
 
@@ -320,7 +330,7 @@ export const useNotesStore = defineStore('notes', () => {
       await Promise.all([loadTreeAndTags(), loadNotesList()]);
       return updated;
     } catch (error) {
-      errorMessage.value = extractNotesErrorMessage(error);
+      reportNotesError(extractNotesErrorMessage(error));
       return null;
     } finally {
       mutating.value = false;
@@ -329,7 +339,7 @@ export const useNotesStore = defineStore('notes', () => {
 
   async function deleteNoteItem(relPath: string): Promise<boolean> {
     if (relPath === 'inbox.md') {
-      errorMessage.value = '收件箱 inbox.md 不可删除。';
+      reportNotesError('收件箱 inbox.md 不可删除。');
       return false;
     }
 
@@ -341,7 +351,7 @@ export const useNotesStore = defineStore('notes', () => {
       await Promise.all([loadTreeAndTags(), loadNotesList()]);
       return true;
     } catch (error) {
-      errorMessage.value = extractNotesErrorMessage(error);
+      reportNotesError(extractNotesErrorMessage(error));
       return false;
     } finally {
       mutating.value = false;
@@ -352,11 +362,11 @@ export const useNotesStore = defineStore('notes', () => {
     const oldTag = oldTagInput.trim().replace(/^#+/, '');
     const newTag = newTagInput.trim().replace(/^#+/, '');
     if (!oldTag || !newTag) {
-      errorMessage.value = '标签名称不能为空。';
+      reportNotesError('标签名称不能为空。');
       return 0;
     }
     if (oldTag === newTag) {
-      errorMessage.value = '新标签名称不能与原标签相同。';
+      reportNotesError('新标签名称不能与原标签相同。');
       return 0;
     }
 
@@ -381,7 +391,7 @@ export const useNotesStore = defineStore('notes', () => {
       await editorTabsStore.refreshOpenTabsMetaFromDisk();
       return result.updatedFiles;
     } catch (error) {
-      errorMessage.value = extractNotesErrorMessage(error);
+      reportNotesError(extractNotesErrorMessage(error));
       return 0;
     } finally {
       mutating.value = false;

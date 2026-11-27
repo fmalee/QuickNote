@@ -9,6 +9,7 @@ import type {
 import type { ContextMenuEntry } from '@/components/QnContextMenu.vue';
 import { useNotesStore } from '@/features/notes';
 import { isAppError } from '@/lib/ipc/commands';
+import { pushStatusNotice, pushToastNotice, useNotificationStore } from '@/lib/notifications';
 import { extractEditorErrorMessage, resolveExternalActions, runExternalAction } from './api';
 import { useEditorTabsStore } from './store';
 
@@ -147,6 +148,26 @@ export const useExternalActions = defineStore('externalActions', () => {
 
   let resolveSeq = 0;
 
+  function emitFeedback(
+    next: ExternalActionFeedback,
+    channel: 'status' | 'toast' = 'status',
+    title?: string,
+  ): void {
+    feedback.value = next;
+    if (channel === 'toast') {
+      pushToastNotice({
+        tone: next.tone,
+        title,
+        message: next.message,
+      });
+    } else {
+      pushStatusNotice({
+        tone: next.tone,
+        message: next.message,
+      });
+    }
+  }
+
   const stateMap = computed(() => {
     const map = new Map<ExternalActionId, ExternalActionState>();
     for (const item of states.value) {
@@ -202,7 +223,8 @@ export const useExternalActions = defineStore('externalActions', () => {
         return states.value;
       }
       states.value = [];
-      feedback.value = formatExternalActionError(error, '解析外部动作状态失败');
+      const parsed = formatExternalActionError(error, '解析外部动作状态失败');
+      emitFeedback(parsed, parsed.tone === 'danger' ? 'toast' : 'status', '外部动作解析失败');
       return [];
     } finally {
       if (reqSeq === resolveSeq) {
@@ -234,17 +256,20 @@ export const useExternalActions = defineStore('externalActions', () => {
     const state = targetList.find((item) => item.id === id);
 
     if (!state || !state.enabled || !state.resolvedPath) {
-      feedback.value = {
-        tone: 'warning',
-        message: state?.disabledReason ?? '当前文档未配置工作区或目标路径不存在',
-      };
+      emitFeedback(
+        {
+          tone: 'warning',
+          message: state?.disabledReason ?? '当前文档未配置工作区或目标路径不存在',
+        },
+        'status',
+      );
       return false;
     }
 
     try {
       await runExternalAction(buildExternalRunArgs(id, state));
       if (id === 'external.copyPath') {
-        feedback.value = { tone: 'success', message: '已复制文件路径' };
+        emitFeedback({ tone: 'success', message: '已复制文件路径' }, 'status');
       } else if (id === 'external.pin') {
         let wasPinned = options?.pinned;
         try {
@@ -265,16 +290,22 @@ export const useExternalActions = defineStore('externalActions', () => {
               };
             }
           }
-          feedback.value = {
-            tone: 'success',
-            message: nextPinned ? '已固定到常用文件' : '已取消固定常用文件',
-          };
+          emitFeedback(
+            {
+              tone: 'success',
+              message: nextPinned ? '已固定到常用文件' : '已取消固定常用文件',
+            },
+            'status',
+          );
         } catch {
           const nextPinned = !wasPinned;
-          feedback.value = {
-            tone: 'success',
-            message: nextPinned ? '已固定到常用文件' : '已取消固定常用文件',
-          };
+          emitFeedback(
+            {
+              tone: 'success',
+              message: nextPinned ? '已固定到常用文件' : '已取消固定常用文件',
+            },
+            'status',
+          );
         }
         try {
           const notesStore = useNotesStore();
@@ -284,20 +315,29 @@ export const useExternalActions = defineStore('externalActions', () => {
         }
       } else {
         const spec = EXTERNAL_SPEC_MAP.get(id);
-        feedback.value = {
-          tone: 'success',
-          message: spec ? `已执行：${spec.title}` : '外部动作已执行',
-        };
+        emitFeedback(
+          {
+            tone: 'success',
+            message: spec ? `已执行：${spec.title}` : '外部动作已执行',
+          },
+          'status',
+        );
       }
       return true;
     } catch (error) {
-      feedback.value = formatExternalActionError(error, '执行外部动作失败');
+      const parsed = formatExternalActionError(error, '执行外部动作失败');
+      emitFeedback(parsed, 'toast', '外部动作失败');
       return false;
     }
   }
 
   function clearFeedback(): void {
     feedback.value = null;
+    try {
+      useNotificationStore().clearStatus();
+    } catch {
+      // 独立单元测试环境容错
+    }
   }
 
   return {

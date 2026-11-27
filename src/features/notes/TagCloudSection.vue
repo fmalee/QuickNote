@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { TagNode } from '@/bindings/types';
-import { type ContextMenuEntry, QnBanner, QnButton, QnContextMenu } from '@/components';
+import { type ContextMenuEntry, QnContextMenu } from '@/components';
 
 interface TagCloudItem {
   tag: string;
@@ -11,13 +11,11 @@ interface TagCloudItem {
 const props = defineProps<{
   tags: TagNode[];
   selectedTags: string[];
-  renameNotice: string | null;
 }>();
 
 const emit = defineEmits<{
   (e: 'toggle-tag', tag: string): void;
   (e: 'clear-tags'): void;
-  (e: 'dismiss-notice'): void;
   (e: 'request-rename', tag: string): void;
 }>();
 
@@ -109,14 +107,6 @@ function handleTagContextSelect(id: string): void {
         #{{ tag }} ×
       </button>
     </div>
-    <div v-if="props.renameNotice" class="qn-notes-sidebar__tag-notice">
-      <QnBanner tone="success" data-testid="tag-rename-success-banner">
-        <span>{{ props.renameNotice }}</span>
-        <template #actions>
-          <QnButton size="sm" variant="ghost" @click="emit('dismiss-notice')">关闭</QnButton>
-        </template>
-      </QnBanner>
-    </div>
     <div v-if="tagCloudItems.length === 0" class="qn-notes-sidebar__empty">暂无标签</div>
     <div v-else class="qn-notes-sidebar__tag-cloud" data-testid="tag-cloud">
       <button
@@ -201,10 +191,6 @@ function handleTagContextSelect(id: string): void {
   text-align: center;
   font-size: var(--qn-text-xs);
   color: var(--qn-text-muted);
-}
-
-.qn-notes-sidebar__tag-notice {
-  margin-bottom: var(--qn-space-1);
 }
 
 .qn-notes-sidebar__tag-cloud {
