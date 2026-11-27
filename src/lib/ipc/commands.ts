@@ -8,6 +8,8 @@ import type {
   AppendNoteArgs,
   AppendResult,
   BackfillIdsResult,
+  CleanUnusedAssetsArgs,
+  CleanUnusedAssetsResult,
   CommandEntry,
   CommandSearchArgs,
   CreateNoteArgs,
@@ -46,6 +48,7 @@ import type {
   RunExternalArgs,
   SaveImageArgs,
   SavedImageResult,
+  ScanUnusedAssetsArgs,
   SearchQueryArgs,
   SearchResponse,
   SetMenuAcceleratorsArgs,
@@ -65,6 +68,7 @@ import type {
   UiState,
   UiStateArgs,
   UndoAppendResult,
+  UnusedAssetsScanResult,
   WindowState,
   WriteNoteArgs,
   WriteResult,
@@ -219,6 +223,16 @@ export function noteDelete(args: RelPathArgs): Promise<void> {
 
 export function noteSaveImage(args: SaveImageArgs): Promise<SavedImageResult> {
   return invoke<SavedImageResult>('note_save_image', { args });
+}
+
+export function assetsScanUnused(args: ScanUnusedAssetsArgs = {}): Promise<UnusedAssetsScanResult> {
+  return invoke<UnusedAssetsScanResult>('assets_scan_unused', { args });
+}
+
+export function assetsCleanUnused(
+  args: CleanUnusedAssetsArgs = {},
+): Promise<CleanUnusedAssetsResult> {
+  return invoke<CleanUnusedAssetsResult>('assets_clean_unused', { args });
 }
 
 export function searchNotesAndFiles(args: SearchQueryArgs): Promise<SearchResponse> {

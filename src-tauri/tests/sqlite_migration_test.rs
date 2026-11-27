@@ -49,6 +49,7 @@ fn sqlite_migration_creates_all_tables_and_supports_clean_rebuild() {
             "notes",
             "note_tags",
             "note_links",
+            "note_assets",
             "commands",
             "notes_fts",
             "directory_workspace_configs",
@@ -68,7 +69,14 @@ fn sqlite_migration_creates_all_tables_and_supports_clean_rebuild() {
             .expect("query schema_migrations")
             .filter_map(|r| r.ok())
             .collect();
-        assert_eq!(applied, vec!["0001_init", "0002_directory_workspace_cache"]);
+        assert_eq!(
+            applied,
+            vec![
+                "0001_init",
+                "0002_directory_workspace_cache",
+                "0003_note_assets"
+            ]
+        );
 
         let journal_mode: String = conn
             .query_row("PRAGMA journal_mode", [], |r| r.get(0))
@@ -158,7 +166,14 @@ fn sqlite_migration_0002_upgrades_0001_database_smoothly_and_preserves_data() {
         .expect("query schema_migrations")
         .filter_map(|r| r.ok())
         .collect();
-    assert_eq!(applied, vec!["0001_init", "0002_directory_workspace_cache"]);
+    assert_eq!(
+        applied,
+        vec![
+            "0001_init",
+            "0002_directory_workspace_cache",
+            "0003_note_assets"
+        ]
+    );
 
     // Verify corrupted DB triggers clean remove & rebuild with 0002 schema intact.
     drop(mig_stmt);
@@ -204,6 +219,7 @@ fn notes_table_allows_multiple_docs_without_frontmatter_id_using_fallback_keys()
         tag_tokens: "inbox".to_string(),
         body_tokens: "first".to_string(),
         links: vec![],
+        assets: vec![],
         commands: vec![],
     };
 
@@ -228,6 +244,7 @@ fn notes_table_allows_multiple_docs_without_frontmatter_id_using_fallback_keys()
         tag_tokens: "docs".to_string(),
         body_tokens: "second".to_string(),
         links: vec![],
+        assets: vec![],
         commands: vec![],
     };
 

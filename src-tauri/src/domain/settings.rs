@@ -17,6 +17,10 @@ fn default_scan_hidden_files() -> bool {
     true
 }
 
+fn default_auto_clean_unused_assets() -> bool {
+    true
+}
+
 /// Main window presentation mode (`C3.4`, `C6.2`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
 #[serde(rename_all = "camelCase")]
@@ -283,6 +287,8 @@ pub struct Settings {
     pub external_bookmarks: Vec<ExternalBookmark>,
     #[serde(default = "default_scan_hidden_files")]
     pub scan_hidden_files: bool,
+    #[serde(default = "default_auto_clean_unused_assets")]
+    pub auto_clean_unused_assets: bool,
 }
 
 impl Default for Settings {
@@ -308,6 +314,7 @@ impl Default for Settings {
             max_active_editor_renders: DEFAULT_MAX_ACTIVE_EDITOR_RENDERS,
             external_bookmarks: Vec::new(),
             scan_hidden_files: true,
+            auto_clean_unused_assets: true,
         }
     }
 }
@@ -484,6 +491,8 @@ pub struct SettingsPatch {
     pub external_bookmarks: Option<Vec<ExternalBookmark>>,
     #[serde(default)]
     pub scan_hidden_files: Option<bool>,
+    #[serde(default)]
+    pub auto_clean_unused_assets: Option<bool>,
 }
 
 fn apply_external_app_patch(target: &mut ExternalAppConfig, patch: &ExternalAppConfigPatch) {
@@ -637,6 +646,10 @@ pub fn apply_settings_patch(base: &Settings, patch: &SettingsPatch) -> Result<Se
 
     if let Some(scan_hidden) = patch.scan_hidden_files {
         next.scan_hidden_files = scan_hidden;
+    }
+
+    if let Some(auto_clean) = patch.auto_clean_unused_assets {
+        next.auto_clean_unused_assets = auto_clean;
     }
 
     validate_settings(&next)?;
@@ -949,6 +962,7 @@ struct SettingsYaml {
     max_active_editor_renders: u32,
     external_bookmarks: Vec<ExternalBookmarkYaml>,
     scan_hidden_files: bool,
+    auto_clean_unused_assets: bool,
     /// Legacy compatibility placeholder for `settings.yaml` files written before M5-06f.
     /// Accepted on read (due to `deny_unknown_fields`), ignored at runtime, never serialized back.
     #[allow(dead_code)]
@@ -976,6 +990,7 @@ impl Default for SettingsYaml {
             max_active_editor_renders: d.max_active_editor_renders,
             external_bookmarks: Vec::new(),
             scan_hidden_files: d.scan_hidden_files,
+            auto_clean_unused_assets: d.auto_clean_unused_assets,
             workspaces: None,
         }
     }
@@ -1064,6 +1079,7 @@ impl From<SettingsYaml> for Settings {
             max_active_editor_renders: y.max_active_editor_renders,
             external_bookmarks,
             scan_hidden_files: y.scan_hidden_files,
+            auto_clean_unused_assets: y.auto_clean_unused_assets,
         }
     }
 }
@@ -1145,6 +1161,7 @@ impl From<&Settings> for SettingsYaml {
             max_active_editor_renders: s.max_active_editor_renders,
             external_bookmarks,
             scan_hidden_files: s.scan_hidden_files,
+            auto_clean_unused_assets: s.auto_clean_unused_assets,
             workspaces: None,
         }
     }

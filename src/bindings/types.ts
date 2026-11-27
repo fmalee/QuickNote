@@ -54,6 +54,28 @@ export type BackupPathsUiState = {
 /**  Capture formatting mode (`C3.4`, `C6.3`). */
 export type CaptureMode = "list" | "todo" | "prose";
 
+/**  Arguments for `assets_clean_unused`. */
+export type CleanUnusedAssetsArgs = {
+	/**
+	 *  Optional explicit subset of `assets/...` paths to evaluate and clean.
+	 *  When omitted (`None`), scans all unused assets under `assets/`.
+	 */
+	relPaths?: string[] | null,
+	/**  Extra `assets/...` paths referenced by unsaved frontend drafts that must be protected. */
+	protectedRelPaths?: string[],
+	/**  Optional grace period in seconds for recently written files (defaults to 600s when omitted). */
+	gracePeriodSeconds?: number | null,
+};
+
+/**  Summary returned by `assets_clean_unused`. */
+export type CleanUnusedAssetsResult = {
+	deletedPaths: string[],
+	freedBytes: number,
+	skippedReferencedCount: number,
+	skippedRecentCount: number,
+	failedCount: number,
+};
+
 /**  Parsed command entry from a `command-book` note (`C3.4`). */
 export type CommandEntry = {
 	id: string,
@@ -634,6 +656,14 @@ export type SavedImageResult = {
 	relPath: string,
 };
 
+/**  Arguments for `assets_scan_unused`. */
+export type ScanUnusedAssetsArgs = {
+	/**  Extra `assets/...` paths referenced by unsaved frontend drafts to exclude from unused results. */
+	protectedRelPaths?: string[],
+	/**  Optional grace period in seconds for recently written files (defaults to 600s when omitted). */
+	gracePeriodSeconds?: number | null,
+};
+
 /**  Search result kind (`C3.4`). */
 export type SearchItemKind = "note" | "file" | "dir" | "action";
 
@@ -697,6 +727,7 @@ export type Settings = {
 	maxActiveEditorRenders?: number,
 	externalBookmarks?: ExternalBookmark[],
 	scanHiddenFiles?: boolean,
+	autoCleanUnusedAssets?: boolean,
 };
 
 /**  Diagnostic status of loading `settings.yaml` (`C3.4`, `D-0008`). */
@@ -723,6 +754,7 @@ export type SettingsPatch = {
 	maxActiveEditorRenders?: number | null,
 	externalBookmarks?: ExternalBookmark[] | null,
 	scanHiddenFiles?: boolean | null,
+	autoCleanUnusedAssets?: boolean | null,
 };
 
 /**  Combined settings and load-status payload returned by `settings_get` (`C4.2`). */
@@ -889,6 +921,20 @@ export type UndoAppendResult = {
 	relPath: string,
 	restoredBodyHash: string,
 	mtimeMs: number,
+};
+
+/**  Single unreferenced file entry under `assets/`. */
+export type UnusedAssetEntry = {
+	relPath: string,
+	sizeBytes: number,
+	mtimeMs: number,
+};
+
+/**  Summary returned by `assets_scan_unused`. */
+export type UnusedAssetsScanResult = {
+	items: UnusedAssetEntry[],
+	totalBytes: number,
+	skippedRecentCount: number,
 };
 
 /**  Main window presentation mode (`C3.4`, `C6.2`). */

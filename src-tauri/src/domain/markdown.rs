@@ -509,3 +509,227 @@ fn normalize_relative_md_target(source_rel_path: &str, raw_target: &str) -> Opti
 
     Some(normalized)
 }
+
+/// Normalizes a library-relative path that points into `assets/...`.
+/// Rejects empty paths, traversal outside `assets/`, directory-only paths, and external URIs.
+pub fn normalize_asset_rel_path(raw: &str) -> Option<String> {
+    normalize_relative_asset_target("", raw)
+}
+
+/// Extracts normalized library-relative `assets/...` references from raw Markdown document content
+/// (including frontmatter, inline images/links, reference definitions, HTML `src`/`href`, and
+/// bare `assets/...` references) using a conservative strategy to prevent false-positive cleanup.
+pub fn extract_relative_asset_refs(source_rel_path: &str, raw_content: &str) -> Vec<String> {
+    let mut refs = BTreeSet::new();
+
+    for raw_line in raw_content.lines() {
+        let line = raw_line.trim_end_matches('\r');
+        let trimmed = line.trim_start();
+
+        // 1. Reference-style definitions: `[id]: assets/...`
+        if let Some(target) = parse_reference_link_definition(trimmed) {
+            if let Some(normalized) = normalize_relative_asset_target(source_rel_path, target) {
+                refs.insert(normalized);
+            }
+        }
+
+        // 2. Markdown inline images & links: `![alt](target)` / `[text](target)`
+        let mut rest = line;
+        while let Some(open_bracket) = rest.find('[') {
+            let after_bracket = &rest[open_bracket + 1..];
+            if let Some(close_bracket) = after_bracket.find(']') {
+                let after_close = &after_bracket[close_bracket + 1..];
+                if let Some(after_paren) = after_close.strip_prefix('(') {
+                    if let Some(close_paren) = after_paren.find(')') {
+                        let raw_inner = &after_paren[..close_paren];
+                        if let Some(target) = parse_link_destination(raw_inner) {
+                            if let Some(normalized) =
+                                normalize_relative_asset_target(source_rel_path, target)
+                            {
+                                refs.insert(normalized);
+                            }
+                        }
+                        rest = &after_paren[close_paren + 1..];
+                        continue;
+                    }
+                }
+            }
+            rest = after_bracket;
+        }
+
+        // 3. HTML `src="..."` / `src='...'` / `href="..."` / `href='...'`
+        extract_html_attr_asset_refs(source_rel_path, line, &mut refs);
+
+        // 4. Bare `assets/...` references (e.g. frontmatter `cover: assets/2026-11/x.png`)
+        extract_bare_asset_refs(source_rel_path, line, &mut refs);
+    }
+
+    refs.into_iter().collect()
+}
+
+fn extract_html_attr_asset_refs(source_rel_path: &str, line: &str, out: &mut BTreeSet<String>) {
+    let lower = line.to_ascii_lowercase();
+    let bytes = line.as_bytes();
+    let lower_bytes = lower.as_bytes();
+
+    for attr in ["src=", "href="] {
+        let mut search_from = 0usize;
+        while let Some(rel_idx) = lower[search_from..].find(attr) {
+            let idx = search_from + rel_idx;
+            let val_start = idx + attr.len();
+            if val_start >= bytes.len() {
+                break;
+            }
+            // Ensure attribute name is not part of a longer identifier (e.g. `data-src` is fine, `xsrc=` is skipped unless preceded by delimiter).
+            let valid_prefix = idx == 0
+                || matches!(
+                    lower_bytes[idx - 1],
+                    b' ' | b'\t' | b'<' | b'-' | b'\r' | b'\n'
+                );
+            if valid_prefix {
+                let quote = bytes[val_start];
+                if quote == b'"' || quote == b'\'' {
+                    let inner_start = val_start + 1;
+                    if let Some(end_rel) = line[inner_start..].find(quote as char) {
+                        let candidate = &line[inner_start..inner_start + end_rel];
+                        if let Some(norm) =
+                            normalize_relative_asset_target(source_rel_path, candidate)
+                        {
+                            out.insert(norm);
+                        }
+                        search_from = inner_start + end_rel + 1;
+                        continue;
+                    }
+                }
+            }
+            search_from = val_start;
+        }
+    }
+}
+
+fn extract_bare_asset_refs(source_rel_path: &str, line: &str, out: &mut BTreeSet<String>) {
+    let bytes = line.as_bytes();
+    let mut search_from = 0usize;
+    while let Some(rel_idx) = line[search_from..].find("assets/") {
+        let idx = search_from + rel_idx;
+        let valid_prefix = idx == 0
+            || matches!(
+                bytes[idx - 1],
+                b' ' | b'\t' | b'"' | b'\'' | b'(' | b'[' | b'<' | b':' | b'=' | b',' | b';' | b'`'
+            );
+        if valid_prefix {
+            let tail = &line[idx..];
+            let end_rel = tail
+                .find(|c: char| {
+                    c.is_whitespace()
+                        || matches!(c, '"' | '\'' | ')' | ']' | '>' | '<' | '`' | ',' | ';')
+                })
+                .unwrap_or(tail.len());
+            let candidate = &tail[..end_rel];
+            if let Some(norm) = normalize_relative_asset_target(source_rel_path, candidate) {
+                out.insert(norm);
+            }
+        }
+        search_from = idx + "assets/".len();
+    }
+}
+
+fn percent_decode_path(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
+                out.push((hi << 4) | lo);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| input.to_string())
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn normalize_relative_asset_target(source_rel_path: &str, raw_target: &str) -> Option<String> {
+    let target = raw_target.trim();
+    if target.is_empty() || target.starts_with('#') {
+        return None;
+    }
+
+    let lower = target.to_ascii_lowercase();
+    if lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("mailto:")
+        || lower.starts_with("file://")
+        || lower.starts_with("data:")
+    {
+        return None;
+    }
+
+    let cut_idx = target.find(['#', '?']).unwrap_or(target.len());
+    let path_only = target[..cut_idx].trim();
+    if path_only.is_empty() {
+        return None;
+    }
+
+    // Reject other explicit URI schemes (e.g. `obsidian://`, `asset://`).
+    if let Some(colon_idx) = path_only.find(':') {
+        if !path_only[..colon_idx].contains('/') {
+            return None;
+        }
+    }
+
+    let decoded = percent_decode_path(path_only).replace('\\', "/");
+    if decoded.ends_with('/') {
+        return None;
+    }
+
+    // QuickNote inserts `assets/YYYY-MM/...` as vault-root-relative even from subdirectory notes.
+    // Also support `./assets/...`, `/assets/...`, and relative `../assets/...` from nested notes.
+    let root_relative = decoded.starts_with("/assets/")
+        || decoded.starts_with("assets/")
+        || decoded.starts_with("./assets/");
+
+    let source_clean = source_rel_path.trim().replace('\\', "/");
+    let mut stack: Vec<&str> = if root_relative {
+        Vec::new()
+    } else {
+        match source_clean.rsplit_once('/') {
+            Some((dir, _)) if !dir.is_empty() => dir.split('/').filter(|s| !s.is_empty()).collect(),
+            _ => Vec::new(),
+        }
+    };
+
+    let iter_path = decoded.strip_prefix('/').unwrap_or(&decoded);
+    for seg in iter_path.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                stack.pop()?;
+            }
+            other => stack.push(other),
+        }
+    }
+
+    if stack.len() < 2 || stack.first().copied() != Some("assets") {
+        return None;
+    }
+
+    // Reject hidden files inside assets (e.g., `assets/.DS_Store`)
+    if stack.iter().any(|s| s.starts_with('.')) {
+        return None;
+    }
+
+    Some(stack.join("/"))
+}

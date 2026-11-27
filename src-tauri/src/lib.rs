@@ -1033,6 +1033,8 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::notes::note_rename,
             commands::notes::note_delete,
             commands::notes::note_save_image,
+            commands::notes::assets_scan_unused,
+            commands::notes::assets_clean_unused,
             commands::notes::notes_get_related,
             commands::notes::tags_batch_rename,
             commands::notes::notes_backfill_missing_ids,

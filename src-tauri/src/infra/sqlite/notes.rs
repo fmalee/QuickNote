@@ -30,6 +30,7 @@ pub struct NoteIndexRecord {
     pub tag_tokens: String,
     pub body_tokens: String,
     pub links: Vec<String>,
+    pub assets: Vec<String>,
     pub commands: Vec<CommandEntry>,
 }
 
@@ -71,6 +72,8 @@ pub fn replace_all_notes_index(
         .map_err(|e| map_sqlite_error(e, "Failed to clear note_tags"))?;
     tx.execute("DELETE FROM note_links", [])
         .map_err(|e| map_sqlite_error(e, "Failed to clear note_links"))?;
+    tx.execute("DELETE FROM note_assets", [])
+        .map_err(|e| map_sqlite_error(e, "Failed to clear note_assets"))?;
     tx.execute("DELETE FROM commands", [])
         .map_err(|e| map_sqlite_error(e, "Failed to clear commands"))?;
     tx.execute("DELETE FROM notes_fts", [])
@@ -131,6 +134,11 @@ fn delete_note_in_tx(tx: &rusqlite::Transaction<'_>, rel_path: &str) -> Result<(
         params![rel_path],
     )
     .map_err(|e| map_sqlite_error(e, "Failed to delete note_links"))?;
+    tx.execute(
+        "DELETE FROM note_assets WHERE source_rel_path = ?1",
+        params![rel_path],
+    )
+    .map_err(|e| map_sqlite_error(e, "Failed to delete note_assets"))?;
     tx.execute(
         "DELETE FROM commands WHERE note_rel_path = ?1",
         params![rel_path],
@@ -208,6 +216,14 @@ fn insert_note_in_tx(
             params![rec.rel_path, target],
         )
         .map_err(|e| map_sqlite_error(e, "Failed to insert into note_links"))?;
+    }
+
+    for asset in &rec.assets {
+        tx.execute(
+            "INSERT OR IGNORE INTO note_assets (source_rel_path, asset_rel_path) VALUES (?1, ?2)",
+            params![rec.rel_path, asset],
+        )
+        .map_err(|e| map_sqlite_error(e, "Failed to insert into note_assets"))?;
     }
 
     for cmd in &rec.commands {
@@ -410,4 +426,37 @@ pub fn list_backlink_sources(
         .map_err(|e| map_sqlite_error(e, "Failed to read backlink source rows"))?;
 
     Ok(sources)
+}
+
+/// Lists all `asset_rel_path` values in `note_assets` referenced by `source_rel_path`.
+pub fn list_note_assets_by_source(
+    conn: &Connection,
+    source_rel_path: &str,
+) -> Result<Vec<String>, AppError> {
+    let mut stmt = conn
+        .prepare("SELECT asset_rel_path FROM note_assets WHERE source_rel_path = ?1")
+        .map_err(|e| map_sqlite_error(e, "Failed to prepare list_note_assets_by_source"))?;
+
+    let assets = stmt
+        .query_map(params![source_rel_path], |row| row.get::<_, String>(0))
+        .map_err(|e| map_sqlite_error(e, "Failed to query note assets by source"))?
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(|e| map_sqlite_error(e, "Failed to read note asset rows"))?;
+
+    Ok(assets)
+}
+
+/// Lists all distinct `asset_rel_path` values currently referenced by any indexed note.
+pub fn list_all_referenced_assets(conn: &Connection) -> Result<HashSet<String>, AppError> {
+    let mut stmt = conn
+        .prepare("SELECT DISTINCT asset_rel_path FROM note_assets")
+        .map_err(|e| map_sqlite_error(e, "Failed to prepare list_all_referenced_assets"))?;
+
+    let assets = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| map_sqlite_error(e, "Failed to query all referenced assets"))?
+        .collect::<Result<HashSet<String>, _>>()
+        .map_err(|e| map_sqlite_error(e, "Failed to read referenced asset rows"))?;
+
+    Ok(assets)
 }

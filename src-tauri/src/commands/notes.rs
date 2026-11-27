@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 use crate::application::notes::{
+    assets_clean_unused as clean_unused_assets_uc, assets_scan_unused as scan_unused_assets_uc,
     note_create as create_uc, note_delete as delete_uc, note_read as read_uc,
     note_rename as rename_uc, note_save_image as save_image_uc, note_update_meta as update_meta_uc,
     note_write as write_uc, notes_backfill_missing_ids as backfill_ids_uc,
@@ -13,9 +14,10 @@ use crate::application::notes::{
 use crate::application::persistence::PersistenceManager;
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::note::{
-    BackfillIdsResult, CreateNoteArgs, ExportPdfArgs, NavTreeSnapshot, NoteDoc, NoteSummary,
-    NoteUpdateMetaArgs, NotesFilterArgs, ReadNoteArgs, RelPathArgs, RelatedNoteItem,
-    RenameNoteArgs, SaveImageArgs, SavedImageResult, TagRenameArgs, TagRenameResult, WriteNoteArgs,
+    BackfillIdsResult, CleanUnusedAssetsArgs, CleanUnusedAssetsResult, CreateNoteArgs,
+    ExportPdfArgs, NavTreeSnapshot, NoteDoc, NoteSummary, NoteUpdateMetaArgs, NotesFilterArgs,
+    ReadNoteArgs, RelPathArgs, RelatedNoteItem, RenameNoteArgs, SaveImageArgs, SavedImageResult,
+    ScanUnusedAssetsArgs, TagRenameArgs, TagRenameResult, UnusedAssetsScanResult, WriteNoteArgs,
     WriteResult,
 };
 use crate::infra::fs::{expand_tilde, map_io_error};
@@ -92,6 +94,22 @@ pub fn note_save_image(
     args: SaveImageArgs,
 ) -> Result<SavedImageResult, AppError> {
     save_image_uc(&pm, args)
+}
+
+#[tauri::command]
+pub fn assets_scan_unused(
+    pm: State<'_, Arc<PersistenceManager>>,
+    args: Option<ScanUnusedAssetsArgs>,
+) -> Result<UnusedAssetsScanResult, AppError> {
+    scan_unused_assets_uc(&pm, args.unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn assets_clean_unused(
+    pm: State<'_, Arc<PersistenceManager>>,
+    args: Option<CleanUnusedAssetsArgs>,
+) -> Result<CleanUnusedAssetsResult, AppError> {
+    clean_unused_assets_uc(&pm, args.unwrap_or_default())
 }
 
 #[tauri::command]

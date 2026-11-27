@@ -991,9 +991,19 @@ function handlePageHideOrUnload(): void {
   void editorTabsStore.flushAllDirtyTabs();
 }
 
+function handleBeforeUnload(): void {
+  if (currentTabKey) {
+    saveCurrentViewSnapshot();
+  }
+  void editorTabsStore.flushAndCleanRemovedAssets();
+}
+
 function handleVisibilityChange(): void {
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-    handlePageHideOrUnload();
+    if (currentTabKey) {
+      saveCurrentViewSnapshot();
+    }
+    void editorTabsStore.flushAllDirtyTabs();
   }
 }
 
@@ -1213,7 +1223,7 @@ onMounted(() => {
   if (typeof window !== 'undefined') {
     window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('pagehide', handlePageHideOrUnload);
-    window.addEventListener('beforeunload', handlePageHideOrUnload);
+    window.addEventListener('beforeunload', handleBeforeUnload);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
   }
@@ -1252,7 +1262,7 @@ onUnmounted(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('blur', handleWindowBlur);
     window.removeEventListener('pagehide', handlePageHideOrUnload);
-    window.removeEventListener('beforeunload', handlePageHideOrUnload);
+    window.removeEventListener('beforeunload', handleBeforeUnload);
     window.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('keyup', handleKeyUp);
   }

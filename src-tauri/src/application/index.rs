@@ -8,7 +8,7 @@ use crate::application::persistence::PersistenceManager;
 use crate::application::reconciler::reconcile_vault;
 use crate::domain::command_book::parse_command_book;
 use crate::domain::error::{AppError, ErrorCode};
-use crate::domain::markdown::extract_relative_note_links;
+use crate::domain::markdown::{extract_relative_asset_refs, extract_relative_note_links};
 use crate::domain::note::{
     compute_body_hash, make_excerpt, parse_note, IndexPhase, IndexStatus, NoteType, INBOX_REL_PATH,
 };
@@ -212,6 +212,10 @@ pub fn build_note_index_record(
         extract_relative_note_links(rel_path, &parsed.body)
     };
 
+    // Conservatives: index asset references for both regular notes and templates
+    // from full raw content (frontmatter + body) so referenced images are never cleaned.
+    let assets = extract_relative_asset_refs(rel_path, raw);
+
     let commands = if !is_template
         && (parsed.meta.doc_type == NoteType::CommandBook || rel_path.starts_with("commands/"))
     {
@@ -247,6 +251,7 @@ pub fn build_note_index_record(
         tag_tokens,
         body_tokens,
         links,
+        assets,
         commands,
     }
 }

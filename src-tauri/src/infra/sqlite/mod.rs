@@ -8,10 +8,13 @@ use crate::domain::error::{AppError, ErrorCode};
 
 pub use notes::{
     delete_note_index_by_rel_path, get_note_key_by_rel_path, list_all_commands,
-    list_all_indexed_notes, list_backlink_sources, replace_all_notes_index, search_notes_fts,
-    upsert_note_index, FtsSearchHit, IndexedNoteRow, NoteIndexRecord,
+    list_all_indexed_notes, list_all_referenced_assets, list_backlink_sources,
+    list_note_assets_by_source, replace_all_notes_index, search_notes_fts, upsert_note_index,
+    FtsSearchHit, IndexedNoteRow, NoteIndexRecord,
 };
-pub use schema::{init_sqlite, remove_sqlite_files, MIGRATION_0001, MIGRATION_0002};
+pub use schema::{
+    init_sqlite, remove_sqlite_files, MIGRATION_0001, MIGRATION_0002, MIGRATION_0003,
+};
 pub use workspace_configs::{
     delete_directory_workspace_config, list_ancestor_directory_workspace_configs,
     list_directory_workspace_configs, upsert_directory_workspace_config,

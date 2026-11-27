@@ -395,3 +395,64 @@ pub struct BackfillIdsResult {
     pub skipped_broken_yaml: u32,
     pub failed: u32,
 }
+
+/// Single unreferenced file entry under `assets/`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct UnusedAssetEntry {
+    pub rel_path: String,
+    #[specta(type = specta_typescript::Number)]
+    pub size_bytes: u64,
+    #[specta(type = specta_typescript::Number)]
+    pub mtime_ms: i64,
+}
+
+/// Arguments for `assets_scan_unused`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanUnusedAssetsArgs {
+    /// Extra `assets/...` paths referenced by unsaved frontend drafts to exclude from unused results.
+    #[serde(default)]
+    pub protected_rel_paths: Vec<String>,
+    /// Optional grace period in seconds for recently written files (defaults to 600s when omitted).
+    #[serde(default)]
+    pub grace_period_seconds: Option<u32>,
+}
+
+/// Summary returned by `assets_scan_unused`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UnusedAssetsScanResult {
+    pub items: Vec<UnusedAssetEntry>,
+    #[specta(type = specta_typescript::Number)]
+    pub total_bytes: u64,
+    pub skipped_recent_count: u32,
+}
+
+/// Arguments for `assets_clean_unused`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanUnusedAssetsArgs {
+    /// Optional explicit subset of `assets/...` paths to evaluate and clean.
+    /// When omitted (`None`), scans all unused assets under `assets/`.
+    #[serde(default)]
+    pub rel_paths: Option<Vec<String>>,
+    /// Extra `assets/...` paths referenced by unsaved frontend drafts that must be protected.
+    #[serde(default)]
+    pub protected_rel_paths: Vec<String>,
+    /// Optional grace period in seconds for recently written files (defaults to 600s when omitted).
+    #[serde(default)]
+    pub grace_period_seconds: Option<u32>,
+}
+
+/// Summary returned by `assets_clean_unused`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanUnusedAssetsResult {
+    pub deleted_paths: Vec<String>,
+    #[specta(type = specta_typescript::Number)]
+    pub freed_bytes: u64,
+    pub skipped_referenced_count: u32,
+    pub skipped_recent_count: u32,
+    pub failed_count: u32,
+}

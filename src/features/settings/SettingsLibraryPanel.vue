@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue';
+import type { UnusedAssetsScanResult } from '@/bindings/types';
 import { QnBadge, QnButton, QnInput, QnPanelCard } from '@/components';
-import { indexRebuild, notesBackfillMissingIds } from '@/lib/ipc/commands';
+import {
+  assetsCleanUnused,
+  assetsScanUnused,
+  indexRebuild,
+  notesBackfillMissingIds,
+} from '@/lib/ipc/commands';
 import { extractSettingsErrorMessage } from './api';
 import { useSettingsStore } from './store';
 
@@ -21,6 +27,12 @@ const rebuildIndexError = ref<string | null>(null);
 const backfillingIds = ref(false);
 const backfillIdsFeedback = ref<string | null>(null);
 const backfillIdsError = ref<string | null>(null);
+const autoCleanUnusedAssets = ref(true);
+const scanningUnusedAssets = ref(false);
+const cleaningUnusedAssets = ref(false);
+const unusedAssetsScan = ref<UnusedAssetsScanResult | null>(null);
+const unusedAssetsFeedback = ref<string | null>(null);
+const unusedAssetsError = ref<string | null>(null);
 
 const inboxForm = reactive({
   bloatThresholdLines: 500,
@@ -42,6 +54,7 @@ watch(
     inboxForm.destroyAfterHiddenMinutes = settings.quickBar.destroyAfterHiddenMinutes;
     maxActiveEditorRendersInput.value =
       settings.maxActiveEditorRenders ?? DEFAULT_ACTIVE_EDITOR_RENDERS;
+    autoCleanUnusedAssets.value = settings.autoCleanUnusedAssets ?? true;
   },
   { immediate: true, deep: true },
 );
@@ -97,6 +110,85 @@ async function handleBackfillMissingIds(): Promise<void> {
     backfillIdsError.value = extractSettingsErrorMessage(error);
   } finally {
     backfillingIds.value = false;
+  }
+}
+
+function formatAssetBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B';
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+async function onToggleAutoCleanUnusedAssets(event: Event): Promise<void> {
+  const target = event.target as HTMLInputElement | null;
+  if (!target) {
+    return;
+  }
+  autoCleanUnusedAssets.value = target.checked;
+  await store.patchSettings({
+    autoCleanUnusedAssets: autoCleanUnusedAssets.value,
+  });
+}
+
+async function handleScanUnusedAssets(): Promise<void> {
+  if (scanningUnusedAssets.value || cleaningUnusedAssets.value) {
+    return;
+  }
+  scanningUnusedAssets.value = true;
+  unusedAssetsFeedback.value = null;
+  unusedAssetsError.value = null;
+  try {
+    const result = await assetsScanUnused({ gracePeriodSeconds: 0 });
+    unusedAssetsScan.value = result;
+    if (result.items.length === 0) {
+      unusedAssetsFeedback.value = '当前 assets/ 目录没有未引用的图片。';
+    } else {
+      unusedAssetsFeedback.value = `发现 ${result.items.length} 张未引用图片（共 ${formatAssetBytes(result.totalBytes)}），可一键移至系统废纸篓。`;
+    }
+  } catch (error) {
+    unusedAssetsError.value = extractSettingsErrorMessage(error);
+  } finally {
+    scanningUnusedAssets.value = false;
+  }
+}
+
+async function handleCleanUnusedAssets(): Promise<void> {
+  if (
+    cleaningUnusedAssets.value ||
+    scanningUnusedAssets.value ||
+    !unusedAssetsScan.value ||
+    unusedAssetsScan.value.items.length === 0
+  ) {
+    return;
+  }
+  cleaningUnusedAssets.value = true;
+  unusedAssetsError.value = null;
+  try {
+    const targetPaths = unusedAssetsScan.value.items.map((item) => item.relPath);
+    const result = await assetsCleanUnused({
+      relPaths: targetPaths,
+      gracePeriodSeconds: 0,
+    });
+    const failedSuffix = result.failedCount > 0 ? `，失败 ${result.failedCount} 张` : '';
+    unusedAssetsFeedback.value = `已将 ${result.deletedPaths.length} 张未引用图片移至系统废纸篓，释放 ${formatAssetBytes(result.freedBytes)}${failedSuffix}。`;
+    const deletedSet = new Set(result.deletedPaths);
+    const remaining = unusedAssetsScan.value.items.filter((item) => !deletedSet.has(item.relPath));
+    unusedAssetsScan.value = {
+      items: remaining,
+      totalBytes: remaining.reduce((sum, item) => sum + item.sizeBytes, 0),
+      skippedRecentCount: result.skippedRecentCount,
+    };
+  } catch (error) {
+    unusedAssetsError.value = extractSettingsErrorMessage(error);
+  } finally {
+    cleaningUnusedAssets.value = false;
   }
 }
 
@@ -267,6 +359,82 @@ async function handleCreateTemplate(): Promise<void> {
         >
           {{ backfillIdsError }}
         </p>
+      </div>
+    </QnPanelCard>
+
+    <QnPanelCard
+      title="图片资源与未引用清理 (assets/)"
+      subtitle="自动追踪文档中的图片引用；删除笔记或关闭标签页时将无引用图片移至系统废纸篓，也可手动扫描清理"
+      data-testid="library-assets-cleanup-card"
+    >
+      <div class="qn-library-panel__stack">
+        <label class="qn-library-panel__checkbox">
+          <input
+            :checked="autoCleanUnusedAssets"
+            type="checkbox"
+            :disabled="store.isSettingsInvalid"
+            data-testid="auto-clean-unused-assets-checkbox"
+            @change="onToggleAutoCleanUnusedAssets"
+          />
+          <span
+            >删除笔记或关闭标签页时自动将无引用图片移至系统废纸篓（保留编辑会话内 ⌘Z 撤销）</span
+          >
+        </label>
+
+        <div class="qn-library-panel__action-group">
+          <QnButton
+            variant="secondary"
+            size="sm"
+            :loading="scanningUnusedAssets"
+            :disabled="scanningUnusedAssets || cleaningUnusedAssets"
+            data-testid="scan-unused-assets-btn"
+            @click="handleScanUnusedAssets"
+          >
+            扫描未引用图片
+          </QnButton>
+          <QnButton
+            v-if="unusedAssetsScan && unusedAssetsScan.items.length > 0"
+            variant="danger"
+            size="sm"
+            :loading="cleaningUnusedAssets"
+            :disabled="cleaningUnusedAssets || scanningUnusedAssets"
+            data-testid="clean-unused-assets-btn"
+            @click="handleCleanUnusedAssets"
+          >
+            全部移至废纸篓（{{ unusedAssetsScan.items.length }}）
+          </QnButton>
+        </div>
+
+        <p
+          v-if="unusedAssetsFeedback"
+          class="qn-library-panel__feedback"
+          data-testid="unused-assets-feedback"
+        >
+          {{ unusedAssetsFeedback }}
+        </p>
+        <p
+          v-if="unusedAssetsError"
+          class="qn-library-panel__error"
+          role="alert"
+          data-testid="unused-assets-error"
+        >
+          {{ unusedAssetsError }}
+        </p>
+
+        <ul
+          v-if="unusedAssetsScan && unusedAssetsScan.items.length > 0"
+          class="qn-library-panel__asset-list"
+          data-testid="unused-assets-list"
+        >
+          <li
+            v-for="item in unusedAssetsScan.items"
+            :key="item.relPath"
+            class="qn-library-panel__asset-item"
+          >
+            <code class="qn-library-panel__asset-path">{{ item.relPath }}</code>
+            <span class="qn-library-panel__asset-size">{{ formatAssetBytes(item.sizeBytes) }}</span>
+          </li>
+        </ul>
       </div>
     </QnPanelCard>
 
@@ -493,5 +661,42 @@ async function handleCreateTemplate(): Promise<void> {
   margin: 0;
   font-size: var(--qn-text-xs);
   color: var(--qn-danger);
+}
+
+.qn-library-panel__asset-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--qn-space-1);
+}
+
+.qn-library-panel__asset-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--qn-space-2);
+  padding: var(--qn-space-1) var(--qn-space-2);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qn-radius-sm);
+  background-color: var(--qn-bg-base);
+}
+
+.qn-library-panel__asset-path {
+  font-family: var(--qn-font-mono);
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qn-library-panel__asset-size {
+  flex-shrink: 0;
+  font-size: var(--qn-text-xs);
+  color: var(--qn-text-muted);
 }
 </style>

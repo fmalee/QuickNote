@@ -20,12 +20,13 @@ use crate::domain::external::{
 };
 use crate::domain::hotkey::HotkeyUpdateArgs;
 use crate::domain::note::{
-    BackfillIdsResult, ConflictInfo, CreateNoteArgs, DirNode, ExportPdfArgs, IndexPhase,
-    IndexStatus, NavTreeSnapshot, NoteDoc, NoteMeta, NoteMetaPatch, NoteSummary, NoteType,
-    NoteUpdateMetaArgs, NotesFilterArgs, PathCompleteArgs, PathEntry, ReadNoteArgs, RelPathArgs,
-    RelatedNoteItem, RelatedReason, RenameNoteArgs, SaveImageArgs, SavedImageResult,
-    SearchItemKind, SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode,
-    TagRenameArgs, TagRenameResult, WriteNoteArgs, WriteResult,
+    BackfillIdsResult, CleanUnusedAssetsArgs, CleanUnusedAssetsResult, ConflictInfo,
+    CreateNoteArgs, DirNode, ExportPdfArgs, IndexPhase, IndexStatus, NavTreeSnapshot, NoteDoc,
+    NoteMeta, NoteMetaPatch, NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs,
+    PathCompleteArgs, PathEntry, ReadNoteArgs, RelPathArgs, RelatedNoteItem, RelatedReason,
+    RenameNoteArgs, SaveImageArgs, SavedImageResult, ScanUnusedAssetsArgs, SearchItemKind,
+    SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode, TagRenameArgs,
+    TagRenameResult, UnusedAssetEntry, UnusedAssetsScanResult, WriteNoteArgs, WriteResult,
 };
 use crate::domain::settings::{
     EditorSettings, EditorSettingsPatch, EditorTheme, EditorsSettings, EditorsSettingsPatch,
@@ -166,6 +167,11 @@ pub fn collect_types() -> Types {
         .register::<TagRenameArgs>()
         .register::<TagRenameResult>()
         .register::<BackfillIdsResult>()
+        .register::<UnusedAssetEntry>()
+        .register::<ScanUnusedAssetsArgs>()
+        .register::<UnusedAssetsScanResult>()
+        .register::<CleanUnusedAssetsArgs>()
+        .register::<CleanUnusedAssetsResult>()
         .register::<TargetKind>()
         .register::<TargetResolveInput>()
         .register::<ResolvedTarget>()

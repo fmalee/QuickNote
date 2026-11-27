@@ -16,9 +16,13 @@ pub const MIGRATION_0001: &str = include_str!("../../../migrations/0001_init.sql
 pub const MIGRATION_0002: &str =
     include_str!("../../../migrations/0002_directory_workspace_cache.sql");
 
+/// Note-to-asset reference tracking cache migration (`C5.2`).
+pub const MIGRATION_0003: &str = include_str!("../../../migrations/0003_note_assets.sql");
+
 const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_init", MIGRATION_0001),
     ("0002_directory_workspace_cache", MIGRATION_0002),
+    ("0003_note_assets", MIGRATION_0003),
 ];
 
 const EXPECTED_TABLES: &[&str] = &[
@@ -27,6 +31,7 @@ const EXPECTED_TABLES: &[&str] = &[
     "notes",
     "note_tags",
     "note_links",
+    "note_assets",
     "commands",
     "notes_fts",
     "directory_workspace_configs",
@@ -66,6 +71,8 @@ const EXPECTED_COMMANDS_COLUMNS: &[&str] = &[
 
 const EXPECTED_DIRECTORY_WORKSPACE_CONFIGS_COLUMNS: &[&str] =
     &["vault_rel_dir", "config_json", "mtime_ms", "parse_error"];
+
+const EXPECTED_NOTE_ASSETS_COLUMNS: &[&str] = &["source_rel_path", "asset_rel_path"];
 
 fn sidecar_path(db_path: &Path, suffix: &str) -> PathBuf {
     let mut os = db_path.as_os_str().to_os_string();
@@ -184,6 +191,7 @@ fn validate_sqlite_schema(conn: &Connection) -> Result<(), AppError> {
         "directory_workspace_configs",
         EXPECTED_DIRECTORY_WORKSPACE_CONFIGS_COLUMNS,
     )?;
+    verify_table_columns(conn, "note_assets", EXPECTED_NOTE_ASSETS_COLUMNS)?;
 
     Ok(())
 }

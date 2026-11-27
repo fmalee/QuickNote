@@ -1,4 +1,6 @@
 import type {
+  CleanUnusedAssetsArgs,
+  CleanUnusedAssetsResult,
   ExternalActionState,
   ExternalBookmark,
   ExternalChangeEvent,
@@ -21,6 +23,7 @@ import type {
 } from '@/bindings/types';
 import {
   appOpenExternalUrl,
+  assetsCleanUnused as assetsCleanUnusedIpc,
   externalActionRun,
   externalActionsResolve,
   inboxExtractToNote,
@@ -63,6 +66,12 @@ export function extractInboxToNote(args: InboxExtractArgs): Promise<NoteDoc> {
 
 export function saveNoteImage(args: SaveImageArgs): Promise<SavedImageResult> {
   return noteSaveImage(args);
+}
+
+export function cleanUnusedAssets(
+  args: CleanUnusedAssetsArgs = {},
+): Promise<CleanUnusedAssetsResult> {
+  return assetsCleanUnusedIpc(args);
 }
 
 export function openExternalUrl(args: OpenExternalUrlArgs): Promise<void> {

@@ -14,6 +14,7 @@ import { useSettingsStore } from '@/features/settings';
 import type { UnlistenFn } from '@/lib/ipc/events';
 import { pushToastNotice } from '@/lib/notifications';
 import {
+  cleanUnusedAssets,
   extractEditorErrorMessage,
   extractInboxToNote,
   fetchUiState,
@@ -29,6 +30,7 @@ import {
 } from './api';
 import type { DocTabStub } from './core/docSession';
 import { DEFAULT_EDITOR_STATE_POOL_CAPACITY, EditorStatePool } from './core/editorPool';
+import { extractAssetRefsFromMarkdown } from './extensions/markdownImages';
 import {
   buildTabFromDoc,
   DEFAULT_AUTO_SAVE_DEBOUNCE_MS,
@@ -150,6 +152,104 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
   });
 
   const editorStatePool = new EditorStatePool<EditorPoolEntry>(maxActiveEditorRenders.value);
+
+  const autoCleanUnusedAssets = computed<boolean>(
+    () => settingsStore.snapshot?.settings?.autoCleanUnusedAssets ?? true,
+  );
+  const seenAssetsByAbsPath = new Map<string, Set<string>>();
+
+  function isLibraryTab(tab: Pick<EditorTab, 'relPath' | 'doc'>): boolean {
+    return tab.doc ? tab.doc.isLibrary : tab.relPath !== null;
+  }
+
+  function recordSeenAssets(
+    tab: Pick<EditorTab, 'absPath' | 'relPath' | 'doc'>,
+    body: string,
+  ): void {
+    if (!isLibraryTab(tab)) {
+      return;
+    }
+    const refs = extractAssetRefsFromMarkdown(body, tab.relPath);
+    if (refs.length === 0) {
+      return;
+    }
+    let set = seenAssetsByAbsPath.get(tab.absPath);
+    if (!set) {
+      set = new Set<string>();
+      seenAssetsByAbsPath.set(tab.absPath, set);
+    }
+    for (const ref of refs) {
+      set.add(ref);
+    }
+  }
+
+  function collectRemovedAssetsForTab(
+    tab: Pick<EditorTab, 'absPath' | 'relPath' | 'doc' | 'draftBody'>,
+    clearTracking: boolean,
+  ): string[] {
+    if (!isLibraryTab(tab)) {
+      seenAssetsByAbsPath.delete(tab.absPath);
+      return [];
+    }
+    const seen = seenAssetsByAbsPath.get(tab.absPath);
+    const currentRefs = new Set(extractAssetRefsFromMarkdown(tab.draftBody, tab.relPath));
+    const removed: string[] = [];
+    if (seen) {
+      for (const asset of seen) {
+        if (!currentRefs.has(asset)) {
+          removed.push(asset);
+        }
+      }
+    }
+    if (clearTracking) {
+      seenAssetsByAbsPath.delete(tab.absPath);
+    } else if (currentRefs.size > 0) {
+      seenAssetsByAbsPath.set(tab.absPath, currentRefs);
+    } else {
+      seenAssetsByAbsPath.delete(tab.absPath);
+    }
+    return removed;
+  }
+
+  function collectOpenTabsProtectedAssets(): string[] {
+    const protectedSet = new Set<string>();
+    for (const tab of tabs.value) {
+      if (!isLibraryTab(tab)) {
+        continue;
+      }
+      for (const asset of extractAssetRefsFromMarkdown(tab.draftBody, tab.relPath)) {
+        protectedSet.add(asset);
+      }
+    }
+    return Array.from(protectedSet);
+  }
+
+  async function scheduleDeferredAssetCleanup(
+    removedAssets: string[],
+    pendingWrites: Array<Promise<unknown>>,
+  ): Promise<void> {
+    if (!autoCleanUnusedAssets.value || removedAssets.length === 0) {
+      return;
+    }
+    if (pendingWrites.length > 0) {
+      await Promise.allSettled(pendingWrites);
+    }
+    try {
+      const result = await cleanUnusedAssets({
+        relPaths: Array.from(new Set(removedAssets)),
+        protectedRelPaths: collectOpenTabsProtectedAssets(),
+        gracePeriodSeconds: 0,
+      });
+      if (result.deletedPaths.length > 0) {
+        pushToastNotice({
+          tone: 'info',
+          message: `已将 ${result.deletedPaths.length} 张未引用图片移至废纸篓`,
+        });
+      }
+    } catch {
+      // 延迟清理失败不阻断关闭或退出主流程
+    }
+  }
 
   const tabStubs = computed<DocTabStub[]>(() => tabs.value.map(toDocTabStub));
 
@@ -433,6 +533,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     try {
       const doc = await readNote({ absPath: tab.absPath });
       applyDocToTab(tab, doc);
+      recordSeenAssets(tab, doc.body);
       tab.cursorPos = Math.max(0, Math.min(savedCursorOffset, doc.body.length));
       tab.scrollTop = savedScrollTop;
       evictOverflowTabs();
@@ -468,6 +569,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
         existingByKey.isPinned = true;
       }
       activeKey.value = existingByKey.key;
+      recordSeenAssets(existingByKey, doc.body);
       syncTabToPool(existingByKey, { resetState: shouldResetState, touch: true });
       evictOverflowTabs();
       return existingByKey;
@@ -491,6 +593,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
 
     activeKey.value = nextTab.key;
+    recordSeenAssets(nextTab, doc.body);
     syncTabToPool(nextTab, { resetState: true, touch: true });
     evictOverflowTabs();
     return nextTab;
@@ -636,6 +739,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     }
 
     tab.draftBody = newBody;
+    recordSeenAssets(tab, newBody);
     if (cursorOffset !== undefined) {
       tab.cursorPos = cursorOffset;
     }
@@ -850,6 +954,15 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
       .filter((tab) => tab.isDirty && tab.conflictState === null && !tab.isMissing)
       .map((tab) => tab.key);
     await Promise.all(dirtyKeys.map((key) => flushSave(key)));
+  }
+
+  async function flushAndCleanRemovedAssets(): Promise<void> {
+    await flushAllDirtyTabs();
+    const removed: string[] = [];
+    for (const tab of tabs.value) {
+      removed.push(...collectRemovedAssetsForTab(tab, false));
+    }
+    await scheduleDeferredAssetCleanup(removed, []);
   }
 
   function handleExternalChange(event: ExternalChangeEvent): void {
@@ -1142,17 +1255,25 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     if (!target) {
       return;
     }
+    const pendingWrites: Array<Promise<unknown>> = [];
     if (target.isDirty && target.conflictState === null && !target.isMissing && target.doc) {
-      void writeNote({
-        absPath: target.absPath,
-        body: target.draftBody,
-        baseBodyHash: target.baseBodyHash,
-      }).catch(() => undefined);
+      pendingWrites.push(
+        writeNote({
+          absPath: target.absPath,
+          body: target.draftBody,
+          baseBodyHash: target.baseBodyHash,
+        }).catch(() => undefined),
+      );
     }
+    const removedAssets = collectRemovedAssetsForTab(target, true);
     clearAutoSaveTimers(target.key);
     editorStatePool.delete(target.key);
     pushClosedStack(target.absPath);
     tabs.value.splice(index, 1);
+
+    if (removedAssets.length > 0) {
+      void scheduleDeferredAssetCleanup(removedAssets, pendingWrites);
+    }
 
     if (activeKey.value === key) {
       const next = tabs.value[index] ?? tabs.value[index - 1] ?? null;
@@ -1180,21 +1301,29 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     if (!keep) {
       return;
     }
+    const pendingWrites: Array<Promise<unknown>> = [];
+    const removedAssets: string[] = [];
     for (const tab of tabs.value) {
       if (tab.key !== key) {
         if (tab.isDirty && tab.conflictState === null && !tab.isMissing && tab.doc) {
-          void writeNote({
-            absPath: tab.absPath,
-            body: tab.draftBody,
-            baseBodyHash: tab.baseBodyHash,
-          }).catch(() => undefined);
+          pendingWrites.push(
+            writeNote({
+              absPath: tab.absPath,
+              body: tab.draftBody,
+              baseBodyHash: tab.baseBodyHash,
+            }).catch(() => undefined),
+          );
         }
+        removedAssets.push(...collectRemovedAssetsForTab(tab, true));
         clearAutoSaveTimers(tab.key);
         editorStatePool.delete(tab.key);
         pushClosedStack(tab.absPath);
       }
     }
     tabs.value = [keep];
+    if (removedAssets.length > 0) {
+      void scheduleDeferredAssetCleanup(removedAssets, pendingWrites);
+    }
     activeKey.value = keep.key;
     if ((keep.evicted || !keep.doc) && !keep.isMissing) {
       void hydrateTabFromDisk(keep).then(() => {
@@ -1679,6 +1808,7 @@ export const useEditorTabsStore = defineStore('editorTabs', () => {
     saveTab,
     flushSave,
     flushAllDirtyTabs,
+    flushAndCleanRemovedAssets,
     handleExternalChange,
     resolveConflictReload,
     resolveConflictOverwrite,

@@ -21,7 +21,10 @@ pub use crud::{
     note_create, note_delete, note_delete_with, note_read, note_rename, note_update_meta,
     note_write, MAX_EDITABLE_FILE_BYTES,
 };
-pub use media::{note_save_image, MAX_IMAGE_BYTES};
+pub use media::{
+    assets_clean_unused, assets_clean_unused_with, assets_scan_unused, note_save_image,
+    DEFAULT_ASSET_CLEAN_GRACE_SECS, MAX_IMAGE_BYTES,
+};
 pub use nav::{notes_get_tree_and_tags, notes_list};
 pub use search::{commands_search, notes_get_related, search_notes_and_files};
 

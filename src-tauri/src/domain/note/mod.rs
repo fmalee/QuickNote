@@ -20,10 +20,11 @@ pub use tags_and_related::{
     RelatedNoteCandidate,
 };
 pub use types::{
-    BackfillIdsResult, ConflictInfo, CreateNoteArgs, DirNode, ExportPdfArgs, IndexPhase,
-    IndexStatus, NavTreeSnapshot, NoteDoc, NoteMeta, NoteMetaPatch, NoteSummary, NoteType,
-    NoteUpdateMetaArgs, NotesFilterArgs, PathCompleteArgs, PathEntry, ReadNoteArgs, RelPathArgs,
-    RelatedNoteItem, RelatedReason, RenameNoteArgs, SaveImageArgs, SavedImageResult,
-    SearchItemKind, SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode,
-    TagRenameArgs, TagRenameResult, WriteNoteArgs, WriteResult,
+    BackfillIdsResult, CleanUnusedAssetsArgs, CleanUnusedAssetsResult, ConflictInfo,
+    CreateNoteArgs, DirNode, ExportPdfArgs, IndexPhase, IndexStatus, NavTreeSnapshot, NoteDoc,
+    NoteMeta, NoteMetaPatch, NoteSummary, NoteType, NoteUpdateMetaArgs, NotesFilterArgs,
+    PathCompleteArgs, PathEntry, ReadNoteArgs, RelPathArgs, RelatedNoteItem, RelatedReason,
+    RenameNoteArgs, SaveImageArgs, SavedImageResult, ScanUnusedAssetsArgs, SearchItemKind,
+    SearchQueryArgs, SearchResponse, SearchResultItem, SearchSource, TagNode, TagRenameArgs,
+    TagRenameResult, UnusedAssetEntry, UnusedAssetsScanResult, WriteNoteArgs, WriteResult,
 };

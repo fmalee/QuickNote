@@ -653,8 +653,22 @@ pub fn note_delete_with(
         ));
     }
 
+    let referenced_assets = pm
+        .with_db(|conn| crate::infra::sqlite::list_note_assets_by_source(conn, &rel))
+        .unwrap_or_default();
+
     remover.remove(&abs_path)?;
     pm.with_db(|conn| delete_note_index_by_rel_path(conn, &rel))?;
     pm.clear_self_write(&abs_path);
+
+    let should_auto_clean = pm
+        .settings_get()
+        .map(|snap| snap.settings.auto_clean_unused_assets)
+        .unwrap_or(false);
+    if should_auto_clean && !referenced_assets.is_empty() {
+        let _ =
+            super::media::cleanup_orphaned_assets_for_deleted_note(pm, referenced_assets, remover);
+    }
+
     Ok(())
 }

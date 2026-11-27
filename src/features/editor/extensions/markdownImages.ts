@@ -274,3 +274,137 @@ export async function handleImageInsert(
     return 'error';
   }
 }
+
+function normalizeAssetRefTarget(rawTarget: string, sourceRelPath?: string | null): string | null {
+  const trimmed = rawTarget.trim();
+  if (!trimmed || trimmed.startsWith('#')) {
+    return null;
+  }
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.startsWith('http://') ||
+    lower.startsWith('https://') ||
+    lower.startsWith('mailto:') ||
+    lower.startsWith('file://') ||
+    lower.startsWith('data:')
+  ) {
+    return null;
+  }
+  const cutIdx = trimmed.search(/[?#]/);
+  const pathOnly = (cutIdx >= 0 ? trimmed.slice(0, cutIdx) : trimmed).trim();
+  if (!pathOnly) {
+    return null;
+  }
+  const colonIdx = pathOnly.indexOf(':');
+  if (colonIdx >= 0 && !pathOnly.slice(0, colonIdx).includes('/')) {
+    return null;
+  }
+
+  let decoded = pathOnly;
+  try {
+    decoded = decodeURIComponent(pathOnly);
+  } catch {
+    decoded = pathOnly;
+  }
+  decoded = decoded.replace(/\\/g, '/');
+  if (decoded.endsWith('/')) {
+    return null;
+  }
+
+  const rootRelative =
+    decoded.startsWith('/assets/') ||
+    decoded.startsWith('assets/') ||
+    decoded.startsWith('./assets/');
+
+  const stack: string[] = [];
+  if (!rootRelative && sourceRelPath) {
+    const cleanSource = sourceRelPath.trim().replace(/\\/g, '/');
+    const lastSlash = cleanSource.lastIndexOf('/');
+    if (lastSlash > 0) {
+      for (const seg of cleanSource.slice(0, lastSlash).split('/')) {
+        if (seg) {
+          stack.push(seg);
+        }
+      }
+    }
+  }
+
+  const iterPath = decoded.startsWith('/') ? decoded.slice(1) : decoded;
+  for (const seg of iterPath.split('/')) {
+    if (!seg || seg === '.') {
+      continue;
+    }
+    if (seg === '..') {
+      if (stack.length === 0) {
+        return null;
+      }
+      stack.pop();
+    } else {
+      stack.push(seg);
+    }
+  }
+
+  if (stack.length < 2 || stack[0] !== 'assets') {
+    return null;
+  }
+  if (stack.some((seg) => seg.startsWith('.'))) {
+    return null;
+  }
+  return stack.join('/');
+}
+
+/**
+ * 从 Markdown 正文中保守提取所有规范化后的 `assets/...` 引用路径，
+ * 用于编辑会话追踪被移除图片与保护未保存草稿中的图片引用。
+ */
+export function extractAssetRefsFromMarkdown(
+  body: string,
+  sourceRelPath?: string | null,
+): string[] {
+  if (!body || !body.includes('assets/')) {
+    return [];
+  }
+  const refs = new Set<string>();
+  const addCandidate = (raw: string): void => {
+    const normalized = normalizeAssetRefTarget(raw, sourceRelPath);
+    if (normalized) {
+      refs.add(normalized);
+    }
+  };
+
+  // Markdown inline links / images: ![alt](target) / [text](target)
+  const mdLinkRe = /!?\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))[^)]*\)/g;
+  for (const match of body.matchAll(mdLinkRe)) {
+    const target = match[1] ?? match[2];
+    if (target) {
+      addCandidate(target);
+    }
+  }
+
+  // Reference definitions: [id]: target
+  const refDefRe = /^[ \t]{0,3}\[[^\]]+\]:[ \t]*(?:<([^>]+)>|(\S+))/gm;
+  for (const match of body.matchAll(refDefRe)) {
+    const target = match[1] ?? match[2];
+    if (target) {
+      addCandidate(target);
+    }
+  }
+
+  // HTML src="..." / href="..."
+  const htmlAttrRe = /(?:src|href)\s*=\s*["']([^"']+)["']/gi;
+  for (const match of body.matchAll(htmlAttrRe)) {
+    if (match[1]) {
+      addCandidate(match[1]);
+    }
+  }
+
+  // Bare `assets/...` tokens (conservative fallback, skipping URLs like `https://example.com/assets/...`)
+  const bareRe = /(?:^|[\s"'()[\]<>:=,;`])(assets\/[^\s"'()[\]<>`,;]+)/g;
+  for (const match of body.matchAll(bareRe)) {
+    if (match[1]) {
+      addCandidate(match[1]);
+    }
+  }
+
+  return Array.from(refs).sort();
+}
